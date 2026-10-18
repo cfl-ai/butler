@@ -1,0 +1,226 @@
+"""P0-1 统一配置装载。
+
+计划书依据
+----------
+- 三、P0-1「搭建数据库抽象层：统一连接池、事务、读写分离、加密存储」
+- 三、P0-1「会话管理中间件：会话 Token 生成、校验、自动刷新；设置会话有效期，
+  长时间无交互会话自动失效；失效后客户端提示重新登录」
+- 三、P0-1「建设统一 LLM 网关：多模型兼容、鉴权、限流、重试、负载均衡、流式转发」
+- 八、系统全局核心配置参数（Jev 决策模型配置 4 项）
+
+计划书未定义项的处理台账（Skill-05）
+----------------------------------
+【文档未定义项 #12】计划书原文：「设置会话有效期，长时间无交互会话自动失效」——
+计划书**未给出任何数值**。按 Skill-05，AI 不得自行填补空白。
+
+本项的补充来源为**人工授权**：用户于 2026-10-16 指示「按设计经验取值，
+后期可根据实际情况调整」。该指示构成 Skill-05 要求的「人工需求补充」，
+因此本模块以 PARAM_PROVENANCE 登记取值、理由与授权来源，
+并把最终数值交给环境变量承载（便于后期按实际情况调整，无需改代码）。
+
+【文档未定义项 #13】「加盐哈希」未指定算法与代价因子，
+   算法选型见 app/core/security.py（实现层决定）。
+"""
+
+from __future__ import annotations
+
+import os
+from functools import lru_cache
+from typing import Any
+
+from pydantic import ValidationError, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from ai_butler.core.naming import env as env_name
+
+#: 计划书未定义、经**人工授权**确定取值的参数登记表。
+#: 用途：任何数值都能回溯到「计划书原文 → 未定义 → 授权来源 → 取值理由」。
+PARAM_PROVENANCE: dict[str, dict[str, Any]] = {
+    "session_idle_timeout_seconds": {
+        "env": "SESSION_IDLE_TIMEOUT_SECONDS",
+        "plan_quote": "设置会话有效期，长时间无交互会话自动失效（三、P0-1）；"
+                      "会话登录管控访问权限，长时间未操作系统强制重新登录（一、项目概述）",
+        "status": "人工授权取值（非计划书定义）",
+        "authorized_at": "2026-10-16",
+        "value": 7200,
+        "rationale": "2 小时无任何交互即失效。计划书规定会话失效**直接终止 Graph 流程**，"
+                     "阈值必须覆盖一次完整任务周期（规划→质检→三档预算→用户确认→流式播报），"
+                     "过短会在流程中途切断会话；2 小时仍满足「长时间未操作强制重新登录」。",
+        "tunable": True,
+    },
+    "session_ttl_seconds": {
+        "env": "SESSION_TTL_SECONDS",
+        "plan_quote": "设置会话有效期（三、P0-1）",
+        "status": "人工授权取值（非计划书定义）",
+        "authorized_at": "2026-10-16",
+        "value": 43200,
+        "rationale": "单个会话凭证最长 12 小时，覆盖一个自然使用日；"
+                     "持续使用时在凭证最后 30 分钟内由会话鉴权中间件无感换发，用户不会被打断；"
+                     "跨天强制轮换凭证，与「切换账号自动清理旧账号本地缓存」形成纵深。",
+        "tunable": True,
+    },
+    "session_refresh_ahead_seconds": {
+        "env": "SESSION_REFRESH_AHEAD_SECONDS",
+        "plan_quote": "会话 Token 生成、校验、自动刷新（三、P0-1）",
+        "status": "实现参数",
+        "authorized_at": "2026-10-16",
+        "value": 1800,
+        "rationale": "凭证最后 30 分钟内的任意请求换发新凭证，保证「自动刷新」真正无感；"
+                     "原 300 秒相对 12 小时凭证过窄，容易错过刷新窗口。",
+        "tunable": True,
+    },
+}
+
+#: 设计不变式：空闲阈值必须严于凭证有效期，否则空闲控制形同虚设。
+SESSION_PARAM_INVARIANTS = (
+    "session_idle_timeout_seconds < session_ttl_seconds",
+    "0 < session_refresh_ahead_seconds < session_ttl_seconds",
+)
+
+
+class MissingAuthorizedParamError(RuntimeError):
+    """人工授权参数缺失。数值来源见 PARAM_PROVENANCE，需在环境变量中提供。"""
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        # 配置文件位置可用命名规范定义的变量覆盖（默认 .env，位于项目根）
+        # 默认指向 dev；测试夹具强制 .env.test，compose 通过 AIBUTLER_ENV 指向容器内文件。
+        # 四环境文件由 environments.Environment.env_file 登记，不存在共用的 .env。
+        env_file=os.environ.get(env_name("ENV"), ".env.dev"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    # ---------- 四环境隔离（三、P0-1「开发、测试、预发布、生产完全独立隔离」）----------
+    # 该字段必须与所连资源一致，由 environments.validate_runtime 在启动时守卫
+    environment: str = "dev"
+
+    # ---------- 数据库抽象层（三、P0-1「统一连接池、事务、读写分离、加密存储」）----------
+    postgres_user: str
+    postgres_password: str
+    postgres_db: str
+    postgres_host: str = "127.0.0.1"
+    postgres_port: int = 5432
+    # 读写分离：未配置只读库时复用主库（本地开发形态，四环境隔离时按环境拆分）
+    postgres_read_host: str | None = None
+    postgres_read_port: int | None = None
+    postgres_pool_size: int = 10
+    postgres_max_overflow: int = 20
+    postgres_pool_timeout: int = 30
+    postgres_echo: bool = False
+    # 「隐私字段独立加密存储」所需密钥（实现参数，非计划书参数）
+    field_encryption_key: str = ""
+
+    # ---------- Redis：会话与限流载体 ----------
+    redis_host: str = "127.0.0.1"
+    redis_port: int = 6379
+    redis_db: int = 0
+
+    # ---------- 会话（三、P0-1）----------
+    # 三项均为人工授权/实现参数，取值与理由见 PARAM_PROVENANCE；
+    # 不设代码默认值，强制由环境变量显式提供，避免「静默沿用旧值」。
+    session_token_secret: str
+    session_ttl_seconds: int
+    session_idle_timeout_seconds: int
+    session_refresh_ahead_seconds: int
+
+    # ---------- 统一 LLM 网关（三、P0-1「多模型兼容…流式转发」）----------
+    llm_provider_order: str = "ollama"
+    llm_timeout_seconds: float = 60.0
+    llm_max_retries: int = 2
+    llm_rate_limit_per_minute: int = 60           # 「限流」额度（实现参数）
+    jev_rate_limit_per_minute: int = 30           # 「Jev 调用独立配额统计」（实现参数）
+
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = ""
+
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+    deepseek_base_url: str = "https://api.deepseek.com"
+
+    # ---------- Agent-Wiki v2（八、系统全局核心配置参数，数值不得改动）----------
+    wiki_public_workspace_enable: bool = True      # wiki_public_workspace_enable = true
+    wiki_user_vault_per_user: bool = True          # wiki_user_vault_per_user = true
+    wiki_compile_auto_run: bool = True             # wiki_compile_auto_run = true
+    wiki_auto_report_contradiction: bool = True    # wiki_auto_report_contradiction = true
+    wiki_auto_report_low_confidence: bool = True   # wiki_auto_report_low_confidence = true
+    wiki_max_digest_size: int = 12000              # wiki_max_digest_size = 12000
+    # 存储根目录（实现参数，非计划书参数）
+    wiki_root: str = "data/dev/agent_wiki"
+    # 统一文件存储根（三、P0-1「统一文件存储、日志存储、版本备份、项目回溯机制」）
+    storage_root: str = "data/dev/storage"
+
+    # ---------- 全局中间件（三、P0-1「接口熔断、超时、降级、防雪崩机制」）----------
+    # 以下均为**实现参数**（负载相关），非计划书【八】固化参数，可按实际负载调整
+    request_timeout_seconds: float = 30.0            # 接口超时；流式响应按「首字节截止」处理
+    circuit_breaker_failure_threshold: int = 5       # 连续失败达阈值即熔断
+    circuit_breaker_cooldown_seconds: int = 30       # 熔断冷却时长，之后半开探测
+    circuit_breaker_half_open_max_calls: int = 1     # 半开态允许的探测并发
+    bulkhead_max_concurrency: int = 8                # 单依赖最大并发（防雪崩）
+    bulkhead_acquire_timeout_seconds: float = 5.0    # 并发闸等待上限
+    log_level: str = "INFO"
+
+    # ---------- Jev 决策模型（八、系统全局核心配置参数，数值不得改动）----------
+    jev_enable: bool = True                       # jev_enable = true
+    jev_confidence_threshold: float = 0.82        # jev_confidence_threshold = 0.82
+    jev_fallback_enable: bool = True              # jev_fallback_enable = true
+    jev_shadow_mode: bool = True                  # jev_shadow_mode = true
+
+    @field_validator("environment")
+    @classmethod
+    def _known_environment(cls, value: str) -> str:
+        from ai_butler.core.environments import ENV_NAMES
+
+        if value not in ENV_NAMES:
+            raise ValueError(f"environment 必须是 {ENV_NAMES} 之一，实际 {value!r}")
+        return value
+
+    @property
+    def provider_order(self) -> list[str]:
+        return [p.strip().lower() for p in self.llm_provider_order.split(",") if p.strip()]
+
+    @property
+    def write_dsn(self) -> str:
+        return (
+            f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
+            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        )
+
+    @property
+    def read_dsn(self) -> str:
+        """读写分离：未配置只读库时复用主库。"""
+        if not self.postgres_read_host:
+            return self.write_dsn
+        port = self.postgres_read_port or self.postgres_port
+        return (
+            f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
+            f"@{self.postgres_read_host}:{port}/{self.postgres_db}"
+        )
+
+
+def load_settings(**overrides: Any) -> Settings:
+    """装载配置；人工授权参数缺失时明确报错并指出环境变量名。"""
+    try:
+        return Settings(**overrides)
+    except ValidationError as exc:
+        bad = {e["loc"][0] for e in exc.errors() if e.get("loc")}
+        missing = [
+            f"{PARAM_PROVENANCE[name]['env']}（{name}）"
+            for name in PARAM_PROVENANCE
+            if name in bad
+        ]
+        if missing:
+            raise MissingAuthorizedParamError(
+                "会话参数缺失：" + "、".join(missing) + "\n"
+                "这些数值计划书未定义，现由人工授权取值（授权日期 2026-10-16）。\n"
+                "取值、理由与计划书原文见 app/core/config.py 的 PARAM_PROVENANCE；\n"
+                "请写入 .env（可参照 .env.example），或按实际情况调整后再写入。"
+            ) from exc
+        raise
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return load_settings()

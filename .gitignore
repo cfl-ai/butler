@@ -1,0 +1,38 @@
+data/
+.tmp/
+.pip-cache/
+# E-03：受限沙箱下 tempfile.mkdtemp 生成的目录无法删除（详见 MEMORY.md）
+pytest-cache-files-*/
+_acl_probe_mkdtemp*/
+tmp*/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.idea/
+*.log
+.test-work/
+.smoke-work/
+.pytest_tmp/
+.env
+.env.dev
+.env.test
+.env.staging
+.env.prod
+!.env.example
+
+# 本地模型权重（约 1.2 GB，按 scripts/download_models.py 获取）
+models/
+
+# CI 流水线产物（ci.yml「评测数据导出」步骤生成，含本次运行评测数据）
+eval-export.json
+
+# 端侧构建产物。mobile/build 由 mobile/.gitignore 的 /build/ 覆盖，
+# 此处再兜一层，防止将来把 mobile 挪位置后规则失效。
+mobile/build/
+mobile/.dart_tool/
+mobile/android/.gradle/
+mobile/android/build/

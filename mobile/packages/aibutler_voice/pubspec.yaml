@@ -1,0 +1,19 @@
+name: aibutler_voice
+description: P7 端侧语音引擎绑定（sherpa-onnx），可桌面真实推理验证
+publish_to: 'none'
+version: 0.1.0
+
+# 裁定 U06/U20/U21/U22：唤醒 / 流式 ASR / VAD / TTS 全部走 sherpa-onnx 同一套依赖。
+# 单独成包是为了让引擎绑定**能在桌面上跑真实推理做验证**——手机上不能只靠「看起来对」。
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  ffi: ^2.1.0
+  sherpa_onnx: ^1.13.8
+  aibutler_core:
+    path: ../aibutler_core
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^4.0.0

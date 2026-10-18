@@ -1,0 +1,19 @@
+# AI 管家 Agent 生态体系 —— 真实模型推理依赖（可选）
+#
+# 计划书依据：三、P2「统一切片规则、Embedding 入库规则」+ 裁定 U10（人工授权）
+#   Embedding：BAAI/bge-small-zh-v1.5
+#   Rerank   ：BAAI/bge-reranker-base
+#
+# 为什么与 requirements.txt 分开：
+#   torch 系依赖约 2GB，CI 与纯单元测试完全用不到（测试用确定性的 HashingEmbedder /
+#   HeuristicReranker 替身）。因此这些包只在 live 测试与生产环境安装。
+#
+# 模型权重不在 PyPI 上，须另行获取：
+#   .venv\Scripts\python.exe scripts\download_models.py
+#
+# CPU 版 torch 安装（默认源即可；如需显式指定）：
+#   pip install -r requirements-ml.txt --extra-index-url https://download.pytorch.org/whl/cpu
+
+sentence-transformers>=3.0
+torch>=2.2
+transformers>=4.40

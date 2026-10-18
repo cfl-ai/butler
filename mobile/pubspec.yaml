@@ -1,0 +1,44 @@
+name: aibutler_mobile
+description: AI 管家 Agent 生态体系 —— P7 语音交互移动端（纯客户端，全部智能运算在云端）
+publish_to: "none"
+version: 0.1.0+1
+
+# 计划书依据：三、P7「搭建独立手机 App 底层框架（纯客户端、非网页）」
+# 端云分层（一、项目概述）：移动端仅感知 + 交互；意图识别、调度、质检、结算全部在云端。
+#
+# 分层：
+#   aibutler_core  —— 纯 Dart 业务规则（零原生依赖，dart test 可验）
+#   aibutler_voice —— 端侧语音引擎绑定（sherpa-onnx，可在桌面跑真实推理验证）
+#   本包           —— Flutter 外壳：UI + 平台适配器 + 装配
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  aibutler_core:
+    path: packages/aibutler_core
+  aibutler_voice:
+    path: packages/aibutler_voice
+  flutter_secure_storage: ^11.2.0
+  geolocator: ^14.1.0
+  # 麦克风收音（P7「双输入」里的语音那一路）。
+  # sherpa_onnx 的 Dart 包只有推理与 wav 读写，**不带录音**，所以必须单独引。
+  record: ^7.1.2
+  # 把随包的唤醒词模型释放到可写目录：sherpa-onnx 需要文件路径，
+  # 而 assets 在 APK 里是压缩资源，不能直接当路径用。
+  path_provider: ^2.1.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  # 端侧唤醒词模型（裁定 U06：sherpa-onnx KWS + wenetspeech ZipFormer int8，共 4.82MB）。
+  # **随包下发**，这样真机断网也能唤醒 —— 否则「离线唤醒」四个字不成立。
+  # keywords.txt 只放本项目登记的唤醒词；模型仓自带的那份含第三方商标，不下发。
+  assets:
+    - assets/models/kws/

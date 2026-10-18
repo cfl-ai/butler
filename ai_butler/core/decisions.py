@@ -1,0 +1,606 @@
+"""未定义项裁定台账。
+
+计划书依据
+----------
+- 三、P0-1「输出统一架构规范文档，全项目强制执行」——本台账是该规范文档
+  「未定义项处理」章节的唯一数据来源。
+- Skill-05：计划书未定义的字段、逻辑、实现方式，AI 不得自行填补空白。
+
+两条合法的裁定路径（缺一不可登记）
+--------------------------------
+1. **人工授权** —— 用户直接给出取值，或明确授权按工程经验取值；
+2. **开源借鉴** —— 用户指示「所有未定义项可直接检索 GitHub 中开源项目数据进行借鉴」，
+   据此检索开源成熟实践并采用，逐项登记出处、License 与代码复用边界；
+3. **文档推导** —— 计划书未点名该处，但其**自身已有的定义**可以唯一确定答案
+   （例如 P1 已定义「公共域/私有域」的划分口径，据此可判定未被点名的表的归属）。
+   此类必须写明推导所依据的原文片段，**不得用它掩盖真正的自由裁量**。
+
+License 合规
+-----------
+code_reuse 字段区分两种边界：
+  - "allowed"     —— 许可宽松（MIT / Apache-2.0 / BSD / CC-BY），可按许可条件复用代码与数据；
+  - "design_only" —— 许可有传染性或未声明（AGPL / GPL / 无 LICENSE），**只借鉴设计，不得复制代码或数据**。
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+RESOLVED = "resolved"
+PENDING = "pending"
+
+
+@dataclass(frozen=True)
+class Decision:
+    key: str
+    title: str
+    phase: str                     # 计划书阶段：P0-1 / P2 / P3 / P7 / P8 / P10
+    plan_quote: str                # 计划书原文片段（说明此处未定义）
+    status: str
+    source: str                    # 人工授权 / 开源借鉴 / 实现参数
+    resolution: str
+    decided_at: str
+    references: tuple[str, ...] = ()
+    license_note: str = ""          # **已采用来源**的许可
+    excluded_note: str = ""         # **已排除备选**的许可警告（不影响本项的可复用性判定）
+    # "allowed"（可复用代码/数据）/ "design_only"（只借设计）/ "n/a"（人工授权或实现参数，无外部来源）
+    code_reuse: str = "n/a"
+
+
+_D = "2026-10-16"
+
+DECISIONS: tuple[Decision, ...] = (
+    Decision(
+        key="U01", title="意图标签枚举清单", phase="P3",
+        plan_quote="「Jev System-One 高速结构化决策层：输出主意图、候选意图列表、是否多意图冲突、"
+                   "置信概率」（三、P3）；「仅输出结构化枚举标签 + 置信概率」（一、项目概述）",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="采用 home-assistant/intents 的 domain → intent → slot → slot_combinations 分层结构"
+                   "与命名；中文句式按自家业务重写；降级路径复用其 no_intent 文案位。不自行发明标签体系。",
+        references=("https://github.com/home-assistant/intents",),
+        license_note="CC-BY-4.0（LICENSE.md 已核）；已含 zh-CN 官方句式", code_reuse="allowed",
+    ),
+    Decision(
+        key="U02", title="Jev 决策模型本体形态", phase="P3",
+        plan_quote="「Jev 决策模型接入网关」「集成 LLM 推理层」（三、P0-1）；"
+                   "未说明 Jev 是微调小模型还是受限大模型",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="走「受限小模型」路线：Qwen2.5-0.5B/1.5B 为基座，输出用 JSON Schema 硬约束"
+                   "（本机 Ollama format，或 outlines / xgrammar）。不采用「受限大模型」。",
+        references=("https://github.com/QwenLM/Qwen2.5", "https://github.com/dottxt-ai/outlines",
+                    "https://github.com/mlc-ai/xgrammar", "https://github.com/ollama/ollama"),
+        license_note="Qwen2.5 Apache-2.0；outlines / xgrammar Apache-2.0；Ollama MIT",
+        code_reuse="allowed",
+    ),
+    Decision(
+        key="U03", title="第四层「垂类专用决策模型」", phase="P3",
+        plan_quote="五层路由第 4 层「垂类专用决策模型」（三、P3）——未说明模型形态与训练方式",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="照 RouteLLM 的 bert router 形态：中文基座小分类器 + 阈值路由。"
+                   "阈值必须在自建中文验证集上重新标定，不得沿用英文默认值。",
+        references=("https://github.com/lm-sys/RouteLLM",),
+        license_note="Apache-2.0", code_reuse="allowed",
+    ),
+    Decision(
+        key="U04", title="关系型数据库选型", phase="P0-1",
+        plan_quote="「搭建数据库抽象层：统一连接池、事务、读写分离、加密存储」（三、P0-1）——未点名产品",
+        status=RESOLVED, source="人工授权", decided_at=_D,
+        resolution="PostgreSQL 16 + pgvector，沿用 job-agent 已验证的部署路径。",
+    ),
+    Decision(
+        key="U07", title="三档预算的金额阈值", phase="P8",
+        plan_quote="「低/中/高预算」只有语义描述（三、P8），未给出「小额」「大额」的分界数值",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="中预算默认「单笔 ≤1000 元免密 + 单卡单日累计 ≤3000 元封顶」，锚定银联/建行现网惯例；"
+                   "低预算阈值 = 0（逐笔人工确认）；高预算不设固定金额，改用月度预算剩余比例。"
+                   "阈值引擎采用 Actual Budget 的「条件 → 动作」规则模型（amount / payee / date）。",
+        references=("https://accounts2.ccb.com/chn/2025-02/24/article_2025022414432570876.shtml",
+                    "https://actualbudget.org/docs/budgeting/rules/"),
+        license_note="建行公告为公开规范；Actual Budget MIT",
+        excluded_note="Firefly III 为 AGPL-3.0-or-later —— 只读其数据模型，不抄代码",
+        code_reuse="allowed",
+    ),
+    Decision(
+        key="U11", title="CI 平台选型", phase="P0-2",
+        plan_quote="「制定 Git 分支规范、CI 自动构建、自动部署流水线」（三、P0-2）——未指定平台",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="首选 Gitea + act_runner：MIT、官方提供 Windows runner 二进制、界面中文、"
+                   "Docker 与 host 双执行模式。备选阿里云效 Flow 私有构建集群（官方支持 Windows）。"
+                   "排除：GitHub Actions（github.com 实测不可达）、Jenkins（本机无 JDK）、"
+                   "Gitee Go（Windows 构建环境无官方文档）。",
+        references=("https://docs.gitea.com/usage/actions/act-runner",
+                    "https://help.aliyun.com/zh/yunxiao/user-guide/build-a-cluster"),
+        license_note="Gitea MIT；阿里云效为商业 SaaS", code_reuse="allowed",
+    ),
+    Decision(
+        key="U12", title="会话有效期与空闲阈值", phase="P0-1",
+        plan_quote="「设置会话有效期，长时间无交互会话自动失效」（三、P0-1）——未给出任何数值",
+        status=RESOLVED, source="人工授权", decided_at=_D,
+        resolution="空闲 7200s（2 小时）失效；凭证有效期 43200s（12 小时）；刷新余量 1800s。"
+                   "不变式：空闲阈值 < 凭证有效期。已登记于 config.PARAM_PROVENANCE。",
+    ),
+    Decision(
+        key="U13", title="加盐哈希算法与代价因子", phase="P0-1",
+        plan_quote="「用户账号密码加盐哈希存储，数据库不保存明文密码」（三、P0-1）——未指定算法",
+        status=RESOLVED, source="实现参数", decided_at=_D,
+        resolution="bcrypt，cost=12；口令先做 SHA-256 预哈希以支持任意长度输入。",
+    ),
+    Decision(
+        key="U08", title="Harness 与 Claude Code 的边界", phase="P10",
+        plan_quote="「基于 Claude Code 工业级软件工程智能体循环」与「Harness Runtime 调度」并列，关系未定义",
+        status=RESOLVED, source="人工授权", decided_at=_D,
+        resolution="不引入 Claude Code 本体；仅借用其设计思维、代码与循环逻辑，自研 Agentic Loop，"
+                   "架构范式对齐四阶循环 + MCP + Hook + 沙箱 + 持久记忆。",
+    ),
+    Decision(
+        key="U09", title="阿里云 ECS 实例", phase="P0-1",
+        plan_quote="「部署阿里云 ECS 云原生容器环境」（三、P0-1）——规格、地域、凭据未定义",
+        status=RESOLVED, source="人工授权", decided_at=_D,
+        resolution="P0 阶段先纯本地（本机 PostgreSQL + Redis + Ollama + DeepSeek 全链路已验证），"
+                   "ECS 待底座完成后再接。",
+    ),
+    Decision(
+        key="U10", title="Embedding / Rerank 模型选型", phase="P2",
+        plan_quote="「统一切片规则、Embedding 入库规则」「Rerank 三重混合检索」（三、P2）——未指定模型",
+        status=RESOLVED, source="人工授权", decided_at=_D,
+        resolution="Embedding 用 bge-small-zh-v1.5（512 维）；Rerank 用 bge-reranker-base。"
+                   "本机 torch 为 CPU 版，嵌入在 CPU 推理。",
+    ),
+    Decision(
+        key="U14", title="多意图澄清的结构化契约", phase="P3",
+        plan_quote="「多意图冲突禁止系统自动选优先级，必须向用户确认」（八、multi_intent_auto_resolve=False）"
+                   "——未定义模型侧如何表达「必须澄清」",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="借 CLAMBER 的字段设计：require_clarification(0/1) + clarifying_question + category，"
+                   "把「禁止自动选优先级」编码成模型必出字段，而非靠后置规则判断。",
+        references=("https://github.com/zt991211/CLAMBER",),
+        license_note="**仓库无 LICENSE 文件（未声明）**——仅借鉴字段设计与分类法，不得分发其数据，商用前须联系作者",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U15", title="Jev 置信概率的来源", phase="P3",
+        plan_quote="「返回决策标签 + 置信概率」，阈值 jev_confidence_threshold = 0.82（三、P0-1 / 八）"
+                   "——未定义置信度如何得到",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="置信概率**不得**取自约束解码的 token 概率：约束解码会 mask 掉非法 token，"
+                   "概率分布被扭曲，不能作校准后的 0.82 判定依据。拆成两件事——"
+                   "约束解码只保证输出格式合法；置信度由独立分类头 / 校准集（温度缩放）产出。"
+                   "并借 CLINC150 的 out-of-scope 类实现「拒识 → 降级」。",
+        references=("https://github.com/clinc/oos-eval",),
+        license_note="CC BY 3.0", code_reuse="allowed",
+    ),
+    Decision(
+        key="U16", title="Contradiction 矛盾建模语义", phase="P0-1",
+        plan_quote="本体包含「矛盾 Contradiction」「矛盾检测」（一、三、P1）——未定义矛盾的存储语义",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="采用 Graphiti 的 fact-invalidation 语义：不删除旧声明，给旧关系写 invalid_at，"
+                   "新增 contradicts 关系，保留完整时间线。",
+        references=("https://help.getzep.com/graphiti/graphiti/overview",),
+        license_note="Apache-2.0", code_reuse="allowed",
+    ),
+    Decision(
+        key="U17", title="claims.jsonl / pages.json 字段约定", phase="P0-1",
+        plan_quote="「同时支持人类可读 Markdown 页面 + 机器编译缓存"
+                   "（agent-digest.json / claims.jsonl / pages.json）」（一、项目概述）——未定义字段",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="以 Microsoft GraphRAG 的 covariates(claim) 字段为起点：claim_id、claim_type、"
+                   "description、subject_id、object_id、status(TRUE|FALSE|SUSPECTED)、"
+                   "valid_from / valid_to(ISO8601)、evidence.source_text、evidence.text_unit_id、source_url。",
+        references=("https://microsoft.github.io/graphrag/index/outputs/",),
+        license_note="MIT", code_reuse="allowed",
+    ),
+    Decision(
+        key="U18", title="Markdown → 机器缓存的编译流水线", phase="P0-1",
+        plan_quote="「提供编译流水线，输入 Markdown 页面输出机器可读缓存，"
+                   "自动检测声明、证据、矛盾、过期素材」（三、P0-1）",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="结构范式参考 Basic Memory：YAML frontmatter + 固定小节（Observations / Relations）"
+                   "+ 本地索引 + 模式文件；实现自研，或参考 Apache-2.0 的 cognee。",
+        references=("https://docs.basicmemory.com/raw/concepts/knowledge-format.md",
+                    "https://docs.cognee.ai/llms-core.md"),
+        license_note="Basic Memory **AGPL-3.0-or-later 只借鉴设计**；cognee Apache-2.0 可复用",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U19", title="Workspace / Vault 双库的实现方式", phase="P0-1",
+        plan_quote="「区分公共 Workspace（全用户共享公开知识）与用户私有 Vault（绑定 user_id）」（一）"
+                   "——未定义二者是两套结构还是同一套结构加隔离",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="参考 cognee 的 NodeSet 分组：公共库与私有库共用同一套 schema，靠分组 + user_id 隔离，"
+                   "不建两套结构，避免 schema 漂移。",
+        references=("https://docs.cognee.ai/llms-core.md",),
+        license_note="Apache-2.0", code_reuse="allowed",
+    ),
+    Decision(
+        key="U26", title="P3 意图路由究竟几层（计划书内部表述不一致）", phase="P3",
+        plan_quote="同一节里两处说法不同——核心能力写「实现升级后的**四层**意图路由」，"
+                   "紧随其后的表注却写「升级后**五层**路由链路（由简单到复杂）1）…5）」"
+                   "并逐条列出五层；【八】亦以「五层路由」冻结。",
+        status=RESOLVED, source="文档推导", decided_at=_D,
+        resolution="按计划书三、P3 的**表注列出的五层**为准：同节表格是逐条枚举的明细，"
+                   "比核心能力里一句概括性表述更具体，且与计划书【八】「五层路由冻结」自洽。"
+                   "原文核心能力行里的「四层」应视为笔误。实现即 router.LAYERS 五层，"
+                   "已由 test_five_layers_order_is_frozen 锁定顺序。"
+                   "若人工另有要求（确为四层），需先改计划书【八】的冻结参数，属高危变更。",
+    ),
+    Decision(
+        key="U27", title="P4 子 Agent 名册的阶段归属（此前的实现错位）", phase="P4",
+        plan_quote="三、P4「包含子 Agent：**设备感知、天气感知、时间进度、增量抽取、"
+                   "路线方案、备选预案、代码迭代 Agent**」；"
+                   "三、P5 才是「动态事件运营 Agent」、三、P6 才是「内容质检 Agent」。",
+        status=RESOLVED, source="文档推导", decided_at=_D,
+        resolution="按计划书原文更正阶段归属：此前把「规划 Agent」「质检 Agent」当作 P4 交付"
+                   "是**错的**——计划书三、P5 才是动态事件运营 Agent（方案生成引擎），"
+                   "三、P6 才是内容质检 Agent。计划书三、P4 真正要求的是 7 个感知与基础执行 Agent，"
+                   "本阶段尚未实现。已实现的 registry/capabilities/facts/triggers 四件套"
+                   "对应计划书三、P4「开发规范」部分，定位正确、予以保留；"
+                   "planner/qa 两个 Agent 保留实现，但改标为 P5/P6 交付物，"
+                   "待相应阶段按原文补齐其完整开发步骤。",
+    ),
+    Decision(
+        key="U25", title="多意图澄清话术的来源（U14 与计划书的效力冲突）", phase="P3",
+        plan_quote="计划书三处写明 Jev 不得输出自由文本："
+                   "一、项目概述「Jev 仅输出结构化枚举标签 + 置信概率，不输出自由文本」；"
+                   "三、P3「Jev 仅输出结构化枚举，不输出自由文本」；"
+                   "Skill-01 同款硬限制。"
+                   "而 U14 借鉴 CLAMBER 时引入的 clarifying_question 属于自由文本。",
+        # 由效力顺序（计划书 ＞ Skills 集合 ＞ 统一架构规范文档 ＞ 台账裁定）唯一确定
+        status=RESOLVED, source="文档推导", decided_at=_D,
+        resolution="按效力顺序，**计划书胜出**：Jev 只输出 require_clarification(0/1)、"
+                   "clarification_category(枚举)、candidate_labels(枚举列表)，"
+                   "**不输出任何询问语句**；澄清话术由路由层用枚举键模板渲染。"
+                   "这样既保留 U14 的结构化「必须澄清」契约，又不违反计划书的禁自由文本。"
+                   "U14 的其余部分（把禁止自动选优先级编码为模型必出字段）继续有效。",
+    ),
+    Decision(
+        key="U24", title="知识图谱库的域归属（公共 / 私有）", phase="P1",
+        plan_quote="P1 点名的四大核心数据表中，「素材溯源库属于 Agent-Wiki 公共 Workspace 无用户 ID；"
+                   "用户画像、设备状态、私有 Wiki Vault 必须绑定 user_id」——"
+                   "**知识图谱库未被列入任一侧**",
+        # 来源为「文档推导」而非「人工授权」：答案由计划书自身的域定义唯一确定，
+        # 不涉及自由裁量，也不应冒充人工裁定。
+        status=RESOLVED, source="文档推导", decided_at=_D,
+        resolution="按计划书「公共域：景点、天气、公开资讯，全账号可读；私有域：用户偏好、对话、消费、"
+                   "设备信息、私有 Vault，严格归属 user_id」的域定义，判定知识图谱库**双域共存**："
+                   "user_id 为 NULL 即公共域（景点/天气/公开资讯实体），非空即私有域（用户偏好实体）。"
+                   "隔离语义：绑定账号时可见「公共域 OR 本人私有域」；未绑定账号时**只可见公共域**。"
+                   "已落为 core/db.py 的 DomainScoped 并有独立用例。"
+                   "备选读法（若人工另有要求）：知识图谱库整体归公共域——改继承 Base 即可，"
+                   "但会丢失「用户偏好实体」的私有归属。",
+    ),
+    Decision(
+        key="U05", title="移动端技术栈", phase="P7",
+        plan_quote="「搭建独立手机 App 底层框架（纯客户端、非网页）」（三、P7）——未指定平台与框架",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="Flutter。唯一同时具备四项开源证据的栈：中文语音客户端先例（xiaozhi-flutter-client）、"
+                   "端侧语音全套插件 sherpa_onnx、凭证加密存储 flutter_secure_storage、流式文本渲染。"
+                   "排除 React Native（端侧 ASR/TTS 无同等成熟绑定）、KMP 与 uni-app"
+                   "（均无「后台常驻唤醒 + 端侧 ASR/TTS」成熟先例；uni-app 走 WebView 音频通路，"
+                   "后台常驻不可行）。原生 Kotlin 作为备选（rhasspy_mobile 先例）。",
+        references=("https://github.com/xfzen/xiaozhi-flutter-client",
+                    "https://pub.dev/packages/sherpa_onnx",
+                    "https://github.com/mogol/flutter_secure_storage",
+                    "https://github.com/Nailik/rhasspy_mobile"),
+        license_note="xiaozhi-flutter-client / sherpa_onnx Apache-2.0；"
+                     "flutter_secure_storage BSD-3-Clause；rhasspy_mobile MIT（备选）",
+        code_reuse="allowed",
+    ),
+    Decision(
+        key="U06", title="离线语音唤醒引擎", phase="P7",
+        plan_quote="「集成后台常驻离线语音唤醒」「开发 VAD 人声检测、实时收音、随时打断机制」（三、P7）"
+                   "——未定义引擎与模型",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="sherpa-onnx KWS + wenetspeech ZipFormer（int8 全套约 4.9MB）。"
+                   "自定义唤醒词只需在 keywords.txt 追加拼音 token 行（「你好管家」→ n ǐ h ǎo g u ǎn j i ā），"
+                   "且与 ASR / TTS / VAD 同栈，端云链路只需一套依赖。",
+        references=("https://github.com/k2-fsa/sherpa-onnx",
+                    "https://www.modelscope.cn/models/pkufool/sherpa-onnx-kws-zipformer-wenetspeech-3.3M-2024-01-01"),
+        license_note="sherpa-onnx 及其 KWS 模型卡均为 Apache-2.0；模型卡与仓库 LICENSE 须一并归档留证",
+        excluded_note="snowboy 停更且商用需另议、Python 3.12 无法编译；"
+                      "Porcupine 模型来自 Picovoice Console 商用额度需自行核对；"
+                      "openWakeWord 预训练无中文，中文需自备合成语料自训",
+        code_reuse="allowed",
+    ),
+    Decision(
+        key="U20", title="流式 ASR 选型", phase="P7",
+        plan_quote="「离线语音唤醒、实时收音打断、流式文字渲染」（一、端云分层规范、三、P7）——未指定 ASR",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="统一用 sherpa-onnx 流式 ZipFormer（中英双语，提供 Dart/Java/Kotlin/Swift/Python 绑定），"
+                   "与唤醒词同栈。FunASR paraformer-zh-streaming 作为服务端 2pass 纠错备选。",
+        references=("https://github.com/k2-fsa/sherpa-onnx", "https://github.com/modelscope/FunASR"),
+        license_note="sherpa-onnx Apache-2.0（代码与模型一致）",
+        excluded_note="FunASR 仓库 MIT 但模型卡为 FunASR Model License（other）——**仓库许可 ≠ 模型可用**，"
+                      "商用前须读条款；SenseVoiceSmall 同为 other",
+        code_reuse="allowed",
+    ),
+    Decision(
+        key="U21", title="TTS 与「逐字渲染 + 同步播报」链路", phase="P7",
+        plan_quote="「对接云端流式接口：逐字文字渲染 + 同步 TTS 播报」（三、P7）——未指定 TTS",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="云端 CosyVoice2（流式 TTS、低首包延迟）为主，端侧 sherpa-onnx VITS 兜底。"
+                   "同步播报按句切分下发、客户端边收边播，才能实现「逐字渲染 + 同步 TTS」。",
+        references=("https://github.com/FunAudioLLM/CosyVoice", "https://github.com/k2-fsa/sherpa-onnx",
+                    "https://github.com/rany2/edge-tts"),
+        license_note="CosyVoice Apache-2.0；sherpa-onnx VITS Apache-2.0",
+        excluded_note="edge-tts 为混合许可（仅 srt_composer.py 是 MIT，其余 LGPLv3），"
+                      "且本质调用微软 Edge 在线服务，许可与 ToS 双重风险 —— 不采用；"
+                      "pyttsx3 仅开发期调试用",
+        code_reuse="allowed",
+    ),
+    Decision(
+        key="U22", title="VAD 人声检测选型", phase="P7",
+        plan_quote="「开发 VAD 人声检测、实时收音、随时打断机制」（三、P7）——未指定实现",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="silero-vad（ONNX 可端侧，已被 sherpa-onnx 内置集成）；"
+                   "webrtcvad 作为极轻量打断判定备选。",
+        references=("https://github.com/snakers4/silero-vad", "https://github.com/wiseman/py-webrtcvad"),
+        license_note="silero-vad MIT（其徽章图仍写 CC BY-NC 4.0，属历史遗留，以 LICENSE 原文为准）；"
+                     "webrtcvad MIT",
+        code_reuse="allowed",
+    ),
+    Decision(
+        key="U23", title="【需求与平台冲突】iOS 无法后台常驻唤醒 — 已按平台分档", phase="P7",
+        plan_quote="「集成后台常驻离线语音唤醒」（三、P7）——计划书**未按平台分档**",
+        status=RESOLVED, source="人工授权", decided_at=_D,
+        resolution="裁定：**仅 Android 承载后台唤醒，iOS 降级为前台唤醒**（两平台功能分档）。"
+                   "Android 侧「后台常驻唤醒」仍须先做真机可行性验证"
+                   "（Android 14 起麦克风类型前台服务启动受限、国内 ROM 后台清理策略），"
+                   "再定权限与 UI 方案；iOS 只做前台唤醒。"
+                   "该分档是对计划书 P7 原文的范围补充，由人工裁定，非 AI 自行决定。",
+        references=("https://github.com/xfzen/xiaozhi-flutter-client",),
+        code_reuse="n/a",
+    ),
+    # ---------------------------- P9 ---------------------------- #
+    Decision(
+        key="U28", title="增量微调框架与参数高效方式", phase="P9",
+        plan_quote="「周期性增量微调流水线；支持微调 Jev 决策 Question 模板与垂类模型」（三、P9）"
+                   "——未指定框架与微调方式",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="微调编排用 LLaMA-Factory；参数高效方式用 **LoRA**，显存不足时退到 4bit **QLoRA**；"
+                   "底层张量适配库为 HuggingFace PEFT。"
+                   "**训练作业本身不进 CI**：本机为 CPU 推理环境，无 GPU；"
+                   "CI 只验证「数据集构建 → 配置生成 → 流水线编排」这段可确定的部分。",
+        references=("https://pypi.org/project/llamafactory/",
+                    "https://llamafactory.readthedocs.io/zh-cn/latest/getting_started/data_preparation.html",
+                    "https://pypi.org/project/peft/"),
+        license_note="LLaMA-Factory Apache-2.0；PEFT Apache-2.0",
+        excluded_note="**github.com 与 raw.githubusercontent.com 在本机实测不可达**（ConnectTimeout），"
+                      "故取证改用 PyPI 与官方 readthedocs —— 与 U11 对 github.com 的实测结论一致；"
+                      "GitHub 仓库地址仅作为上游 canonical 记录，未在本机直接验证",
+        code_reuse="allowed",
+    ),
+    Decision(
+        key="U29", title="领域 SFT 数据集格式", phase="P9",
+        plan_quote="「领域 SFT 数据集构建；剥离用户身份隐私；禁止把私有 Vault 原始隐私放入训练集；"
+                   "公共 Workspace 知识库可用于训练」（三、P9）——未指定数据集格式",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="采用 LLaMA-Factory 的 **Alpaca 指令监督微调格式**："
+                   "`instruction`（人类指令）/ `input`（人类输入，选填）/ "
+                   "`output`（模型回答）/ `system`（系统提示词，选填）/ "
+                   "`history`（多轮，选填）；"
+                   "并在 `dataset_info.json` 里用 `columns` 做列名映射。",
+        references=("https://llamafactory.readthedocs.io/zh-cn/latest/getting_started/data_preparation.html",),
+        license_note="数据格式本身无许可约束；LLaMA-Factory Apache-2.0",
+        code_reuse="allowed",
+    ),
+    Decision(
+        key="U30", title="隐私脱敏实现", phase="P9",
+        plan_quote="「原始用户隐私数据脱敏，禁止展示明文用户信息」「日志自动沉淀…隐私脱敏」"
+                   "「剥离用户身份隐私」（三、P9）——未指定脱敏实现",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="Microsoft Presidio（analyzer + anonymizer）为主；"
+                   "中文场景补充 cn-pii-anonymization，并保留一层自研正则（手机号 / 身份证 / 邮箱 / "
+                   "账号标识 user-*）作为**确定性兜底** —— 中文姓名与地址的模型召回不稳，"
+                   "纯模型方案会漏。",
+        references=("https://pypi.org/project/presidio-analyzer/",
+                    "https://pypi.org/project/presidio-anonymizer/",
+                    "https://pypi.org/project/cn-pii-anonymization/"),
+        license_note="Presidio MIT；cn-pii-anonymization 许可待逐项核对（引入前必须复核）",
+        excluded_note="纯正则方案对中文姓名/地址召回不足，只作兜底不作主路径",
+        code_reuse="allowed",
+    ),
+    Decision(
+        key="U31", title="指标看板实现", phase="P9",
+        plan_quote="「全维度指标监控看板搭建」（三、P9）——未指定看板技术",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="指标**由本项目 P9 模块计算**并以只读接口暴露（指标口径是资产，必须先固化）；"
+                   "可视化层自托管 Metabase 消费该接口。Grafana 作为时序监控备选。",
+        references=("https://www.metabase.com/", "https://grafana.com/"),
+        license_note="Metabase 开源版 **AGPL-3.0**；Grafana **AGPL-3.0**",
+        excluded_note="AGPL 属强著佐权：**仅内部自托管使用**；若将来对外分发或改造后再分发，"
+                      "须重新评估许可义务。因此本项目只依赖自己算出的指标口径，不把看板代码并入产品",
+        code_reuse="design_only",
+    ),
+    # ---------------------------- P10 ---------------------------- #
+    Decision(
+        key="U32", title="Agentic Loop 迭代上限与终止条件", phase="P10",
+        plan_quote="「实现完整 Claude Code 风格 Agentic Loop 主循环」（三、P10）——"
+                   "未定义循环多少轮、何时停",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="借鉴 OpenHands 把 **max iteration 显式化**的做法（并让模型知道上限）："
+                   "本项目 `max_iterations = 8`；**连续 2 轮无实质进展即提前终止**；"
+                   "到达上限仍未收敛则归档为「未收敛」并转人工，**不允许无限自转**。"
+                   "与业务链路的「全局最大回退 2 次」同属有界循环原则。",
+        references=("https://pypi.org/project/openhands-ai/",
+                    "https://pypi.org/project/swebench/"),
+        license_note="仅借鉴**设计思路**，不引入其代码；OpenHands MIT（备查）",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U33", title="Hook 风险分级档位与审批口径", phase="P10",
+        plan_quote="「所有生产变更风险分级，高危操作强制人工审批」+ 表 10「Hook 安全校验："
+                   "禁止移除 user_id 行级过滤与鉴权；禁止读取未脱敏私有 Vault；"
+                   "修改 Jev 模板、Wiki 公共知识库大规模变更强制人工审批」"
+                   "（三、P10）——表注给了三条红线，**未给出分级刻度**",
+        status=RESOLVED, source="文档推导", decided_at=_D,
+        resolution="依计划书表 10 的原文措辞，把三条红线落成三档："
+                   "`low`（普通缺陷修复、测试补充，自动放行）；"
+                   "`medium`（影响面较大的代码变更、知识库小范围维护，记录并复检）；"
+                   "`high`（**命中红线**：改动行级过滤/鉴权、读取未脱敏私有 Vault、"
+                   "修改 Jev 模板、公共知识库大规模变更）→ **强制人工审批，不得自动放行**。"
+                   "**原文并未给出分级刻度，三档刻度由本项推导而来**；"
+                   "**红线一律判 high，不设「紧急通道」**。",
+        references=(),
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U34", title="沙箱执行实现", phase="P10",
+        plan_quote="「对接 AI Infra 隔离沙箱，支持代码修改、命令执行、单元测试」（三、P10）"
+                   "——未指定沙箱形态",
+        status=RESOLVED, source="文档推导", decided_at=_D,
+        resolution="计划书原文只说「对接 AI Infra 隔离沙箱」，未给形态；据此推导：" 
+                   "沙箱**是 AI Infra 的能力**（P0-1 已定义 edge/internal/sandbox 三层网络），"
+                   "P10 只以**端口**对接，不自建隔离机制。"
+                   "本机验证用**进程级受限适配器**（白名单命令、超时、工作目录限定、"
+                   "禁止网络）；容器级强隔离属部署环境能力。"
+                   "**控制的是「谁来执行」，不是「假定安全」**——因此执行前仍必须过 Hook。",
+        references=(),
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U35", title="MCP 接入实现", phase="P10",
+        plan_quote="「基于 MCP+Skill 协议集成检索、Git、文件、终端工具」（三、P10）"
+                   "——未指定 MCP 实现",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="用官方 `mcp` Python SDK（其已在技术栈内）。"
+                   "工具以 **Skill 注册表**组织，每个 Skill 显式声明**作用域**；"
+                   "「Agent-Wiki 维护 Skill」**只允许公共 Workspace**，"
+                   "在注册层就拒绝任何带 user_id 的目标。",
+        references=("https://pypi.org/project/mcp/", "https://modelcontextprotocol.io/"),
+        license_note="mcp Python SDK MIT；协议规范由 modelcontextprotocol.io 公开发布",
+        excluded_note="`spec.modelcontextprotocol.io` 在本机**实测不可达**（ConnectError），"
+                      "故规范取证改用 modelcontextprotocol.io 主站",
+        code_reuse="allowed",
+    ),
+    Decision(
+        key="U36", title="上下文压缩与记忆摘要策略", phase="P10",
+        plan_quote="「开发上下文压缩机制，对接数据中台记忆摘要；**摘要脱敏，不带原始用户隐私**」"
+                   "（三、P10）——未指定压缩实现",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="压缩分两级：**结构化裁剪**（按相关性/新旧裁剪，默认生效）+ "
+                   "**模型摘要**（端口注入，LLMLingua 可作为实现之一）。"
+                   "**压缩不替代脱敏**：顺序固定为「先脱敏，再压缩」，"
+                   "且压完还要再验一次——压缩会把分散的片段聚到一起，"
+                   "原本单看不敏感的字段拼起来可能就构成身份。",
+        references=("https://pypi.org/project/llmlingua/",),
+        license_note="LLMLingua MIT（本机未安装；默认走结构化裁剪）",
+        code_reuse="design_only",
+    ),
+    # ------------------- 第二阶段｜旅游模块专项开发 ------------------- #
+    Decision(
+        key="U37", title="旅游实时数据源（天气 / 景区 / 交通）", phase="V1",
+        plan_quote="「公共数据：天气 API、景区公开信息、交通实时状态；统一清洗、来源标记、"
+                   "去重；输出转为 Agent-Wiki 公共 Workspace 的 source 源页面」（五、第二阶段）"
+                   "——**未指定任何具体数据源**",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="天气用**和风天气**（中文文档、国内直连；"
+                   "OpenWeatherMap 作为国际备用）；景区/POI 用 **OpenStreetMap Overpass API**"
+                   "（开放数据、可自建镜像）。二者都只出**公共** source 页面，"
+                   "经 P2 既有采集器统一清洗、来源标记、去重。",
+        references=("https://dev.qweather.com/", "https://overpass-api.de/"),
+        license_note="和风天气开发者服务有自己的服务条款（非开源许可，属**商业 API**）；"
+                     "OSM 数据 **ODbL**（需署名，衍生库同许可）",
+        excluded_note="`openweathermap.org` 在本机**实测 ConnectTimeout**，"
+                      "不作为主路径；高德/百度地图 API 属商业授权，未纳入",
+        code_reuse="allowed",
+    ),
+    Decision(
+        key="U38", title="行程编排与路线规划算法", phase="V1",
+        plan_quote="「生成初步路线；内置校验逻辑，检查路线时间冲突、距离不合理等问题」"
+                   "（五、第二阶段）——未指定规划算法",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="规模化路线优化以 **Google OR-Tools**（TSP/VRP）为目标算法；"
+                   "本项目**先实现不依赖外部求解器的贪心最近邻 + 显式校验**，"
+                   "把 OR-Tools 作为**端口注入**的升级路径。"
+                   "理由：求解器是可选增强，而「时间冲突 / 距离不合理」的校验是**必须始终生效**的底线。",
+        references=("https://pypi.org/project/ortools/", "https://pypi.org/project/networkx/"),
+        license_note="OR-Tools Apache-2.0；networkx BSD-3-Clause（本机均未安装）",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U39", title="垂类 Agent 通用脚手架形式", phase="V1",
+        plan_quote="「点餐、售后等其他垂类**直接复制本模块结构**，替换业务逻辑、工具集即可"
+                   "快速接入」「模块低耦合，代码结构标准化」（五、第二阶段）"
+                   "——未规定脚手架怎么抽",
+        status=RESOLVED, source="文档推导", decided_at=_D,
+        resolution="依原文「可复制、可替换」的要求推导：抽出一个 **VerticalAgent 基类**，"
+                   "把旅行/点餐/售后**共有且不可省略**的四件事固化下来——"
+                   "① 职责边界（✅必做 / ❌必回退）② 回退规则（仅超域可退，域内禁止退）"
+                   "③ 参数解析与缺失询问 ④ 结果归档到私有 Vault。"
+                   "各垂类只填业务逻辑与工具集。",
+        references=(),
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U40", title="行程重规划触发条件", phase="V1",
+        plan_quote="「持续监听天气、交通、景区状态变化；**Jev 高速决策判断是否达到重规划条件**；"
+                   "判定为 true 才触发重新调整行程」（五、第二阶段）"
+                   "——原文给了三类事件，**未给出判定条件**",
+        status=RESOLVED, source="文档推导", decided_at=_D,
+        resolution="依原文点名的三类事件（天气变化、交通延误、景区临时闭园）推导出"
+                   "**确定性前置条件**，再由 Jev 做最终判定："
+                   "① 景区闭园 → 必然触发；② 天气达到影响出行的等级 → 触发；"
+                   "③ 交通延误超过行程时间余量 → 触发。"
+                   "**前置条件不成立时根本不调用大模型**——原文「条件成立才调用大模型重算路线」，"
+                   "前置判据省下的调用量正是这条设计的意义所在。",
+        references=(),
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U42", title="云端 HTTP 接口层与账号表形态", phase="P7",
+        plan_quote="三、P7 步骤5「对接云端流式接口…请求带上会话 Token」；"
+                   "步骤7「上报携带会话身份」——**计划书只描述了接口行为，"
+                   "未定义接口清单、路径、账号表结构**",
+        status=RESOLVED, source="文档推导", decided_at=_D,
+        resolution="从移动端 ApiClient 已有的三个路径反推接口清单（它是既成契约）："
+                   "POST /api/session/login、POST /api/chat/stream、POST /api/device/report。"
+                   "① /api/session/login 加入 PUBLIC_PATHS —— 登录本身不可能携带会话，"
+                   "是**唯一允许匿名的业务入口**；其余业务接口一律仍需合法会话（七、11）。"
+                   "② 账号表：计划书只要求「加盐哈希、不存明文」，未定义存储形态；"
+                   "当前实现为存储根下的 users.json，只存 bcrypt 哈希。"
+                   "③ 设备上报的 user_id **以会话为准**，请求体里冒充他人一律 403。"
+                   "④ **不做公开注册接口**：计划书 P7 只规定登录，未定义注册；"
+                   "匿名注册等于让人随意往系统塞账号，缺口不能顺手开。账号由 "
+                   "scripts/create_account.py 离线开户。"
+                   "⑤ **/api/chat/stream 尚未实现** —— 它要把 SceneScheduler.run() 接成 SSE，"
+                   "属未完成项，不得视为已交付。",
+        references=(), code_reuse="n/a",
+    ),
+    Decision(
+        key="U41", title="输入风控：虚假信息与编码混淆的处置口径", phase="P3",
+        plan_quote="用户指令（2026-10-18）：「做好风控（不能被用户以虚假信息或者 "
+                   "base 代码混淆）」——**计划书原文未定义这一项**，"
+                   "表 6 只规定了五层路由，未涉及输入侧风险筛查",
+        status=RESOLVED, source="开源借鉴", decided_at=_D,
+        resolution="① **不新增路由层**：五层链路已由【八】冻结，"
+                   "风控做成**前置闸门**（core/input_guard.py），判定三档 —— "
+                   "ALLOW / TAINT / BLOCK。"
+                   "② **编码混淆**：base64、十六进制、百分号、Unicode 转义逐层解码后**重新扫描**，"
+                   "深度上限 3 层；解出越权指令即 BLOCK，"
+                   "仅含编码而无越权指令则 TAINT（编码本身即可疑，不作为事实依据）。"
+                   "③ **虚假信息**：**不判真假，只判可信度** —— 未给可核验证据的"
+                   "「已确认 / 官方证实 / 绝对」等断言一律 TAINT，"
+                   "由 P6 质检与 Agent-Wiki 证据链决定能否入库；"
+                   "给出 URL / DOI / 文件等证据位的输入不受此标记。"
+                   "④ **判定真假不是程序该做的事**，本条只回答「能否作为事实依据」。",
+        references=("https://owasp.org/www-project-top-10-for-large-language-model-applications/",),
+        license_note="参照 OWASP LLM01 Prompt Injection / LLM09 Misinformation 的**风险分档思路**，"
+                     "不引入其代码；OWASP 材料 CC BY-SA 4.0（备查）",
+        code_reuse="design_only",
+    ),
+)
+
+
+def get(key: str) -> Decision:
+    for d in DECISIONS:
+        if d.key == key:
+            return d
+    raise KeyError(key)
+
+
+def resolved() -> tuple[Decision, ...]:
+    return tuple(d for d in DECISIONS if d.status == RESOLVED)
+
+
+def pending() -> tuple[Decision, ...]:
+    return tuple(d for d in DECISIONS if d.status == PENDING)

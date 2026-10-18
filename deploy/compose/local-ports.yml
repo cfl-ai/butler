@@ -1,0 +1,24 @@
+# 本地开发/测试叠加文件：把数据面端口发布到宿主，供宿主机上的 DSH 会话与应用访问。
+#
+# 计划书依据：三、P0-1 四环境隔离 —— 预发布与生产**不叠加**本文件，
+# 其数据面只在 internal 网络内可达，不暴露到宿主（见 environments.exposes_host_ports）。
+#
+# ⚠ 为什么不用 127.0.0.1 绑定（本机实测，见 MEMORY.md E-06）
+#   本机 Docker Desktop（WSL2 后端）**不代理绑定到 127.0.0.1 的容器端口**：
+#   容器 HostConfig.PortBindings 里能看到 127.0.0.1:5434，但宿主上没有任何监听，
+#   连接直接 REFUSED。改成 0.0.0.0 绑定后立即恢复（与 job-agent / datamind 一致）。
+#   风险控制：仅 dev / test 叠加本文件，且端口与数据目录按环境两两不相交。
+#
+# 用法：docker compose -f deploy/compose/base.yml -f deploy/compose/local-ports.yml \
+#                      --env-file .env.<环境> up -d
+
+services:
+  postgres:
+    ports:
+      - "${POSTGRES_PORT}:5432"
+  redis:
+    ports:
+      - "${REDIS_PORT}:6379"
+  api:
+    ports:
+      - "${API_PORT}:8000"

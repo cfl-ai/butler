@@ -1,0 +1,97 @@
+# AI 管家 Agent 生态体系 —— 四环境统一启动模板
+# 计划书依据：三、P0-1
+#   「搭建四环境隔离体系：开发、测试、预发布、生产完全独立隔离」
+#   「部署阿里云 ECS 云原生容器环境，统一 Dockerfile、资源限制、启动模板」
+#   「三层网络隔离：外网业务层、内网服务层、沙箱隔离层」
+#
+# 用法：docker compose -f deploy/compose/base.yml -f deploy/compose/local-ports.yml \
+#                      --env-file .env.<环境> up -d
+# 预发布与生产**不叠加** local-ports.yml，其数据面只在 internal 网络内可达。
+#
+# 四环境的端口 / 库名 / 数据目录 / 项目名 / 容器名前缀由各自 --env-file 提供，两两不相交；
+# 该口径由 ai_butler/core/environments.py 与 tests/test_environments.py 共同保证。
+
+name: ${COMPOSE_PROJECT_NAME}
+
+networks:
+  edge:
+    name: ${COMPOSE_PROJECT_NAME}-edge
+  internal:
+    name: ${COMPOSE_PROJECT_NAME}-internal
+    # 内网服务层：无外网出口。预发布/生产固定 true；
+    # 本地环境设为 false —— Docker 不会为「只挂 internal 网络」的容器完成端口转发
+    # （实测见 MEMORY.md E-07），而本地开发/测试需要宿主可达数据面。
+    internal: ${DATA_PLANE_INTERNAL:-true}
+  sandbox:
+    name: ${COMPOSE_PROJECT_NAME}-sandbox
+    internal: true          # 沙箱隔离层：离线进化链路执行环境
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE}
+    container_name: ${CONTAINER_PREFIX}-pg
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      TZ: Asia/Shanghai
+    volumes:
+      - ${DATA_ROOT}/pgdata:/var/lib/postgresql/data
+      - ./../postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks: [internal]          # 数据面只在内网服务层
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          cpus: "${PG_CPUS}"
+          memory: ${PG_MEMORY}
+    restart: unless-stopped
+
+  redis:
+    image: ${REDIS_IMAGE}
+    container_name: ${CONTAINER_PREFIX}-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ${DATA_ROOT}/redis:/data
+    networks: [internal]          # 数据面只在内网服务层
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    deploy:
+      resources:
+        limits:
+          cpus: "${REDIS_CPUS}"
+          memory: ${REDIS_MEMORY}
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./../..
+      dockerfile: deploy/Dockerfile
+    image: ${API_IMAGE}
+    container_name: ${CONTAINER_PREFIX}-api
+    environment:
+      AIBUTLER_ENV: /app/${ENV_FILE_NAME}
+    networks: [edge, internal]    # 业务入口对外，同时可访问数据面
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys;sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    deploy:
+      resources:
+        limits:
+          cpus: "${API_CPUS}"
+          memory: ${API_MEMORY}
+    restart: unless-stopped

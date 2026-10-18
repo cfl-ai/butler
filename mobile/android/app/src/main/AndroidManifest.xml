@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  P7 语音交互移动端的 Android 清单。
+
+  为什么这些权限必须显式声明（三、P7；裁定 U23）
+  （说明）
+  App 的 targetSdk 是 36（Android 16），因此 **Android 14+ 的规则全部适用**：
+  前台服务必须声明类型并持有对应权限，否则启动即抛异常。
+  模板生成的清单只带了 INTERNET —— 缺任何一条，语音功能在真机上都用不了。
+  这些是「能不能跑起来」的前提，不是可选项。
+
+  与真机验证的对应关系（U23 要求先做真机可行性验证）：
+    麦克风权限      -> RECORD_AUDIO
+    Android 14 前台服务限制 -> FOREGROUND_SERVICE + FOREGROUND_SERVICE_MICROPHONE
+    后台保活        -> FOREGROUND_SERVICE + WAKE_LOCK + POST_NOTIFICATIONS（13+ 需通知）
+    设备采集        -> ACCESS_FINE_LOCATION / ACCESS_COARSE_LOCATION
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- 云端交互 -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- 语音输入与离线唤醒 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+
+    <!-- 后台常驻唤醒：Android 14+ 必须声明前台服务类型权限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"/>
+    <!-- Android 13+ 前台服务需要可见通知 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- 后台保活 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+    <!-- 设备采集（三、P7 步骤7） -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+
+    <!-- 麦克风是**可选**硬件：没有麦克风的设备也应能装（只是语音不可用），
+         避免把可安装面收窄。 -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false"/>
+
+    <application
+        android:label="AI 管家"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <!-- 后台常驻唤醒服务（Android 14+ 必须声明 foregroundServiceType）。
+             实现见 WakeWordForegroundService.kt。 -->
+        <service
+            android:name=".WakeWordForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="microphone"/>
+
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>

@@ -1,0 +1,9 @@
+name: aibutler_core
+description: P7 移动端纯 Dart 核心（无 Flutter 依赖，可用 dart test 验证）
+publish_to: 'none'
+version: 0.1.0
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^4.0.0

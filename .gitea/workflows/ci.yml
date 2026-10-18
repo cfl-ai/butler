@@ -1,0 +1,163 @@
+# AI 管家 Agent 生态体系 —— CI 流水线
+# 计划书依据：三、P0-2
+#   「制定 Git 分支规范、CI 自动构建、自动部署流水线」
+#   「对接 Harness 自进化体系，评测数据自动流入迭代闭环」
+#
+# 平台选型：Gitea + act_runner（裁定 U11）。
+#   理由：github.com 在本机与工具链均不可达，GitHub Actions 出局；
+#   Gitea MIT、官方提供 Windows runner 二进制、界面中文、Docker/host 双执行模式。
+#
+# 与计划书四环境隔离的对应：CI 只跑 test 环境；预发布/生产由部署流水线单独触发。
+#
+# 步骤顺序有一条**硬要求**：装依赖必须排在「生成 .env.test」之前。
+#   生成脚本 import cryptography，而它来自 requirements.txt ——
+#   顺序反了 CI 会在第一次运行就 ImportError（本项目真踩过，见 MEMORY E-26）。
+#   tests/test_ci_pipeline.py 会守住这一条。
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop, "release/**", "feature/**", "hotfix/**"]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  AIBUTLER_ENV: .env.test
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  test:
+    name: 测试（Python 3.12）
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: docker.m.daocloud.io/pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: aibutler
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: aibutler_test
+        ports: ["5435:5432"]
+        options: >-
+          --health-cmd "pg_isready -U aibutler -d aibutler_test"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+      redis:
+        image: redis:7-alpine
+        ports: ["6382:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 准备 Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 必须排在「生成 test 环境配置」之前：那一步要 import cryptography。
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 生成 CI 用 test 环境配置
+        run: |
+          python - <<'PY'
+          import pathlib, secrets
+          from cryptography.fernet import Fernet
+          tpl = pathlib.Path(".env.example").read_text(encoding="utf-8").splitlines()
+          out = []
+          for line in tpl:
+              if "=" not in line or line.startswith("#"):
+                  out.append(line); continue
+              key = line.split("=", 1)[0]
+              value = {
+                  "ENVIRONMENT": "test",
+                  "DATA_PLANE_INTERNAL": "false",
+                  "POSTGRES_USER": "aibutler",
+                  "POSTGRES_PASSWORD": "ci-only-password",
+                  "POSTGRES_DB": "aibutler_test",
+                  "POSTGRES_HOST": "127.0.0.1",
+                  "POSTGRES_PORT": "5435",
+                  "REDIS_HOST": "127.0.0.1",
+                  "REDIS_PORT": "6382",
+                  "SESSION_TTL_SECONDS": "43200",
+                  "SESSION_IDLE_TIMEOUT_SECONDS": "7200",
+                  "SESSION_REFRESH_AHEAD_SECONDS": "1800",
+                  "SESSION_TOKEN_SECRET": secrets.token_hex(32),
+                  "FIELD_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+              }.get(key, "")
+              out.append(f"{key}={value}")
+          pathlib.Path(".env.test").write_text("\n".join(out) + "\n", encoding="utf-8")
+          PY
+
+      - name: 契约与单元测试（含越权隔离、会话过期、Jev 边界、Wiki 隔离专项）
+        run: python -m pytest -q --tb=short
+
+      # 复现「没装约 2GB 的 torch 系依赖」的 CI 依赖面：
+      # 凡在模块顶层 import torch / sentence_transformers / transformers 的代码会当场暴露。
+      - name: 模拟 CI 依赖面测试（无重型 ML 依赖）
+        env:
+          AIBUTLER_BLOCK_ML: "1"
+        run: python -m pytest -q --tb=short
+
+      - name: 全场景测试用例库覆盖率检查
+        run: |
+          python - <<'PY'
+          from ai_butler.devkit.scenario_library import default_library
+          lib = default_library()
+          print(lib.to_text())
+          missing = lib.missing_categories()
+          assert not missing, f"计划书要求的六类场景存在空白：{missing}"
+          PY
+
+      - name: P0-1 底座端到端冒烟
+        run: python scripts/smoke_p0.py
+
+      - name: P1–P4 端到端冒烟（真实 PostgreSQL + Redis 串起四个阶段的模块）
+        run: python scripts/smoke_p1_p4.py
+
+      # 端侧语音的引擎层与推理层。真机层（麦克风权限/保活/功耗，U23）不在此覆盖，
+      # 由 scripts/verify_android_artifact.py 在构建产物上单独校验。
+      - name: P7 端侧语音引擎验证（引擎层 + 推理层）
+        run: python scripts/verify_voice_engine.py
+
+      - name: 评测数据导出（供 Harness 离线链路消费，已剥离用户身份）
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          from ai_butler.devkit.evaluation import Evaluator, RunRecord
+          records = [RunRecord(task_id="ci", user_id="ci-user", answer="A", expected="A")]
+          path = Evaluator().export_for_harness(records, path=pathlib.Path("eval-export.json"))
+          print(open(path, encoding="utf-8").read())
+          PY
+
+      - name: 上传评测产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-export
+          path: eval-export.json
+
+  # 纯 Dart 业务核心单独一个 job：它**零原生依赖**，不需要 Flutter SDK，
+  # 所以能在普通 Linux runner 上直接跑。含端侧语音编排、会话、缓存、上报。
+  dart-core:
+    name: 测试（Dart 业务核心）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 准备 Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: 依赖解析
+        working-directory: mobile/packages/aibutler_core
+        run: dart pub get
+
+      - name: 静态分析
+        working-directory: mobile/packages/aibutler_core
+        run: dart analyze --fatal-infos
+
+      - name: 单元测试
+        working-directory: mobile/packages/aibutler_core
+        run: dart test

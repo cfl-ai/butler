@@ -1,0 +1,56 @@
+# AI 管家 Agent 生态体系 —— 运行与测试依赖
+#
+# 计划书依据：
+#   三、P0-1（统一 LLM 网关 / 数据库抽象层 / 会话鉴权 / 全局中间件 / Agent-Wiki v2）
+#   三、P1（数据中台） 三、P2（素材中心 RAG） 三、P3（场景调度） 三、P4（多子 Agent）
+#
+# 分工：
+#   本文件 = 跑通全部非 live 测试与线上服务所需的一切（CI 只装这个）。
+#   requirements-ml.txt = 真实模型推理所需的重型依赖（torch 系，约 2GB），
+#   仅 live 测试与生产环境需要；相关模块一律**延迟导入**，因此不装也能跑测试。
+#
+# 漂移防护：tests/test_dependency_declaration.py 会扫描代码里全部 third-party import，
+# 凡未在本文件或 requirements-ml.txt 中声明即测试失败。
+
+# --- Web 与 ASGI ---
+fastapi
+starlette
+uvicorn[standard]
+python-multipart
+
+# --- 配置与校验 ---
+pydantic
+pydantic-settings
+
+# --- 数据库抽象层（三、P0-1「统一连接池、事务、读写分离、加密存储」）---
+sqlalchemy[asyncio]
+asyncpg
+
+# --- 缓存与会话（三、P0-1「会话 Token 生成、校验、自动刷新」）---
+redis
+
+# --- 账号与会话安全（三、P0-1「加盐哈希」「隐私字段独立加密存储」）---
+bcrypt
+cryptography
+PyJWT
+
+# --- 出站调用（LLM 网关）---
+httpx
+
+# --- Agent-Wiki v2（三、P0-1「输入 Markdown 页面输出机器可读缓存」）---
+python-frontmatter
+PyYAML
+
+# --- 场景调度主状态机（三、P3「LangGraph 搭建主状态机」）---
+langgraph>=0.2
+
+# --- 混合检索（三、P2「BM25 + 向量检索 + Rerank 三重混合检索服务」）---
+# chromadb：计划书五、3 点名的向量库
+chromadb>=0.5
+# BM25 与中文分词
+rank-bm25>=0.2.2
+jieba>=0.42
+
+# --- 测试 ---
+pytest
+fakeredis
