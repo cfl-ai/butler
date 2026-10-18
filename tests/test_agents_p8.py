@@ -23,7 +23,7 @@ from ai_butler.agents.capabilities import (
 )
 from ai_butler.agents.facts import FactWriter
 from ai_butler.agents.p6_content_qa import ACTION_BLOCK, ACTION_PASS
-from ai_butler.agents.p8_payment import (
+from ai_butler.agents.p8_smart_payment import (
     DEFAULT_TIER,
     MODE_FREE,
     MODE_MANUAL,
@@ -79,7 +79,7 @@ def test_thresholds_come_from_decision_u07_not_invented():
 
 
 def test_unknown_tier_is_rejected():
-    from ai_butler.agents.p8_payment import TierPolicy
+    from ai_butler.agents.p8_smart_payment import TierPolicy
     with pytest.raises(ValueError):
         TierPolicy(tier="luxury", per_transaction_free_limit=1, daily_cap=None,
                    requires_manual_confirmation=False,

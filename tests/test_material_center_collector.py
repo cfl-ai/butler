@@ -8,8 +8,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from ai_butler.rag.cleaner import RawDocument
-from ai_butler.rag.collector import (
+from ai_butler.material_center.cleaner import RawDocument
+from ai_butler.material_center.collector import (
     CollectError,
     CollectPolicy,
     Collector,

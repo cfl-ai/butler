@@ -44,11 +44,11 @@ from ai_butler.agents.triggers import (
     TriggerRule,
     changed_fields,
 )
-from ai_butler.rag.chunking import ChunkingRule
-from ai_butler.rag.embedding import HashingEmbedder
-from ai_butler.rag.retrieval import BM25Store, HybridRetriever
-from ai_butler.rag.service import SearchService
-from ai_butler.rag.vector_store import ChromaVectorStore
+from ai_butler.material_center.chunking import ChunkingRule
+from ai_butler.material_center.embedding import HashingEmbedder
+from ai_butler.material_center.retrieval import BM25Store, HybridRetriever
+from ai_butler.material_center.service import SearchService
+from ai_butler.material_center.vector_store import ChromaVectorStore
 
 
 # ============================== 桩 Agent ============================== #

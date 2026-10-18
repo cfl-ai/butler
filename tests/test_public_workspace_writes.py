@@ -26,7 +26,7 @@ PACKAGE = ROOT / "ai_butler"
 #: 判据是「内容是否来自用户」：系统自身的采集与归档可以写公共库，
 #: **用户提交的内容一律不行**。
 PUBLIC_WRITE_ALLOWLIST: dict[str, str] = {
-    "ai_butler/rag/materials.py": (
+    "ai_butler/material_center/materials.py": (
         "系统采集流水线归档 SOURCE 页（把过期素材标为 archived）。"
         "内容是采集器按计划书三、P2 抓取并清洗过的，不来自用户输入。"
     ),

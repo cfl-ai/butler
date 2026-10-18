@@ -151,10 +151,15 @@ def test_asset_12_name_deliberately_differs_from_the_plan_per_u08():
 
 
 def test_the_twelve_assets_cover_every_phase_group():
-    """12 类资产应覆盖底座、调度、知识库、质检、语音、支付、自进化各面。"""
+    """12 类资产应覆盖底座、调度、知识库、质检、语音、支付、自进化各面。
+
+    模块名跟随 2026-10-19 的重命名同步：`rag` → `material_center`（素材中心），
+    `p8_payment` → `p8_smart_payment`（智能支付）。
+    """
     modules = " ".join(a.module for a in REUSABLE_ASSETS)
     for needle in ("infra", "devkit", "scheduler", "agent_wiki", "data_platform",
-                   "rag", "p6_content_qa", "p8_payment", "harness", "mobile"):
+                   "material_center", "p6_content_qa", "p8_smart_payment",
+                   "harness", "mobile"):
         assert needle in modules, f"资产库缺少 {needle} 相关条目"
 
 

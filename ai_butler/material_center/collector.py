@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Protocol, Sequence
 
-from ai_butler.rag.cleaner import RawDocument
+from ai_butler.material_center.cleaner import RawDocument
 
 #: 采集端默认标识（实现参数；真实部署应填写可联系的 UA）
 DEFAULT_USER_AGENT = "aibutler-material-collector/1.0"

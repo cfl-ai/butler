@@ -20,7 +20,7 @@ from ai_butler.agents.capabilities import (
     CapabilityError,
     grant,
 )
-from ai_butler.agents.p5_dynamic_event import (
+from ai_butler.agents.p5_dynamic_event_operation import (
     CONSTRAINT_DISRUPTION,
     CONSTRAINT_KINDS,
     CONSTRAINT_LOCATION,

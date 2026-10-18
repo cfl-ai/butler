@@ -222,3 +222,63 @@ def test_roster_chinese_names_match_naming_table():
     for key, title, _field in ROSTER:
         assert naming.SUBAGENT_TITLES[key] == title
         assert title in PLAN_LINE_P4_SUBAGENTS
+
+
+#: 文档中的**教学示例路径**（脚手架章节里「新建一个 xxx 复验」的虚构文件名），
+#: 不是真实交付物，故不参与存在性校验。登记在此而不是悄悄跳过，是为了让
+#: 「例外」也可被 review——白名单里每一条都该能说出它为什么例外。
+DOC_PATH_EXCEPTIONS = frozenset({"scripts/verify_brand_new_thing.py"})
+
+
+#: 旧包名标记。**拆成两段拼接**，否则本文件自己就会被
+#: `test_no_stale_rag_package_reference_anywhere` 扫到——守护拿自己开刀。
+_STALE_PKG_MARK = "ai_butler" + "." + "rag"
+
+
+def test_doc_file_paths_actually_exist():
+    """规范文档里点名的每个 `目录/模块.py` 路径，磁盘上必须真有这个文件。
+
+    改名时最常漏的就是这里：代码 git mv 走了，文档里还写着 `rag/retrieval.py`
+    `agents/p8_payment.py`。**文档引用一个不存在的文件，比不写更糟**——
+    读者会照着它去找，找不到还以为是自己漏看了（MEMORY E-65 的同一族缺陷）。
+
+    路径前缀有两种写法：相对 `ai_butler/`（`agents/butler.py`）与相对仓库根
+    （`scripts/verify_android_artifact.py`），两种都认。
+    不带目录前缀的裸文件名跳过——多是简写或教学示例，校验了会误报。
+    """
+    doc = REPO_ROOT / "docs" / "统一架构规范文档.md"
+    text = doc.read_text(encoding="utf-8")
+    cited = {p for p in re.findall(r"`([a-z_]+(?:/[a-z0-9_]+)*\.py)`", text)
+             if "/" in p and p not in DOC_PATH_EXCEPTIONS}
+    assert len(cited) >= 30, f"只扫到 {len(cited)} 个路径引用，正则可能失效"
+
+    #: 文档写路径时用的三种基准：仓库根、`ai_butler/`、`ai_butler/verticals/`
+    #: （旅游垂类模块在文档里简写成 `tour/agent.py`）。
+    #: 显式列出候选而不是全仓库 basename 搜索——后者会把 `qa.py` 匹配到
+    #: 任意目录下的同名文件，等于没校验。
+    bases = (REPO_ROOT, REPO_ROOT / "ai_butler", REPO_ROOT / "ai_butler" / "verticals")
+    missing = sorted(p for p in cited
+                     if not any((b / p).exists() for b in bases))
+    assert not missing, f"规范文档点名了这些并不存在的文件：{missing}"
+
+
+def test_no_stale_rag_package_reference_anywhere():
+    """`ai_butler/rag` 这个旧包名不许在代码与文档里复活。
+
+    2026-10-19 把 `rag/` 改名为 `material_center/`（素材中心）——RAG 是技术，
+    不是项目名。改名时漏改 import 会让程序直接 ImportError，
+    但漏改**文档与字符串引用**不会报错，只会静默腐烂。
+    """
+    stale = _STALE_PKG_MARK
+    hits: list[str] = []
+    for p in REPO_ROOT.rglob("*.py"):
+        if "__pycache__" in str(p) or ".venv" in str(p):
+            continue
+        if stale in p.read_text(encoding="utf-8"):
+            hits.append(str(p.relative_to(REPO_ROOT)))
+    for p in REPO_ROOT.rglob("*.md"):
+        if stale.replace(".", "/") in p.read_text(encoding="utf-8"):
+            hits.append(str(p.relative_to(REPO_ROOT)))
+    assert not hits, f"这些文件还在引用旧包名 {stale}：{hits}"
+
+

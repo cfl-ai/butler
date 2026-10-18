@@ -31,7 +31,7 @@ from ai_butler.agent_wiki.ontology import SOURCE_ARCHIVED, WikiPage
 from ai_butler.agent_wiki.workspace import WikiStore
 from ai_butler.core.db import Database
 from ai_butler.data_platform.models import SOURCE_ACTIVE, MaterialSourceRecord
-from ai_butler.rag.cleaner import (
+from ai_butler.material_center.cleaner import (
     CleanError,
     CleanedDocument,
     RawDocument,
@@ -39,7 +39,7 @@ from ai_butler.rag.cleaner import (
     deduplicate,
     to_wiki_source_page,
 )
-from ai_butler.rag.service import SearchService
+from ai_butler.material_center.service import SearchService
 
 CREATE = "create"
 REFRESH = "refresh"

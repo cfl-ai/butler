@@ -72,7 +72,7 @@ TABLE_13: tuple[GlobalParam, ...] = (
                 "ai_butler.core.db",
                 note="行级隔离；以行为固化（_enforce_row_level_isolation）"),
     GlobalParam("base_collect_unified", True, GROUP_ROUTING,
-                "ai_butler.rag.collector",
+                "ai_butler.material_center.collector",
                 note="统一采集底座；以行为固化"),
     # ---- Jev ----
     GlobalParam("jev_enable", True, GROUP_JEV, "ai_butler.core.config::Settings",
@@ -192,14 +192,14 @@ REUSABLE_ASSETS: tuple[ReusableAsset, ...] = (
     ReusableAsset("Agent-Wiki v2 SDK 与编译流水线", "ai_butler.agent_wiki"),
     ReusableAsset("数据中台结构化记忆与增量学习体系",
                   "ai_butler.data_platform"),
-    ReusableAsset("RAG 混合检索内核与时效知识库体系", "ai_butler.rag"),
+    ReusableAsset("RAG 混合检索内核与时效知识库体系", "ai_butler.material_center"),
     ReusableAsset("LangGraph 全局多 Agent 调度中枢", "ai_butler.scheduler"),
     ReusableAsset("全局内容质检防幻觉、防错误体系",
                   "ai_butler.agents.p6_content_qa"),
     ReusableAsset("端云一体流式语音交互整套框架", "mobile",
                   "纯 Dart 核心 + Flutter 外壳（P7）"),
     ReusableAsset("三档预算 + 免密 + 聚合一键支付智能引擎",
-                  "ai_butler.agents.p8_payment"),
+                  "ai_butler.agents.p8_smart_payment"),
     ReusableAsset(
         # **注意名称与计划书不同**：计划书原文是「基于 Claude Code 的
         # 全自动系统自进化闭环」，这里刻意去掉了「基于 Claude Code」——

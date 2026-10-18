@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
-from ai_butler.rag.embedding import (
+from ai_butler.material_center.embedding import (
     META_SCOPE,
     META_USER_ID,
     SCOPE_PUBLIC,

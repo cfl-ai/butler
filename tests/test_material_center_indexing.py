@@ -10,14 +10,14 @@ import math
 
 import pytest
 
-from ai_butler.rag.chunking import (
+from ai_butler.material_center.chunking import (
     ChunkingError,
     ChunkingRule,
     chunk_digest,
     chunk_document,
     normalize_text,
 )
-from ai_butler.rag.embedding import (
+from ai_butler.material_center.embedding import (
     META_SCOPE,
     META_USER_ID,
     SCOPE_PUBLIC,
@@ -28,7 +28,7 @@ from ai_butler.rag.embedding import (
     chunk_metadata,
     embed_chunks,
 )
-from ai_butler.rag.vector_store import ChromaVectorStore, VectorRecord
+from ai_butler.material_center.vector_store import ChromaVectorStore, VectorRecord
 
 LONG = ("西湖位于浙江省杭州市。它是最著名的淡水湖之一。"
         "春季是西湖最佳游览季节，苏堤春晓尤为出名。"

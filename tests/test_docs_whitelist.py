@@ -41,10 +41,15 @@ ALLOWED_FILES = {
 #: Agent-Wiki 页面族与编译产物的落盘目录名（第三类允许项）
 WIKI_DIR_MARKER = "agent_wiki"
 
-#: 第三方 / 生成物目录，一律不参与检查
+#: 第三方 / 生成物目录，一律不参与检查。
+#: `.test-work` / `.smoke-work` 是测试与冒烟脚本的临时落盘目录，
+#: 里面会产生大量 md（Agent-Wiki 页面）。它们已被 `.gitignore` 排除，
+#: 但**那份排除不会自动传导到这里**——改名或新增临时目录时，
+#: 两层必须同步改，否则守护会把测试自己刚写的文件当违规报出来（MEMORY E-65 同族）。
 SKIP_DIRS = {
     ".git", ".venv", ".dart_tool", ".idea", ".pytest_tmp", ".pytest_cache",
     "node_modules", "build", "__pycache__", ".gradle", ".cxx",
+    ".test-work", ".smoke-work",
 }
 
 

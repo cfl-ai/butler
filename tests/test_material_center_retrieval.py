@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from ai_butler.rag.chunking import ChunkingRule
-from ai_butler.rag.embedding import HashingEmbedder
-from ai_butler.rag.retrieval import (
+from ai_butler.material_center.chunking import ChunkingRule
+from ai_butler.material_center.embedding import HashingEmbedder
+from ai_butler.material_center.retrieval import (
     PUBLIC_SCOPE_KEY,
     HeuristicReranker,
     HybridRetriever,
@@ -22,9 +22,9 @@ from ai_butler.rag.retrieval import (
     scoped_id,
     vault_scope_key,
 )
-from ai_butler.rag.service import SearchService
-from ai_butler.rag.vector_store import ChromaVectorStore
-from ai_butler.rag.embedding import EmbeddingError
+from ai_butler.material_center.service import SearchService
+from ai_butler.material_center.vector_store import ChromaVectorStore
+from ai_butler.material_center.embedding import EmbeddingError
 
 PUBLIC_TEXT = "西湖景区开放时间调整为每日六点半，春季是最佳游览季节，门票可在线预约。"
 A_TEXT = "我的行程偏好：春季去西湖，避开清明假期，交通选择高铁。"
@@ -191,8 +191,8 @@ def test_search_for_jev_returns_only_structured_fields(workdir):
 @pytest.mark.live
 def test_live_bge_reranker_reorders(workdir):
     """真实 Rerank 联调（裁定 U10：bge-reranker-base）。"""
-    from ai_butler.rag.embedding import BGEEmbedder
-    from ai_butler.rag.retrieval import CrossEncoderReranker
+    from ai_butler.material_center.embedding import BGEEmbedder
+    from ai_butler.material_center.retrieval import CrossEncoderReranker
 
     base = Path(__file__).resolve().parents[1] / "models"
     if not (base / "bge-small-zh-v1.5").is_dir() or not (base / "bge-reranker-base").is_dir():

@@ -24,8 +24,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable, Protocol, Sequence
 
-from ai_butler.rag.chunking import Chunk
-from ai_butler.rag.embedding import (
+from ai_butler.material_center.chunking import Chunk
+from ai_butler.material_center.embedding import (
     META_CHUNK_INDEX,
     META_CONFIDENCE,
     META_DOC_ID,
@@ -38,7 +38,7 @@ from ai_butler.rag.embedding import (
     Embedder,
     EmbeddingError,
 )
-from ai_butler.rag.vector_store import ChromaVectorStore, VectorRecord
+from ai_butler.material_center.vector_store import ChromaVectorStore, VectorRecord
 
 #: 证据 ID 在向量元数据里的存放键（Chroma 元数据不支持列表，用逗号连接）
 META_EVIDENCE_IDS = "evidence_ids"

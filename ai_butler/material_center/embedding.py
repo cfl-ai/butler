@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, Sequence, runtime_checkable
 
-from ai_butler.rag.chunking import Chunk
+from ai_butler.material_center.chunking import Chunk
 
 #: 向量元数据的字段约定（写入向量库的 metadata）
 META_SCOPE = "scope"            # "public" | "vault"

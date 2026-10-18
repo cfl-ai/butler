@@ -53,13 +53,13 @@ from ai_butler.data_platform.models import (  # noqa: E402
     MaterialSourceRecord,
 )
 from ai_butler.data_platform.sdk import ALLOWED_METHODS, DataSDK  # noqa: E402
-from ai_butler.rag.chunking import ChunkingRule  # noqa: E402
-from ai_butler.rag.cleaner import CATEGORIES, RawDocument, clean_document  # noqa: E402
-from ai_butler.rag.embedding import HashingEmbedder  # noqa: E402
-from ai_butler.rag.materials import MaterialIngestor  # noqa: E402
-from ai_butler.rag.retrieval import BM25Store, HeuristicReranker, HybridRetriever  # noqa: E402
-from ai_butler.rag.service import SearchService  # noqa: E402
-from ai_butler.rag.vector_store import ChromaVectorStore  # noqa: E402
+from ai_butler.material_center.chunking import ChunkingRule  # noqa: E402
+from ai_butler.material_center.cleaner import CATEGORIES, RawDocument, clean_document  # noqa: E402
+from ai_butler.material_center.embedding import HashingEmbedder  # noqa: E402
+from ai_butler.material_center.materials import MaterialIngestor  # noqa: E402
+from ai_butler.material_center.retrieval import BM25Store, HeuristicReranker, HybridRetriever  # noqa: E402
+from ai_butler.material_center.service import SearchService  # noqa: E402
+from ai_butler.material_center.vector_store import ChromaVectorStore  # noqa: E402
 from ai_butler.scheduler.graph import DispatchPlan, SceneScheduler  # noqa: E402
 from ai_butler.scheduler.observe import ListObserver  # noqa: E402
 from ai_butler.scheduler.router import HardRule, HardRuleLayer, IntentRouter, JevLayer  # noqa: E402
@@ -100,7 +100,7 @@ def make_embedder():
     model = ROOT / "models" / "bge-small-zh-v1.5"
     if model.is_dir():
         try:
-            from ai_butler.rag.embedding import BGEEmbedder
+            from ai_butler.material_center.embedding import BGEEmbedder
             emb = BGEEmbedder(model)
             return emb, f"真实模型 {emb.name}（{emb.dim} 维）"
         except Exception as exc:                      # noqa: BLE001

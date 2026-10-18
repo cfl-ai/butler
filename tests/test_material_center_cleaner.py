@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from ai_butler.agent_wiki.ontology import SOURCE, SOURCE_ACTIVE
-from ai_butler.rag.cleaner import (
+from ai_butler.material_center.cleaner import (
     CATEGORY_NEWS,
     CATEGORY_OTHER,
     CATEGORY_SCENIC,

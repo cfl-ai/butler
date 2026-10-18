@@ -70,7 +70,7 @@ PHASE_PACKAGES: dict[str, str] = {
     "infra": "P0-1",
     "devkit": "P0-2",
     "data_platform": "P1",
-    "rag": "P2",
+    "material_center": "P2",
     "scheduler": "P3",
     "evaluation": "P9",
     "harness": "P10",

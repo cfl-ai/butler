@@ -16,9 +16,9 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any, Sequence
 
-from ai_butler.rag.chunking import Chunk, ChunkingRule, chunk_document
-from ai_butler.rag.embedding import Embedder, EmbeddingError
-from ai_butler.rag.retrieval import PUBLIC_SCOPE_KEY, HybridRetriever, vault_scope_key
+from ai_butler.material_center.chunking import Chunk, ChunkingRule, chunk_document
+from ai_butler.material_center.embedding import Embedder, EmbeddingError
+from ai_butler.material_center.retrieval import PUBLIC_SCOPE_KEY, HybridRetriever, vault_scope_key
 
 
 @dataclass(frozen=True)

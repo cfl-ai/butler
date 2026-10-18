@@ -22,10 +22,10 @@ from ai_butler.data_platform.models import (
     SOURCE_ACTIVE,
     UserProfileRecord,
 )
-from ai_butler.rag.chunking import ChunkingRule
-from ai_butler.rag.cleaner import RawDocument
-from ai_butler.rag.embedding import HashingEmbedder
-from ai_butler.rag.materials import (
+from ai_butler.material_center.chunking import ChunkingRule
+from ai_butler.material_center.cleaner import RawDocument
+from ai_butler.material_center.embedding import HashingEmbedder
+from ai_butler.material_center.materials import (
     ACTIONS,
     CREATE,
     REFRESH,
@@ -34,9 +34,9 @@ from ai_butler.rag.materials import (
     page_id_for,
     source_key_for,
 )
-from ai_butler.rag.retrieval import BM25Store, HybridRetriever
-from ai_butler.rag.service import SearchService
-from ai_butler.rag.vector_store import ChromaVectorStore
+from ai_butler.material_center.retrieval import BM25Store, HybridRetriever
+from ai_butler.material_center.service import SearchService
+from ai_butler.material_center.vector_store import ChromaVectorStore
 
 NOW = datetime(2026, 10, 16, tzinfo=timezone.utc)
 URL = "https://travel.example.com/xihu"

@@ -15,14 +15,14 @@ from __future__ import annotations
 
 import pytest
 
-from ai_butler.rag.routing import (
+from ai_butler.material_center.routing import (
     LAYER_HARD_RULE,
     LAYER_LLM_FALLBACK,
     QueryRoute,
     RoutingError,
     route_query,
 )
-from ai_butler.rag.verification import (
+from ai_butler.material_center.verification import (
     EvidenceHit,
     overlap_ratio,
     render_abstention,
@@ -86,7 +86,7 @@ def test_empty_query_is_refused():
 
 def test_every_route_has_a_human_readable_description():
     """三档都要有说明 —— 日志里出现 route 名时要查得到它是什么意思。"""
-    from ai_butler.rag.routing import describe_routes
+    from ai_butler.material_center.routing import describe_routes
     described = describe_routes()
     for route in QueryRoute:
         assert route.value in described and described[route.value]

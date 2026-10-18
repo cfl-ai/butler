@@ -29,9 +29,9 @@ from ai_butler.agents.p1_data_platform import DataPlatformAgent
 from ai_butler.agents.p2_material_center import MaterialCenterAgent
 from ai_butler.agents.p3_scene_scheduler import SceneSchedulerAgent
 from ai_butler.agents.p4_mops import MopsClusterAgent
-from ai_butler.agents.p5_dynamic_event import DynamicEventAgent
+from ai_butler.agents.p5_dynamic_event_operation import DynamicEventAgent
 from ai_butler.agents.p6_content_qa import ContentQaAgent
-from ai_butler.agents.p8_payment import PaymentAgent
+from ai_butler.agents.p8_smart_payment import PaymentAgent
 from ai_butler.agents.p9_evaluation import EvaluationAgent
 from ai_butler.agents.p10_harness import HarnessAgent
 
