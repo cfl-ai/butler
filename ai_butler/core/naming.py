@@ -19,6 +19,23 @@
 
 层名同样取自计划书自身用语：core（底座）/ infra（AI Infra 架构底座）/ middleware（中间件）。
 
+模块层级名（本轮新增）
+----------------------
+Python 的**包名与模块名只能用 ASCII**，所以目录叫 `data_platform`，
+但人读的层级名必须就是计划书里那个项目名——「数据中台」，不叫「数据平台模块」。
+两套名字必须一一对应且都可机检，否则文档写中文、代码写英文，
+时间一长就会变成互相认不出的两套体系（MEMORY E-44 的另一种形态）。
+
+故在此登记三张表，值**一律取自计划书原句**，并由守护测试逐条回查原文：
+
+| 表 | 键 | 值 | 计划书出处 |
+| MODULE_TITLES | 包目录名 | 该包的层级中文名 | 三、各阶段标题 / P0 级基础设施层 |
+| SUBAGENT_TITLES | 子 Agent 机读 key | 计划书点名的中文名 | 三、P4「包含子 Agent：设备感知、天气感知…」 |
+| CROSSCUT_TITLES | 横切 Agent 机读 key | 中文名 | 三、P3「智能规划」「质检校验」 |
+
+机读 key 保持英文不变：它是 registry 字典键、State 字段前缀、
+agent_results 的索引，改中文会牵动全链路；中文名只做**展示层**。
+
 可调整
 ------
 后期改名只需改本文件或设置 AIBUTLER_ROOT / AIBUTLER_ECOSYSTEM / AIBUTLER_NAMESPACE，
@@ -40,6 +57,93 @@ PACKAGE: str = "ai_butler"
 NAMESPACE: str = os.environ.get("AIBUTLER_NAMESPACE", "aibutler").strip().lower()
 ENV_PREFIX: str = "AIBUTLER_"
 DB_NAME: str = "ai_butler"
+
+
+# --------------------------------------------------------------------------- #
+# 模块层级名
+# --------------------------------------------------------------------------- #
+
+#: 包目录 → 阶段编号。**只对确实存在独立包的阶段登记**；
+#: 其余阶段（P4/P5/P6/P8 等）实现就在 agents/ 下的单文件里，不在此虚造一个包。
+#: 中文名不写在这里，从 phases 真值源派生，避免同一名字存两份（E-44）。
+PHASE_PACKAGES: dict[str, str] = {
+    "infra": "P0-1",
+    "devkit": "P0-2",
+    "data_platform": "P1",
+    "rag": "P2",
+    "scheduler": "P3",
+    "evaluation": "P9",
+    "harness": "P10",
+}
+
+#: 非阶段包的层级中文名。值取自计划书原句，由守护测试回查原文。
+#: - core：三、P0-1「统一全项目底层架构…所有业务模块统一复用」→ 底座
+#: - middleware：三、P0-1「开发全局中间件」「会话管理中间件」→ 中间件
+#: - agents：三、P4「Mops 多智能体集群」→ 阶段 Agent 层
+#: - verticals：五「旅游 Agent 属于下垂类业务执行单元」→ 垂类模块
+MODULE_TITLES: dict[str, str] = {
+    "core": "底座内核",
+    "middleware": "中间件",
+    "agents": "阶段 Agent 层",
+    "verticals": "垂类业务模块",
+    "mobile": "语音交互移动端系统",
+    #: 三、P0-1「Agent‑Wiki v2 运行时存储层」+ 配套规范《Agent‑Wiki 知识库开发规范》
+    "agent_wiki": "Agent-Wiki 知识库",
+}
+
+#: P4 子 Agent 的中文名。计划书原文（三、P4「包含子 Agent」）：
+#: 「设备感知、天气感知、时间进度、增量抽取、路线方案、备选预案、代码迭代 Agent」
+#: 原文里「Agent」只出现在最后一项，是七项共用的总称，故统一不加后缀——
+#: 与阶段命名同一口径：P1 就叫「数据中台」，不叫「数据中台 Agent」。
+SUBAGENT_TITLES: dict[str, str] = {
+    "device_perception_agent": "设备感知",
+    "weather_perception_agent": "天气感知",
+    "time_progress_agent": "时间进度",
+    "incremental_extraction_agent": "增量抽取",
+    "route_plan_agent": "路线方案",
+    "contingency_plan_agent": "备选预案",
+    "code_iteration_agent": "代码迭代",
+}
+
+#: 不属于某个阶段的 Agent：横切设施 + 垂类业务单元。
+#: planner 出自三、P3「智能规划」；qa 出自三、P6 与流程图「质检校验」；
+#: butler 出自封面「管家 Agent」；tour 出自五「旅游 Agent 属于下垂类业务执行单元」。
+CROSSCUT_TITLES: dict[str, str] = {
+    "planner_agent": "智能规划 Agent",
+    "qa_agent": "质检校验 Agent",
+    "butler_agent": "管家 Agent",
+    "tour_agent": "旅游 Agent",
+}
+
+
+def module_title(package: str) -> str:
+    """包目录 → 计划书层级中文名。
+
+    有对应阶段的包**从 phases 派生**，不在本文件另存一份中文名——
+    否则 phases.title 一改，这里就悄悄过期（E-44）。
+    """
+    code = PHASE_PACKAGES.get(package)
+    if code:
+        from ai_butler.core.phases import phase     # 延迟导入：避免 import 环
+        return phase(code).display
+    try:
+        return MODULE_TITLES[package]
+    except KeyError as exc:
+        known = sorted({*PHASE_PACKAGES, *MODULE_TITLES})
+        raise KeyError(f"未登记的包目录 {package!r}，已登记 {known}") from exc
+
+
+def agent_title(key: str) -> str:
+    """Agent 机读 key → 中文名。横切 Agent 与 P4 子 Agent 都查得到。"""
+    for table in (CROSSCUT_TITLES, SUBAGENT_TITLES):
+        if key in table:
+            return table[key]
+    # 阶段 Agent 的 key 就是 phases 里的 key，中文名同样派生
+    from ai_butler.core.phases import PHASE_BY_KEY
+    spec = PHASE_BY_KEY.get(key)
+    if spec is not None:
+        return spec.display
+    raise KeyError(f"未登记的 Agent key {key!r}")
 
 
 def redis_key(*parts: object) -> str:

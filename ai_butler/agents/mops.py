@@ -40,17 +40,24 @@ from ai_butler.agents.capabilities import (
     CAP_WIKI_WRITE,
 )
 from ai_butler.agents.facts import AgentFact, FactWriter
+from ai_butler.core.naming import SUBAGENT_TITLES
 
-#: 集群名册：(Agent 名, 计划书里的中文名, 自有写入字段)。逐条对应计划书三、P4 的 7 个名字。
-ROSTER: tuple[tuple[str, str, str], ...] = (
-    ("device_perception_agent", "设备感知 Agent", "device_snapshot"),
-    ("weather_perception_agent", "天气感知 Agent", "weather_snapshot"),
-    ("time_progress_agent", "时间进度 Agent", "time_progress"),
-    ("incremental_extraction_agent", "增量抽取 Agent", "extracted_facts"),
-    ("route_plan_agent", "路线方案 Agent", "route_options"),
-    ("contingency_plan_agent", "备选预案 Agent", "contingency_plans"),
-    ("code_iteration_agent", "代码迭代 Agent", "code_iteration_proposals"),
+#: 集群成员的机读 key 与自有写入字段，顺序即计划书点名顺序。
+#: 中文名**不在这里写第二遍** —— 从 `core.naming.SUBAGENT_TITLES` 派生，
+#: 计划书一改名，名册跟着变，不会留下「两处真值源自相矛盾」（E-44）。
+_ROSTER_FIELDS: tuple[tuple[str, str], ...] = (
+    ("device_perception_agent", "device_snapshot"),
+    ("weather_perception_agent", "weather_snapshot"),
+    ("time_progress_agent", "time_progress"),
+    ("incremental_extraction_agent", "extracted_facts"),
+    ("route_plan_agent", "route_options"),
+    ("contingency_plan_agent", "contingency_plans"),
+    ("code_iteration_agent", "code_iteration_proposals"),
 )
+
+#: 集群名册：(Agent 机读 key, 计划书里的中文名, 自有写入字段)。
+ROSTER: tuple[tuple[str, str, str], ...] = tuple(
+    (key, SUBAGENT_TITLES[key], field) for key, field in _ROSTER_FIELDS)
 
 #: 单次最多产出多少条事实（实现参数）
 DEFAULT_MAX_FACTS = 5

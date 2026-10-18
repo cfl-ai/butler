@@ -57,6 +57,24 @@ class SubAgent(ABC):
     #: 权责说明，供注册表台账与人工审阅
     responsibilities: ClassVar[str] = ""
 
+    # ---------------------------- 命名 ---------------------------- #
+    @property
+    def display_name(self) -> str:
+        """人读中文名 = 计划书里那个项目名（P1 就叫「数据中台」）。
+
+        **派生而非手写**：`name` 是机读 key（registry 字典键、State 字段前缀），
+        必须是 ASCII；中文名统一到 `core.naming` 查表，任何 Agent 都不许自己
+        另起一个中文名——否则名册、日志、文档会各自叫一套（E-44）。
+
+        未登记的 key 退回英文名，由 `tests/test_module_naming.py`
+        断言「一个都不许漏」，而不是等运行时才炸。
+        """
+        from ai_butler.core.naming import agent_title
+        try:
+            return agent_title(self.name)
+        except KeyError:
+            return self.name
+
     # ------------------------- 对外唯一入口 ------------------------- #
     def __call__(self, state: dict[str, Any]) -> Any:
         """执行本 Agent。

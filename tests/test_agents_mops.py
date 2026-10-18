@@ -53,8 +53,11 @@ def _run_phase(butler, code, state):
     return asyncio.run(butler.run_phase(code, state))
 
 
-PLAN_NAMES = ["设备感知 Agent", "天气感知 Agent", "时间进度 Agent", "增量抽取 Agent",
-              "路线方案 Agent", "备选预案 Agent", "代码迭代 Agent"]
+#: 计划书三、P4 原文「包含子 Agent：设备感知、天气感知、时间进度、增量抽取、
+#: 路线方案、备选预案、代码迭代 Agent」——「Agent」是七项共用的总称，
+#: 与阶段命名同一口径（P1 就叫「数据中台」不叫「数据中台 Agent」），故不逐项带后缀。
+PLAN_NAMES = ["设备感知", "天气感知", "时间进度", "增量抽取",
+              "路线方案", "备选预案", "代码迭代"]
 
 
 # ============================== 名册 ============================== #
