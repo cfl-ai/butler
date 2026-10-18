@@ -48,6 +48,8 @@ class Decision:
 
 
 _D = "2026-10-16"
+#: U43 起的裁定日期（接管后新增的三层权限 / 检索路由 / 复检 / Harness 评测）
+_D2 = "2026-10-19"
 
 DECISIONS: tuple[Decision, ...] = (
     Decision(
@@ -586,6 +588,169 @@ DECISIONS: tuple[Decision, ...] = (
         references=("https://owasp.org/www-project-top-10-for-large-language-model-applications/",),
         license_note="参照 OWASP LLM01 Prompt Injection / LLM09 Misinformation 的**风险分档思路**，"
                      "不引入其代码；OWASP 材料 CC BY-SA 4.0（备查）",
+        code_reuse="design_only",
+    ),
+
+    # ==================== U43 起：三层权限分级 / 检索路由 / 复检 / Harness 评测 ====================
+    # 来源日期 2026-10-19（接管后新增，与 U01–U42 的 2026-10-16 区分）。
+    Decision(
+        key="U43", title="Agent 能力分级模型", phase="P4",
+        plan_quote="「无跨模块越权调用」「所有子 Agent 只读全局状态、仅写入自有字段」（三、P4）；"
+                   "「模块边界界定（复用规则）」（五、5）——只规定「不得越权」，未规定能力如何**分级**",
+        status=RESOLVED, source="开源借鉴", decided_at=_D2,
+        resolution="借 Claude Enterprise 的权限分层与多 Agent 治理实践：把「能力」从布尔开关升为**四级**——"
+                   "L0 只读（可检索、不可写）/ L1 写自有字段（现有 writes 语义）/ "
+                   "L2 可发起副作用（调外部工具、下单、发消息）/ L3 高危（支付执行、删数据、改权限）。"
+                   "落地在 core/permissions.py 的 CapabilityLevel，与 SubAgent.capabilities 并存："
+                   "capabilities 声明**能拿到哪些工具**，CapabilityLevel 声明**拿到后能用到什么程度**。"
+                   "垂类 Agent 继承现有约束：may_hold_payment 默认 False（规范 10.11）。",
+        references=("https://blog.chibakuma.com/cong-claude-enterprise-de-quan-xian-she-ji-kan-duo-dai-li-xi-tong-de-zhi-li-tiao-zhan-shui-neng-guan-li-shui-bu-deng-yu-shui-neng-zuo-shi-mo",),
+        license_note="该文为第三方对 Claude Enterprise 权限模型的**分析文章**，非 Anthropic 官方源码，"
+                     "未声明 License —— 只借鉴其「身份归属 / 管理范畴 / 功能能力 / 数据边界」四层划分的思维，"
+                     "不复制任何代码",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U44", title="数据密级分级", phase="P0-1",
+        plan_quote="「手机号、位置、支付信息等隐私字段独立加密存储」（三、P0-1）；"
+                   "「区分公共 Workspace 与用户私有 Vault」（一、项目概述）——"
+                   "给出的是**公私二分**，未规定密级**分级**",
+        status=RESOLVED, source="开源借鉴", decided_at=_D2,
+        resolution="在 public/vault 二分之上补**四级密级**（与公私域正交，不是替代关系）："
+                   "L1 公开 / L2 内部 / L3 敏感（手机号、位置、账单）/ L4 机密（凭据、支付要素）。"
+                   "判据沿用国内多 Agent 安全实践的「四级 + 加密要求」表："
+                   "L2 起传输加密，L3 起存储加密，L4 端到端加密且强制访问审计。"
+                   "密级与现有 public/vault 的关系：**作用域决定「谁能看见」，密级决定「看见后怎么处理」**。"
+                   "离线进化链路仍受 P10 红线约束：L3 及以上不得进入脱敏前的训练集。",
+        references=("https://devpress.csdn.net/amd/6a55d12e662f9a54cb8f292b.html",),
+        license_note="CSDN 社区文章，未声明 License —— 只借鉴四级分类表与加密要求的分档思路，不复制代码",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U45", title="用户角色分级与审批分层", phase="P0-1",
+        plan_quote="「会话管理中间件：会话 Token 生成、校验」（三、P0-1）；"
+                   "「付款动作必须经人工确认」（三、P8）——只有**是否登录**与**是否人工确认**两点，"
+                   "未规定角色分级，也未规定何种操作需何种级别的审批",
+        status=RESOLVED, source="开源借鉴", decided_at=_D2,
+        resolution="① 角色四级：owner（账号主体）/ admin（可管本账号下 Agent 配置）/ "
+                   "member（日常使用）/ auditor（只读，可看审计不可改）。"
+                   "② 审批分三档（借 AI Agent 治理的「按副作用定审批边界」思路）："
+                   "Tier0 免审批（低风险可逆：建任务、打标签）；"
+                   "Tier1 单人确认（用户可见或改数据：付款、改画像——对应 P8 人工确认红线）；"
+                   "Tier2 双人/强校验（高危：删数据、改权限、批量外传）。"
+                   "③ 三条硬原则：**默认拒绝**、**最小权限**、**权限不可传递**"
+                   "（Agent 不得以「被调用者权限」替调用方升级，必须各自独立校验）。",
+        references=("https://www.chronic.digital/blog/ai-agent-governance-controls",
+                    "https://zdnetinside.com/knowledge/how_should_organizations_govern_permissions_for_ai_agents_in_2026.php"),
+        license_note="两篇均为行业分析文章，未声明 License —— 借鉴其 Tier0/1/2 分档与"
+                     "「default deny / propose-then-apply」设计，不复制代码",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U46", title="检索路由器：何时走单路线、何时走多路线", phase="P2",
+        plan_quote="「BM25 + 向量检索 + Rerank 三重混合检索服务」（三、P2）——"
+                   "规定了**有什么检索手段**，未规定**何时用哪一条**；"
+                   "用户补充需求：关键字特别明确的直接走规则路由不走大模型",
+        status=RESOLVED, source="开源借鉴", decided_at=_D2,
+        resolution="新增 rag/routing.py 的 QueryRouter，把查询分三档，判据**先看证据不看直觉**："
+                   "① **规则直查**（单路线）：查询命中精确标识（ID / 错误码 / 型号 / 时间范围 / 枚举字段）"
+                   "→ 直接查结构化库与 BM25，**完全不经过大模型**；"
+                   "② **混合检索**（多路线）：判据为「无精确标识但语义可判」"
+                   "→ BM25 与向量并行 → RRF 融合 → topN 候选 → Rerank → topK；"
+                   "③ **大模型分析**：判据为「多意图冲突 / 证据互相矛盾 / 置信低于阈值」"
+                   "→ 交给大模型，并**把该次歧义样本落盘**供 P9 增量微调与 Agent-Wiki Question 沉淀。"
+                   "三档的选择**复用五层意图路由的结论**（P3 已冻结，不得新增第六层），"
+                   "本路由器只在**检索侧**做细粒度决策，不改动意图链路。",
+        references=("https://www.wickedsmartdata.com/articles/query-routing-in-rag-how-to-direct-questions-to-the-right-data-source-or-retrieval-strategy",
+                    "https://blogs.oracle.com/developers/how-to-evaluate-production-rag-keyword-vector-sql-and-hybrid-retrieval"),
+        license_note="前者为行业博客、后者为 Oracle 官方开发者博客，均非可复制代码仓库 —— "
+                     "借鉴 rule-based vs LLM routing 的取舍判据与「按查询类型选路线」的评测口径，不复制代码",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U47", title="回答前的复检回路与逃逸上限", phase="P2",
+        plan_quote="「内容质检 Agent｜全局防错、防幻、防假」（三、P6）；"
+                   "「质检 Agent 校验纠错（调用 Wiki 做事实溯源）」（四、1）——"
+                   "质检定位在**产出之后**，未规定**回答发出之前**是否要再检索一遍",
+        status=RESOLVED, source="开源借鉴", decided_at=_D2,
+        resolution="新增回答前复检（rag/verification.py），三级评分照 Self-Correcting RAG 的 critic 链："
+                   "① 检索相关性 → ② 答案 groundedness（每句须有 span 支撑）→ ③ 答案有用性。"
+                   "关键三条借鉴结论：**失败时改写查询而不是用同一 query 重试**"
+                   "（同 query 同索引必然召回同一批坏结果）；**必须有硬逃逸上限**（max_iterations=2），"
+                   "否则对抗性查询会跑到 token 预算耗尽；**允许并必须实现 abstain**"
+                   "（证据不足就说不知道，比编一个自信的错误答案便宜）。"
+                   "复检不通过时降级为 abstain 并给出缺失证据清单，交 P6 与 Agent-Wiki 做 Question 沉淀。",
+        references=("https://www.activewizards.com/blog/self-correcting-rag-pipeline-critic-agent-langgraph",
+                    "https://engineering.zooz.com/@SangeethaJannapu/rag-but-make-it-reliable-verification-loops-that-actually-help-66fb279ec722"),
+        license_note="两篇均为工程博客，未声明 License —— 借鉴三级评分、改写而非重试、"
+                     "max-iteration 逃逸三项设计结论，不复制代码",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U48", title="Agent 独立运行入口形态", phase="P4",
+        plan_quote="「逐个开发、逐个单测、逐个上线」（三、P4）；"
+                   "「数据中台｜全系统唯一可信数据源」（三、P1）——"
+                   "要求逐个可测可上线，但未规定**脱离会话**的独立调用入口形态",
+        status=RESOLVED, source="开源借鉴", decided_at=_D2,
+        resolution="每个阶段 Agent 除「被 P3 调度」外，另提供**独立入口**："
+                   "同一份 run() 逻辑，外层套 standalone 调用面（CLI + Python API 两种），"
+                   "显式传 user_id 与权限上下文，**不经过 LangGraph 会话态**。"
+                   "独立入口**不得绕过治理**：入库仍走 data_platform.governance 判定，"
+                   "低置信照旧进 review 队列而不是直接写库 —— "
+                   "「可独立跑动」不等于「可绕过风控」。"
+                   "此形态对应 Agent Data Contract 的「每个 Agent 一份输入/输出/留存规约」。",
+        references=("https://agenticaiguide.ai/ch_7/sec_7-2.html",),
+        license_note="在线教程站点，未声明 License —— 借鉴「每个 Agent 一页规约（可读/可写/留存/脱敏）」"
+                     "的契约化思路，不复制代码",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U49", title="Harness 自进化闭环的评测指标", phase="P10",
+        plan_quote="「评测迭代效果，未达标持续循环修复」（四、2）；"
+                   "「自动化评测脚本：计划书点名的 8 项指标」（三、P0-2）——"
+                   "8 项指标是**业务链路**的，未定义**进化链路自身**如何被评测",
+        status=RESOLVED, source="开源借鉴", decided_at=_D2,
+        resolution="Harness 自身评测分两组，与业务 8 项指标**分开计量**（双链路隔离，不得混算）："
+                   "① **进化有效性**：缺陷修复成功率、回归引入率（修 A 坏 B）、"
+                   "收敛轮次（达到目标所需 loop 数）、人工驳回率；"
+                   "② **进化安全性**：红线触碰次数（harness/risk.detect_redlines）、"
+                   "沙箱逃逸尝试、私有数据流入离线链路的次数（**必须为 0**）。"
+                   "评测结果**回流驱动下一轮进化**：未达标则继续循环，"
+                   "连续 N 轮无进展则停止并升级为人工处理（避免空转烧 token）。",
+        references=("https://tunicyberlabs.com/en/blog/agentic-rag-2026-architecture-patterns-enterprise-knowledge-bases-2",),
+        license_note="行业架构文章，未声明 License —— 借鉴「各层独立可测、评测门禁进 CI」的思路，"
+                     "不复制代码",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U50", title="歧义样本的学习回流口径", phase="P9",
+        plan_quote="「指标评估与增量微调体系」（三、P9）；"
+                   "「日志沉淀与案例分类、领域 SFT 数据集」——"
+                   "规定了要有 SFT 数据集，未规定**歧义/冲突样本**如何采集与回流",
+        status=RESOLVED, source="开源借鉴", decided_at=_D2,
+        resolution="检索路由第③档（大模型分析）与复检不通过的样本，统一落盘为**歧义样本**："
+                   "含原查询、召回证据、冲突点、最终判定、人工/系统裁决结果。"
+                   "回流去向有三，且**必须先脱敏**（P10 红线）："
+                   "① P9 增量微调的 SFT 数据集；② Agent-Wiki 的 Question 开放问题与 Contradiction 矛盾条目；"
+                   "③ Jev 决策的难例集（用于 U03 阈值重新标定）。"
+                   "**不进**离线链路原始日志——只进脱敏后的结构化样本。",
+        references=("https://mem0.ai/blog/reducing-hallucinations-llms-with-grounded-memory",),
+        license_note="厂商博客，未声明 License —— 借鉴「验证不通过即产生可学习信号」的闭环思路，"
+                     "不复制代码",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U51", title="三层权限的合成规则", phase="P0-1",
+        plan_quote="（同 U43/U44/U45）三层各自已定，但未定义**冲突时以谁为准**",
+        status=RESOLVED, source="开源借鉴", decided_at=_D2,
+        resolution="三层取**最严者**（deny overrides），不做加权、不做投票："
+                   "Agent 能力级 / 数据密级 / 用户角色级三者任一拒绝即拒绝。"
+                   "理由：权限决策里「严格」的代价是麻烦，「宽松」的代价是泄露，二者不对称。"
+                   "另设**权限不可传递**硬约束：A Agent 调 B Agent 时，B 必须按**自身**权限重新校验，"
+                   "不得继承 A 的权限（防止借道提权）。"
+                   "该规则由 tests/test_permissions.py 以「造出越权看它红」的方式守护。",
+        references=("https://zdnetinside.com/knowledge/how_should_organizations_govern_permissions_for_ai_agents_in_2026.php",),
+        license_note="行业分析文章，未声明 License —— 借鉴 deny-overrides 与权限不可传递原则，不复制代码",
         code_reuse="design_only",
     ),
 )
