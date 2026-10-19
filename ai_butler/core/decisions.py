@@ -753,6 +753,26 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="行业分析文章，未声明 License —— 借鉴 deny-overrides 与权限不可传递原则，不复制代码",
         code_reuse="design_only",
     ),
+    Decision(
+        key="U52", title="Agent 模块的命令行入口形态", phase="P4",
+        plan_quote="三、P4「逐个开发、逐个单测、逐个上线」；U48 已裁定独立入口为函数接口，"
+                   "但未定义**命令行壳**的形态与行为",
+        status=RESOLVED, source="实现参数", decided_at=_D2,
+        resolution="每个定义了具体 Agent 类的模块都加 `if __name__ == \"__main__\"` 入口，"
+                   "委托 ai_butler/agents/cli.py。三条边界："
+                   "①**不带参数只打印档案**，只读 ClassVar，不实例化、不连库、不碰外部依赖 —— "
+                   "此前右键运行会静默退出（退出码 0、零输出），开发者以为文件坏了；"
+                   "能跑但不说话比不能跑更糟，因为它伪装成正常；"
+                   "②**执行业务必须显式 user_id 与 session_id**，缺一个即报错，绝不默认填假值；"
+                   "③**不旁路任何校验**，权限三层、State 契约、写作用域全部复用 U48 的 "
+                   "run_standalone，省掉的只有 LangGraph 编排。"
+                   "另要求 sys.path 引导必须位于**业务 import 之前**：放在文件末尾的兜底 "
+                   "救不了模块顶部的 `import ai_butler`。"
+                   "由 tests/test_agent_cli.py 静态+实测双层守护。",
+        references=(),
+        license_note="本项目自定的实现参数，无外部来源可引用",
+        code_reuse="n/a",
+    ),
 )
 
 
