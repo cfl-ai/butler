@@ -86,9 +86,14 @@ def _call(agent, state):
 
 # ============================== 台账 ============================== #
 def test_p9_decisions_are_registered_and_resolved():
-    """P9 的开发内容在原文里没有定义项，必须先登记台账再动手。"""
+    """P9 的开发内容在原文里没有定义项，必须先登记台账再动手。
+
+    U50（歧义样本的学习回流口径）同样挂在 P9 阶段下 ——
+    2026-10-19 新增该条时本断言没有同步，守护红了两周没人发现，
+    是「写了没接上」的又一形态（E-65）：**新增台账条目必须同步这里的集合**。
+    """
     keys = {d.key for d in decisions.DECISIONS if d.phase == "P9"}
-    assert keys == {"U28", "U29", "U30", "U31"}
+    assert keys == {"U28", "U29", "U30", "U31", "U50"}
     for key in keys:
         assert decisions.get(key).status == decisions.RESOLVED
     assert not decisions.pending(), "台账不应有未裁定项"

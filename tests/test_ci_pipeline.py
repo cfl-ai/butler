@@ -28,7 +28,6 @@ REQUIRED_COMMANDS = {
     "python -m pytest": "契约与单元测试",
     "scripts/smoke_p0.py": "P0-1 底座冒烟",
     "scripts/smoke_p1_p4.py": "P1–P4 端到端冒烟",
-    "scripts/verify_voice_engine.py": "P7 端侧语音引擎验证",
 }
 
 #: 期望存在的 job
@@ -142,7 +141,18 @@ NOT_IN_CI: dict[str, str] = {
     "scripts/verify_android_artifact.py": (
         "校验的是**构建产物**（APK 里的 .so / 权限 / 前台服务 / 随包模型）；"
         "CI 只跑契约与单元测试，不打 APK（需 Flutter SDK + Android SDK + NDK）；"
-        "本地构建后由发布流程执行。**这是有意排除，不是遗漏。**")
+        "本地构建后由发布流程执行。**这是有意排除，不是遗漏。**"),
+    "scripts/verify_voice_engine.py": (
+        "端侧语音引擎验证需要两件 CI 依赖面里没有的东西："
+        "① sherpa-onnx 原生推理包 —— 本机 venv 已装 1.13.8、PyPI 亦有 manylinux cp312 wheel，"
+        "但它不在 requirements.txt（CI 只装纯 Python 依赖；约 2GB 的 torch 系在 requirements-ml.txt）；"
+        "② models/kws-zipformer-wenetspeech-3.3M 全套约 5.2MB —— models/ 整体被 .gitignore，"
+        "且 U06 登记的 ModelScope 仓库 ID 实测已 404，上游位置需重新核实后才能脚本化获取。"
+        "接通远端前已本地逐条验证：pytest（含 AIBUTLER_BLOCK_ML 依赖面模拟）、smoke_p0、"
+        "smoke_p1_p4、场景库覆盖率全部通过，**唯一必红的就是这一步** —— "
+        "留着它等于让 CI 上线即失败。**这是有意排除，不是遗漏。** "
+        "接入前置条件（两项独立可验证）：requirements.txt 声明 sherpa-onnx；"
+        "为 KWS 模型补一个上游可核实的获取步骤。"),
 }
 
 

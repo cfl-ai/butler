@@ -116,10 +116,12 @@ jobs:
       - name: P1–P4 端到端冒烟（真实 PostgreSQL + Redis 串起四个阶段的模块）
         run: python scripts/smoke_p1_p4.py
 
-      # 端侧语音的引擎层与推理层。真机层（麦克风权限/保活/功耗，U23）不在此覆盖，
+      # 端侧语音的引擎层与推理层**有意不进 CI**（tests/test_ci_pipeline.py 的
+      # NOT_IN_CI 登记了完整理由）：它需要 sherpa-onnx 原生推理包与
+      # models/kws-zipformer-wenetspeech-3.3M 全套（models/ 整体 gitignore），
+      # 两项都不在 CI 依赖面内。真机层（麦克风权限/保活/功耗，U23）同样不在此覆盖，
       # 由 scripts/verify_android_artifact.py 在构建产物上单独校验。
-      - name: P7 端侧语音引擎验证（引擎层 + 推理层）
-        run: python scripts/verify_voice_engine.py
+      # 本地验证：.venv + models/ 就绪后 `python scripts/verify_voice_engine.py`。
 
       - name: 评测数据导出（供 Harness 离线链路消费，已剥离用户身份）
         run: |
