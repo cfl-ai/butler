@@ -947,6 +947,61 @@ DECISIONS: tuple[Decision, ...] = (
                      "（DeepSeek Harness）对照设计",
         code_reuse="n/a",
     ),
+    Decision(
+        key="U59",
+        phase="P3",
+        title="人工审批服务形态：一次性凭据模型",
+        plan_quote="三、P8「付款动作必须经人工确认」；三、P10「人工审批后台审核」"
+                   "（只规定必须确认，未定义确认的机制形态）",
+        status=RESOLVED,
+        source="实现参数",
+        decided_at=_D3,
+        resolution="2026-10-23 用户指令「按优先级和稳定性全部处理」中的 P4 项。"
+                   "计划书只规定「必须经人工确认」，机制形态为未定义项，"
+                   "按「开源借鉴」实现一次性凭据模型（core/approval.py）："
+                   "① **一次性**：approve 不直接触发执行；dispatch 凭 approval_id "
+                   "consume 后才放行，用一次即焚——防「放行一次、缓存复用一生」"
+                   "（与 U53 权限闸先于重复拦截同一立场）；"
+                   "② **签名绑定**：票与（工具名 + 规范化入参签名）绑定，"
+                   "批准调用 A 执行不了调用 B；"
+                   "③ **主体绑定**：票与（agent, role）绑定，换身份消费即拒"
+                   "（U51 权限不可传递的延伸）；"
+                   "④ **无人应答即拒**：TTL 到期未决自动作废（expired），"
+                   "不存在永远有效的票；clock 为可注入端口，测试不睡真时间；"
+                   "⑤ **状态机单向**：pending → approved/rejected/expired，"
+                   "不可回退，重复决策一律拒（幂等不等于放任）；"
+                   "⑥ 审批必须署名（decided_by 非空）——匿名放行不可审计。"
+                   "dispatch 三条分支没有第四条：带票→验票放行；无票且服务在→"
+                   "建票挂起（返回携带 approval_id）；服务未绑→维持 U45 一律不执行。",
+        references=(),
+        license_note="计划书未定义项；一次性凭据（single-use token）为公开领域模式",
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U60",
+        phase="P3",
+        title="工具执行超时：协作式 + 按错误码判责",
+        plan_quote="（计划书未定义工具超时与异常归因；评测维度四「稳定性与异常」"
+                   "要求区分超时是接口故障还是任务本身超时）",
+        status=RESOLVED,
+        source="实现参数",
+        decided_at=_D3,
+        resolution="2026-10-23 用户指令「按优先级和稳定性全部处理」中的 P4 项。"
+                   "① **协作式超时**：ToolSpec.timeout_seconds 声明即经单线程执行，"
+                   "future.result(timeout) 判超时。协作式的含义是**不假装杀死线程**"
+                   "——超时只保证调用方不再等待，执行体可能仍在后台，"
+                   "副作用可能延迟发生，ToolResult.note 如实标注（比谎称已终止诚实）；"
+                   "不限时的工具**不开线程**，与接线前行为逐字节一致；"
+                   "② **按错误码判责**：handler 异常显式带 .code（如 PAYMENT_TIMEOUT / "
+                   "INTERFACE_DOWN）即透传；超时为 TASK_TIMEOUT；未分类落 HANDLER_ERROR。"
+                   "ToolResult.error_code/timed_out 供评测维度四直接消费；"
+                   "③ snapshot 增 error_codes 聚合分布与 approval_bound 字段"
+                   "（审计要能分别看见「服务没接」与「被拦下」）。",
+        references=(),
+        license_note="计划书未定义项；协作式取消（cooperative cancellation）为"
+                     "公开领域模式，另参照 dsh 超时按错误码判责的对照设计",
+        code_reuse="n/a",
+    ),
 )
 
 

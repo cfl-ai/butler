@@ -18,15 +18,26 @@
 5. **权限闸前置**（U43–U45 / U51）：任何 handler 执行之前，必须先过三层权限求值。
    此前权限只接在离线独立入口与 CLI 上，`dispatch` 路径零求值 ——
    本补丁把闸门挪到**工具执行的唯一入口**上（详见 core/permissions.ToolPermission）。
+6. **审批凭据**（U59）：Tier1/Tier2 在人工放行前不执行；放行以一次性票为载体
+   （approve → consume 用一次即焚，签名/主体双重绑定）。审批服务未绑定时
+   维持 U45 原纪律：一律挂起不执行——**没有「没接审批服务就放行」的分支**。
+7. **协作式超时**（U60）：声明 timeout_seconds 的工具经线程执行，超时按错误码
+   判责（TASK_TIMEOUT / handler 自带 code 透传 / HANDLER_ERROR），
+   结果带 error_code 供评测维度四（稳定性与异常）消费。
+   协作式的含义：**不假装杀死线程**——超时后执行体可能仍在后台，
+   副作用可能延迟发生，note 里如实标注。
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Sequence
 
+from ai_butler.core.approval import ApprovalError, ApprovalService
 from ai_butler.core.permissions import (
     AgentIdentity,
     CapabilityLevel,
@@ -42,9 +53,31 @@ DEFAULT_NO_PROGRESS_LIMIT = 3
 #: 单次任务允许的工具调用总次数上限（实现参数，防跑飞）
 DEFAULT_MAX_CALLS = 50
 
+#: 错误码（U60：按错误码判责，与评测维度四的超时归因对齐）
+CODE_TASK_TIMEOUT = "TASK_TIMEOUT"      # 任务执行超时（本调度线程判）
+CODE_HANDLER_ERROR = "HANDLER_ERROR"    # 未分类异常
+
 
 class ToolError(RuntimeError):
     pass
+
+
+class ToolTimeout(ToolError):
+    """协作式超时：调用方已不再等待，执行体可能仍在后台。"""
+
+    code = CODE_TASK_TIMEOUT
+
+
+def _error_code(exc: BaseException) -> str:
+    """按错误码判责（U60）。
+
+    handler 显式带了 `.code`（如 PAYMENT_TIMEOUT / INTERFACE_DOWN）就透传——
+    判责信息在产生地最完整；没带才落 HANDLER_ERROR。
+    """
+    code = getattr(exc, "code", None)
+    if isinstance(code, str) and code.strip():
+        return code.strip()
+    return CODE_HANDLER_ERROR
 
 
 @dataclass(frozen=True)
@@ -74,6 +107,12 @@ class ToolResult:
     progressed: bool = True
     #: 本次调用实际生效的审批档（U45）。Tier1/Tier2 的调用在审批放行前不得执行。
     approval_tier: int = 0
+    #: 审批票号（U59）。needs_approval 且未放行时携带，调用方凭它去人工批准后
+    #: 带 approval_id 重新 dispatch。
+    approval_id: str = ""
+    #: 错误码（U60）。失败时按码判责：TASK_TIMEOUT / handler 自带 code 透传 /
+    #: HANDLER_ERROR；成功为空串。评测维度四直接消费此字段。
+    error_code: str = ""
 
     @property
     def signature(self) -> str:
@@ -83,6 +122,10 @@ class ToolResult:
     def needs_approval(self) -> bool:
         """是否触碰了需要人工确认的档位（计划书三、P8「付款动作必须经人工确认」）。"""
         return self.approval_tier >= 1
+
+    @property
+    def timed_out(self) -> bool:
+        return self.error_code == CODE_TASK_TIMEOUT
 
 
 @dataclass(frozen=True)
@@ -102,6 +145,10 @@ class ToolSpec:
     required: CapabilityLevel = CapabilityLevel.L2_SIDE_EFFECT
     #: 本工具接触的数据密级（U44）。None = 沿用分发上下文的密级。
     sensitivity: DataSensitivity | None = None
+    #: 协作式超时（U60）。None = 不限时（默认，与接线前行为一致）。
+    #: 注意语义：超时只保证**调用方不再等待**，不保证执行体已停止——
+    #  handler 若是纯计算，残留线程会在后台跑完；副作用类工具应自行幂等。
+    timeout_seconds: float | None = None
 
 
 class ToolRegistry:
@@ -113,14 +160,18 @@ class ToolRegistry:
                  progresses: Callable[[Any], bool] | None = None,
                  description: str = "",
                  required: CapabilityLevel = CapabilityLevel.L2_SIDE_EFFECT,
-                 sensitivity: DataSensitivity | None = None) -> ToolSpec:
+                 sensitivity: DataSensitivity | None = None,
+                 timeout_seconds: float | None = None) -> ToolSpec:
         if not name or not str(name).strip():
             raise ToolError("工具必须声明非空的 name")
         if name in self._specs:
             raise ToolError(f"工具名重复：{name!r}")
+        if timeout_seconds is not None and timeout_seconds <= 0:
+            raise ToolError(f"工具 {name} 的 timeout_seconds 必须为正")
         spec = ToolSpec(name=name, handler=handler, needs_user_id=needs_user_id,
                         progresses=progresses, description=description,
-                        required=required, sensitivity=sensitivity)
+                        required=required, sensitivity=sensitivity,
+                        timeout_seconds=timeout_seconds)
         self._specs[name] = spec
         return spec
 
@@ -143,7 +194,8 @@ class ToolDispatcher:
     def __init__(self, registry: ToolRegistry, *, throttle: Any = None,
                  no_progress_limit: int = DEFAULT_NO_PROGRESS_LIMIT,
                  max_calls: int = DEFAULT_MAX_CALLS,
-                 permission: ToolPermission | None = None) -> None:
+                 permission: ToolPermission | None = None,
+                 approval: ApprovalService | None = None) -> None:
         self.registry = registry
         #: 可选资源节流器（三、P3「资源节流」）；给了就按账号扣减工具调用配额
         self.throttle = throttle
@@ -152,6 +204,9 @@ class ToolDispatcher:
         #: 权限上下文（U43–U45）。**未绑定即拒绝一切分发** ——
         #: 没有「未绑定时放行」的分支，那正是「声明了没接上」的形状。
         self._permission = permission
+        #: 审批服务（U59）。**未绑定时 Tier1/Tier2 一律挂起不执行** ——
+        #: 没有「没接审批服务就放行」的分支（U45 原纪律）。
+        self._approval = approval
         self.reset()
 
     # ---------------- 权限上下文 ---------------- #
@@ -194,7 +249,8 @@ class ToolDispatcher:
 
     # ---------------- 调度 ---------------- #
     def dispatch(self, call: ToolCall, *, user_id: str | None = None,
-                 agent: AgentIdentity | None = None) -> ToolResult:
+                 agent: AgentIdentity | None = None,
+                 approval_id: str | None = None) -> ToolResult:
         if self._no_progress:
             return self._refuse(call, f"已判定无增量（{self._blocked_reason}），拒绝继续调用")
         if self.call_count >= self.max_calls:
@@ -204,10 +260,10 @@ class ToolDispatcher:
 
         spec = self.registry.get(call.name)
 
-        # ---- 权限闸（U43–U45 / U51）：先求值，后执行，先于重复拦截 ----
+        # ---- 权限闸（U43–U45 / U51 / U59）：先求值，后执行，先于重复拦截 ----
         # 顺序是刻意的：重复拦截会复用上次结果，若权限判定放在它后面，
         # 一次被放行的调用就能靠缓存反复取用，角色切换后仍然畅通。
-        gate = self._permission_gate(call, spec, agent)
+        gate = self._permission_gate(call, spec, agent, approval_id)
         if gate is not None:
             return gate
 
@@ -243,9 +299,19 @@ class ToolDispatcher:
             payload["user_id"] = str(user_id)
 
         try:
-            output = spec.handler(**payload)
+            output = self._execute(spec, payload)
+        except ToolTimeout as exc:
+            # 协作式超时：调用方不再等待，执行体可能仍在后台（如实标注）
+            result = ToolResult(call=call, ok=False, progressed=False,
+                                error_code=exc.code,
+                                note=f"{type(exc).__name__}: {exc}（执行体可能仍在后台，"
+                                     f"副作用或延迟发生）")
+            self._calls.append(result)
+            self._bump_streak()
+            return result
         except Exception as exc:                      # noqa: BLE001 — 单次工具失败不阻断主流程
             result = ToolResult(call=call, ok=False, progressed=False,
+                                error_code=_error_code(exc),
                                 note=f"{type(exc).__name__}: {exc}")
             self._calls.append(result)
             self._bump_streak()
@@ -270,8 +336,9 @@ class ToolDispatcher:
 
     # ---------------- 内部 ---------------- #
     def _permission_gate(self, call: ToolCall, spec: ToolSpec,
-                         agent: AgentIdentity | None) -> ToolResult | None:
-        """三层权限求值。返回 None = 放行；返回 ToolResult = 拒绝（已记账）。
+                         agent: AgentIdentity | None,
+                         approval_id: str | None) -> ToolResult | None:
+        """三层权限求值 + 审批凭据。返回 None = 放行；返回 ToolResult = 拒绝（已记账）。
 
         **未绑定权限上下文一律拒绝**：没有主体、角色、密级齐备的请求无从判定，
         而无从判定即拒绝（core/permissions.py 模块纪律）。
@@ -295,15 +362,53 @@ class ToolDispatcher:
                 f"权限拒绝：{verdict.reason}（未通过的层：{failed or '—'}；"
                 f"工具 {call.name} 需要 {spec.required.name}）")
         if int(verdict.tier) >= 1:
-            # Tier1/Tier2 在人工审批放行前**不执行** ——
-            # 计划书三、P8「付款动作必须经人工确认」。审批服务接入后，
-            # 由 dispatch 先取审批结论再放行（边界见 core/decisions.py U53）。
+            return self._approval_gate(call, spec, identity, ctx, int(verdict.tier),
+                                       approval_id)
+        return None
+
+    def _approval_gate(self, call: ToolCall, spec: ToolSpec,
+                       identity: AgentIdentity, ctx: ToolPermission,
+                       tier: int, approval_id: str | None) -> ToolResult | None:
+        """Tier1/Tier2 的放行路径（U59）。
+
+        三条分支，没有第四条：
+        1. 带了 approval_id → 消费凭据（一次性/签名/主体三重校验），通过才放行；
+        2. 没带且审批服务已绑 → 创建待审批票，返回挂起结果（携带 approval_id）；
+        3. 审批服务未绑 → 维持 U45：一律不执行。
+        """
+        if approval_id:
+            if self._approval is None:
+                return self._deny(
+                    call,
+                    f"携带审批票 {approval_id} 但本调度器未绑定审批服务——"
+                    f"无从验证即不执行（U45/U59）", tier=tier)
+            try:
+                self._approval.consume(
+                    approval_id, tool=call.name, signature=call.signature,
+                    agent=identity.key, role=str(ctx.role))
+            except ApprovalError as exc:
+                return self._deny(call, f"审批票无效：{exc}", tier=tier)
+            return None                          # 票已验证，放行执行
+
+        if self._approval is None:
             return self._deny(
                 call,
-                f"需人工审批（Tier{int(verdict.tier)}）后放行：{call.name}"
-                f"（审批服务接入前一律不执行，U45）",
-                tier=int(verdict.tier))
-        return None
+                f"需人工审批（Tier{tier}）后放行：{call.name}"
+                f"（审批服务未绑定，一律不执行，U45）",
+                tier=tier)
+
+        ticket = self._approval.request(
+            tool=call.name, signature=call.signature, agent=identity.key,
+            role=str(ctx.role), tier=tier,
+            reason=f"工具 {call.name} 需 Tier{tier} 人工确认后执行")
+        result = ToolResult(call=call, ok=False, progressed=False,
+                            approval_tier=tier, approval_id=ticket.approval_id,
+                            note=f"待人工审批（Tier{tier}）：{call.name}"
+                                 f"（票 {ticket.approval_id}，批准后带 approval_id "
+                                 f"重新调用；无人应答 {self._approval.ttl:g}s 即作废）")
+        self._calls.append(result)
+        self._bump_streak()
+        return result
 
     def _deny(self, call: ToolCall, note: str, *, tier: int = 0) -> ToolResult:
         result = ToolResult(call=call, ok=False, note=note, progressed=False,
@@ -317,6 +422,29 @@ class ToolDispatcher:
         if self._streak >= self.no_progress_limit:
             self._no_progress = True
             self._blocked_reason = f"连续 {self._streak} 次调用无增量"
+
+    @staticmethod
+    def _execute(spec: ToolSpec, payload: dict[str, Any]) -> Any:
+        """执行 handler；声明了 timeout_seconds 即走线程协作式超时（U60）。
+
+        不限时时**不开线程**——与接线前行为逐字节一致，零额外开销。
+        """
+        if spec.timeout_seconds is None:
+            return spec.handler(**payload)
+        pool = ThreadPoolExecutor(max_workers=1)
+        future = pool.submit(spec.handler, **payload)
+        try:
+            return future.result(timeout=spec.timeout_seconds)
+        except FuturesTimeoutError as exc:
+            # 不 shutdown(wait=True)：那会阻塞到 handler 自己结束，超时就失去了意义。
+            # 代价是残留线程——协作式语义，note 里已如实标注。
+            pool.shutdown(wait=False)
+            raise ToolTimeout(
+                f"工具 {spec.name} 执行超时（{spec.timeout_seconds:g}s）") from exc
+        except BaseException:
+            pool.shutdown(wait=True)
+            raise
+        pool.shutdown(wait=True)
 
     def _refuse(self, call: ToolCall, note: str) -> ToolResult:
         result = ToolResult(call=call, ok=False, note=note, progressed=False)
@@ -332,6 +460,19 @@ class ToolDispatcher:
                 "permission_bound": self._permission is not None,
                 #: 被权限闸拦下的次数（三层拒绝 + 待审批档，审计要能分别看见）
                 "denied": sum(1 for r in self._calls
-                              if not r.ok and r.note.startswith(("权限拒绝", "未绑定权限", "需人工审批"))),
+                              if not r.ok and r.note.startswith(("权限拒绝", "未绑定权限", "需人工审批", "审批票无效", "携带审批票"))),
                 "approval_held": sum(1 for r in self._calls if r.approval_tier >= 1),
+                #: 审批服务是否绑定（未绑定 = Tier 一律挂起，U45 纪律）
+                "approval_bound": self._approval is not None,
+                #: 按错误码聚合的失败分布（U60 判责出口，喂评测维度四）
+                "error_codes": _tally_codes(r.error_code for r in self._calls
+                                            if not r.ok),
                 "tools": list(self.registry.names())}
+
+
+def _tally_codes(codes) -> dict[str, int]:
+    out: dict[str, int] = {}
+    for c in codes:
+        key = c or "(none)"
+        out[key] = out.get(key, 0) + 1
+    return out
