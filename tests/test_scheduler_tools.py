@@ -10,6 +10,13 @@ from __future__ import annotations
 
 import pytest
 
+from ai_butler.core.permissions import (
+    AgentIdentity,
+    CapabilityLevel,
+    DataSensitivity,
+    ToolPermission,
+    UserRole,
+)
 from ai_butler.scheduler.throttle import (
     ResourceThrottle,
     ThrottleError,
@@ -29,8 +36,32 @@ from ai_butler.scheduler.tools import (
 def _registry(**handlers):
     reg = ToolRegistry()
     for name, fn in handlers.items():
-        reg.register(name, fn)
+        # 玩具工具按**只读**注册：它们不触碰进程外状态，权限语义即 L0（U43）。
+        # 权限闸的行为由 tests/test_tool_permissions.py 专门守护，
+        # 本文件只测调度机制，故给一个必然放行的上下文。
+        reg.register(name, fn, required=CapabilityLevel.L0_READ)
     return reg
+
+
+def _permission() -> ToolPermission:
+    """机制测试用的权限上下文：高权限主体 + 公开数据，确保 Tier0 放行。"""
+    return ToolPermission(
+        agent=AgentIdentity(key="p3_scene_scheduler",
+                            level=CapabilityLevel.L3_CRITICAL),
+        role=UserRole.OWNER, sensitivity=DataSensitivity.L1_PUBLIC)
+
+
+def _dispatcher(*, throttle=None, max_calls=None, **handlers):
+    extra = {}
+    if throttle is not None:
+        extra["throttle"] = throttle
+    if max_calls is not None:
+        extra["max_calls"] = max_calls
+    return ToolDispatcher(_registry(**handlers), permission=_permission(), **extra)
+
+
+def _bound(reg: ToolRegistry, **kwargs) -> ToolDispatcher:
+    return ToolDispatcher(reg, permission=_permission(), **kwargs)
 
 
 def test_registry_registers_and_lists_tools():
@@ -62,7 +93,7 @@ def test_tool_call_validation_and_signature_is_key_order_independent():
 # ============================== 统一调度 ============================== #
 def test_dispatch_executes_through_the_registry():
     reg = _registry(echo=lambda text="": f"echo:{text}")
-    dispatcher = ToolDispatcher(reg)
+    dispatcher = _bound(reg)
     result = dispatcher.dispatch(ToolCall("echo", {"text": "hi"}))
     assert result.ok and result.output == "echo:hi"
     assert dispatcher.call_count == 1
@@ -76,7 +107,7 @@ def test_duplicate_call_is_intercepted_and_not_reexecuted():
         calls.append(text)
         return f"got:{text}"
 
-    dispatcher = ToolDispatcher(_registry(echo=handler))
+    dispatcher = _dispatcher(echo=handler)
     first = dispatcher.dispatch(ToolCall("echo", {"text": "x"}))
     second = dispatcher.dispatch(ToolCall("echo", {"text": "x"}))
 
@@ -88,7 +119,7 @@ def test_duplicate_call_is_intercepted_and_not_reexecuted():
 
 def test_no_progress_termination_after_repeated_empty_results():
     """计划书三、P3「无增量终止」。"""
-    dispatcher = ToolDispatcher(_registry(noop=lambda **_: None))
+    dispatcher = _dispatcher(noop=lambda **_: None)
     for i in range(DEFAULT_NO_PROGRESS_LIMIT):
         result = dispatcher.dispatch(ToolCall("noop", {"i": i}))
         assert result.ok and result.progressed is False
@@ -104,7 +135,7 @@ def test_progress_resets_the_no_progress_streak():
     def sometimes(flag=False):
         return "数据" if flag else None
 
-    dispatcher = ToolDispatcher(_registry(fetch=sometimes))
+    dispatcher = _dispatcher(fetch=sometimes)
     dispatcher.dispatch(ToolCall("fetch", {"flag": False}))
     dispatcher.dispatch(ToolCall("fetch", {"flag": False}))
     dispatcher.dispatch(ToolCall("fetch", {"flag": True}))     # 有增量，清零
@@ -119,15 +150,16 @@ def test_custom_progress_predicate():
     """
     registry = ToolRegistry()
     registry.register("fetch", lambda **_: {"items": []},
-                      progresses=lambda out: bool(out.get("items")))
-    dispatcher = ToolDispatcher(registry)
+                      progresses=lambda out: bool(out.get("items")),
+                      required=CapabilityLevel.L0_READ)
+    dispatcher = _bound(registry)
     for i in range(DEFAULT_NO_PROGRESS_LIMIT):
         assert dispatcher.dispatch(ToolCall("fetch", {"i": i})).progressed is False
     assert dispatcher.no_progress is True, "空结果集应判为无增量"
 
 
 def test_max_calls_ceiling_stops_runaway_loops():
-    dispatcher = ToolDispatcher(_registry(count=lambda i=0: i), max_calls=3)
+    dispatcher = _dispatcher(count=lambda i=0: i, max_calls=3)
     for i in range(3):
         assert dispatcher.dispatch(ToolCall("count", {"i": i})).ok
     blocked = dispatcher.dispatch(ToolCall("count", {"i": 99}))
@@ -140,8 +172,8 @@ def test_user_id_is_injected_into_tools_that_need_it():
     seen: dict[str, str] = {}
     reg = ToolRegistry()
     reg.register("data.read_profile", lambda user_id="": seen.setdefault("uid", user_id),
-                 needs_user_id=True)
-    dispatcher = ToolDispatcher(reg)
+                 needs_user_id=True, required=CapabilityLevel.L0_READ)
+    dispatcher = _bound(reg)
     dispatcher.dispatch(ToolCall("data.read_profile"), user_id="user-A")
     assert seen["uid"] == "user-A"
 
@@ -151,16 +183,17 @@ def test_caller_cannot_forge_user_id():
     seen: dict[str, str] = {}
     reg = ToolRegistry()
     reg.register("wiki.read", lambda user_id="": seen.setdefault("uid", user_id),
-                 needs_user_id=True)
-    dispatcher = ToolDispatcher(reg)
+                 needs_user_id=True, required=CapabilityLevel.L0_READ)
+    dispatcher = _bound(reg)
     dispatcher.dispatch(ToolCall("wiki.read", {"user_id": "user-B"}), user_id="user-A")
     assert seen["uid"] == "user-A", "伪造的 user_id 必须被覆盖"
 
 
 def test_tool_needing_user_id_is_refused_without_context():
     reg = ToolRegistry()
-    reg.register("wiki.read", lambda user_id="": "x", needs_user_id=True)
-    dispatcher = ToolDispatcher(reg)
+    reg.register("wiki.read", lambda user_id="": "x", needs_user_id=True,
+                 required=CapabilityLevel.L0_READ)
+    dispatcher = _bound(reg)
     result = dispatcher.dispatch(ToolCall("wiki.read"), user_id="")
     assert result.ok is False and "未绑定账号" in result.note
 
@@ -169,13 +202,13 @@ def test_tool_failure_does_not_raise():
     def boom():
         raise RuntimeError("工具炸了")
 
-    dispatcher = ToolDispatcher(_registry(boom=boom))
+    dispatcher = _dispatcher(boom=boom)
     result = dispatcher.dispatch(ToolCall("boom"))
     assert result.ok is False and "工具炸了" in result.note
 
 
 def test_snapshot_reports_dispatch_statistics():
-    dispatcher = ToolDispatcher(_registry(echo=lambda: "y"))
+    dispatcher = _dispatcher(echo=lambda: "y")
     dispatcher.dispatch(ToolCall("echo"))
     dispatcher.dispatch(ToolCall("echo"))
     snap = dispatcher.snapshot()
@@ -263,7 +296,7 @@ def test_snapshot_lists_every_bucket():
 def test_dispatcher_consults_the_throttle():
     """工具统一调度与资源节流联动：配额用尽即拒绝调用。"""
     throttle = ResourceThrottle(ThrottlePolicy(tool_calls_per_task=1))
-    dispatcher = ToolDispatcher(_registry(echo=lambda i=0: i), throttle=throttle)
+    dispatcher = _dispatcher(echo=lambda i=0: i, throttle=throttle)
     assert dispatcher.dispatch(ToolCall("echo", {"i": 1}), user_id="user-A").ok is True
     blocked = dispatcher.dispatch(ToolCall("echo", {"i": 2}), user_id="user-A")
     assert blocked.ok is False and "资源节流" in blocked.note

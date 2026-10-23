@@ -50,6 +50,8 @@ class Decision:
 _D = "2026-10-16"
 #: U43 起的裁定日期（接管后新增的三层权限 / 检索路由 / 复检 / Harness 评测）
 _D2 = "2026-10-19"
+#: U53 起的裁定日期（运行时内核补齐：权限闸接线 / 事件日志 / 上下文计量 / 超时审批）
+_D3 = "2026-10-23"
 
 DECISIONS: tuple[Decision, ...] = (
     Decision(
@@ -769,6 +771,33 @@ DECISIONS: tuple[Decision, ...] = (
                    "另要求 sys.path 引导必须位于**业务 import 之前**：放在文件末尾的兜底 "
                    "救不了模块顶部的 `import ai_butler`。"
                    "由 tests/test_agent_cli.py 静态+实测双层守护。",
+        references=(),
+        license_note="本项目自定的实现参数，无外部来源可引用",
+        code_reuse="n/a",
+    ),
+    # ==================== U53 起：运行时内核补齐（2026-10-23） ====================
+    Decision(
+        key="U53", title="工具统一调度的权限闸接线（在线编排路径）", phase="P3",
+        plan_quote="三、P3「实现工具统一调度、重复调用拦截、无增量终止」；"
+                   "七、验收 9–14「越权用例回归」——计划书要求工具统一调度与越权回归，"
+                   "但未规定**三层权限判定落在调度路径的哪一步**",
+        status=RESOLVED, source="实现参数", decided_at=_D3,
+        resolution="闸门落在 `ToolDispatcher.dispatch` 内、handler 执行**之前**、"
+                   "重复调用拦截**之前**（顺序即安全：放行一次不得靠缓存复用一生）。"
+                   "① **未绑定权限上下文（ToolPermission）一律拒绝** —— "
+                   "无从判定即拒绝，没有「未绑定时放行」的分支；"
+                   "② 角色缺省 MEMBER（最保守的已登录身份）：会话链路尚未携带角色"
+                   "（U42：/api/chat/stream 未实现），不给「大概是个 admin」留默认值；"
+                   "③ 调度器自身按 L1 绑定：编排者不直接触发进程外动作，"
+                   "需要 L2 及以上的调用方以自己的 AgentIdentity 求值"
+                   "（dispatch(..., agent=...)），U51 权限不可传递；"
+                   "④ Tier1/Tier2 在审批服务接入前**挂起不执行**（U45，计划书三、P8"
+                   "「付款动作必须经人工确认」）—— 不等同于「先执行后补审批」；"
+                   "⑤ 工具未声明 required 时按 L2（调外部工具）对待，"
+                   "与 U43「不得用布尔量推导」同一立场。"
+                   "此前权限只接在 run_standalone 与 CLI 上，dispatch 路径零求值 —— "
+                   "属 MEMORY E-21/E-29/E-33「声明≠能力」的又一形态，本次接线的守护见 "
+                   "tests/test_tool_permissions.py（每条断言对应一种具体越权手法）。",
         references=(),
         license_note="本项目自定的实现参数，无外部来源可引用",
         code_reuse="n/a",

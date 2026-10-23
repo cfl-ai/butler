@@ -40,6 +40,12 @@ from ai_butler.agents.state import (
 from ai_butler.scheduler.observe import Observer, Span, Trace, trace_scope
 from ai_butler.scheduler.router import IntentRouter, RouteRequest
 from ai_butler.core.input_guard import InputGuardError
+from ai_butler.core.permissions import (
+    AgentIdentity,
+    CapabilityLevel,
+    ToolPermission,
+    UserRole,
+)
 from ai_butler.scheduler.throttle import ResourceThrottle
 from ai_butler.scheduler.tools import ToolDispatcher, ToolRegistry
 
@@ -178,7 +184,8 @@ class SceneScheduler:
     def __init__(self, *, router: IntentRouter, agents: Mapping[str, SubAgent],
                  plan: DispatchPlan, observer: Observer | None = None,
                  tool_registry: ToolRegistry | None = None,
-                 throttle: ResourceThrottle | None = None) -> None:
+                 throttle: ResourceThrottle | None = None,
+                 role: UserRole = UserRole.MEMBER) -> None:
         self.router = router
         self.agents = dict(agents)
         self.plan = plan
@@ -186,6 +193,17 @@ class SceneScheduler:
         #: 计划书三、P3「工具统一调度」：全系统唯一的工具入口
         self.dispatcher = ToolDispatcher(tool_registry or ToolRegistry(),
                                          throttle=throttle)
+        #: 权限上下文（U43–U45）。角色缺省 MEMBER（日常使用）——
+        #: 会话链路尚未携带角色（U42：/api/chat/stream 未实现），
+        #: 在角色可达之前按最保守的已登录身份处理，不给「大概是个 admin」留默认值。
+        #: 调度器自身按 L1 绑定：**编排者不直接触发进程外动作**，
+        #: 需要 L2 及以上的调用方必须用自己的 AgentIdentity 求值
+        #: （dispatch(..., agent=...)），U51 权限不可传递。
+        self.role = role
+        self.dispatcher.bind_permission(ToolPermission(
+            agent=AgentIdentity(key="p3_scene_scheduler",
+                                level=CapabilityLevel.L1_WRITE_OWN),
+            role=role))
         missing = {n for chain in plan.chains.values() for n in chain} - set(self.agents)
         if missing:
             raise SchedulerError(f"分发计划引用了未注册的子 Agent：{sorted(missing)}")
@@ -409,8 +427,13 @@ class SceneScheduler:
 
     async def run(self, *, user_id: str, session_id: str, utterance: str,
                   labels: Sequence[str], login_status: bool = True,
-                  wiki_digest: Any = None, trace_id: str = "") -> SchedulerResult:
-        """用户发起任意请求的入口（计划书三、P3 触发时机）。"""
+                  wiki_digest: Any = None, trace_id: str = "",
+                  role: UserRole | None = None) -> SchedulerResult:
+        """用户发起任意请求的入口（计划书三、P3 触发时机）。
+
+        `role` 为本次任务的用户角色（会话鉴权可达时由上层传入）；
+        缺省沿用构造时的角色。角色参与每一次工具调用的三层权限求值（U45）。
+        """
         state = new_state(user_id=user_id, session_id=session_id, login_status=login_status,
                           jev_decision_result=None, wiki_digest=wiki_digest)
         state.update({"utterance": utterance, "labels": tuple(labels),
@@ -422,6 +445,14 @@ class SceneScheduler:
 
         # 每次任务重开工具调度计数：重复拦截与无增量判定都以「本次任务」为单位
         self.dispatcher.reset()
+        # 权限上下文按任务重绑：角色可能因账号/会话而异，
+        # 且审计要能追溯到当次生效的角色（U45）。
+        # 判空用 `is not None` 而非真值：UserRole.AUDITOR 的值为 0，
+        # `role or self.role` 会把 auditor 静默降级成构造时角色 —— 真踩过。
+        self.dispatcher.bind_permission(ToolPermission(
+            agent=AgentIdentity(key="p3_scene_scheduler",
+                                level=CapabilityLevel.L1_WRITE_OWN),
+            role=role if role is not None else self.role))
         trace = Trace(user_id=user_id, session_id=session_id, trace_id=trace_id,
                       observer=self.observer)
         with trace_scope(trace):
