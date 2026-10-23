@@ -37,6 +37,7 @@ from ai_butler.agents.state import (
     new_state,
     validate_state,
 )
+from ai_butler.core.event_journal import EventJournal, journal_observer
 from ai_butler.scheduler.observe import Observer, Span, Trace, trace_scope
 from ai_butler.scheduler.router import IntentRouter, RouteRequest
 from ai_butler.core.input_guard import InputGuardError
@@ -185,11 +186,16 @@ class SceneScheduler:
                  plan: DispatchPlan, observer: Observer | None = None,
                  tool_registry: ToolRegistry | None = None,
                  throttle: ResourceThrottle | None = None,
+                 journal: EventJournal | None = None,
                  role: UserRole = UserRole.MEMBER) -> None:
         self.router = router
         self.agents = dict(agents)
         self.plan = plan
         self.observer = observer
+        #: append-only 会话事件账本（U57）。传入即把本任务的 Trace 埋点
+        #: 桥接落账（journal_observer 包装 observer 语义）；不传则维持
+        #: 内存级 Trace 原行为——**没有账本时不冒充已持久化**。
+        self.journal = journal
         #: 计划书三、P3「工具统一调度」：全系统唯一的工具入口
         self.dispatcher = ToolDispatcher(tool_registry or ToolRegistry(),
                                          throttle=throttle)
@@ -453,11 +459,19 @@ class SceneScheduler:
             agent=AgentIdentity(key="p3_scene_scheduler",
                                 level=CapabilityLevel.L1_WRITE_OWN),
             role=role if role is not None else self.role))
+        observer = self.observer
+        if self.journal is not None:
+            # 账本在场时，span 逐条桥接落账；trace 结束再落一条汇总
+            observer = journal_observer(self.journal, session_fields={
+                "user_id": user_id, "session_id": session_id, "trace_id": trace_id})
         trace = Trace(user_id=user_id, session_id=session_id, trace_id=trace_id,
-                      observer=self.observer)
+                      observer=observer)
         with trace_scope(trace):
             final = await self._graph.ainvoke(state, {"recursion_limit": 24})
         summary = trace.finish()
+        if self.journal is not None:
+            # summary 已含 trace_id/user_id/session_id（trace.summary() 的字段）
+            self.journal.session_end(**summary)
 
         decision = final.get("route_decision") or {}
         clarification = final.get("clarification") or {}

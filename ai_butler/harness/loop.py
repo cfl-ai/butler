@@ -23,6 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Mapping, Sequence
 
+from ai_butler.core.event_journal import EV_CHECKPOINT, EV_STAGE, EventJournal
 from ai_butler.evaluation.redaction import Redactor
 from ai_butler.harness.context import CompressedContext, ContextItem, compress
 from ai_butler.harness.hooks import (
@@ -121,14 +122,41 @@ class AgenticLoop:
 
     async def run(self, *, goal: str, items: Sequence[ContextItem],
                   redactor: Redactor, summarizer: Callable[[str], str] | None = None,
-                  max_items: int = 20) -> LoopResult:
+                  max_items: int = 20,
+                  journal: EventJournal | None = None) -> LoopResult:
+        """跑四阶循环。
+
+        `journal`（U57）传入即**实时**落账：每条 StageRecord 与终局快照都追加到
+        append-only 账本，进程崩溃后可从账本回放恢复，不依赖本方法的返回值。
+        """
         result = LoopResult(converged=False, iterations=0, reason="")
+
+        def _emit(record: StageRecord) -> None:
+            result.records.append(record)
+            if journal is not None:
+                journal.append(EV_STAGE, record.as_dict())
+
+        try:
+            return await self._run_inner(goal=goal, items=items, redactor=redactor,
+                                         summarizer=summarizer, max_items=max_items,
+                                         result=result, emit=_emit)
+        finally:
+            # 终局快照入账：4 处 return（含 Hook 拦截/审批暂停/上限归档）都覆盖。
+            # 崩溃恢复 = 重放此 checkpoint 及其后事件。
+            if journal is not None:
+                journal.append(EV_CHECKPOINT, {"loop": result.as_dict()})
+
+    async def _run_inner(self, *, goal: str, items: Sequence[ContextItem],
+                         redactor: Redactor,
+                         summarizer: Callable[[str], str] | None,
+                         max_items: int, result: LoopResult,
+                         emit: Callable[[StageRecord], None]) -> LoopResult:
 
         # ---- 阶段一：上下文收集（含脱敏与压缩）----
         context = compress(items, redactor=redactor, max_items=max_items,
                            summarizer=summarizer, where="Harness 上下文")
         result.context = context
-        result.records.append(StageRecord(
+        emit(StageRecord(
             0, STAGE_COLLECT,
             f"收集 {len(context.items)} 条上下文（丢弃 {context.dropped} 条），目标：{goal}"))
 
@@ -138,14 +166,14 @@ class AgenticLoop:
 
             # ---- 阶段二：LLM 决策 ----
             proposal = await self.decide(context, tuple(result.records))
-            result.records.append(StageRecord(
+            emit(StageRecord(
                 iteration, STAGE_DECIDE, proposal.summary,
                 "done" if proposal.done else "continue"))
 
             # ---- 阶段三：工具执行（**执行前必须过 Hook**）----
             if proposal.change is not None:
                 verdict = self.hooks.evaluate(proposal.change)
-                result.records.append(StageRecord(
+                emit(StageRecord(
                     iteration, STAGE_EXECUTE,
                     f"Hook 结论 {verdict.outcome}（风险 {verdict.risk.level}）",
                     verdict.outcome))
@@ -166,7 +194,7 @@ class AgenticLoop:
                 outcome = self.sandbox.run(command, timeout=self.timeout)
                 executed.append(outcome)
                 result.sandbox_results.append(outcome)
-                result.records.append(StageRecord(
+                emit(StageRecord(
                     iteration, STAGE_EXECUTE,
                     f"执行 {command} → exit={outcome.exit_code}",
                     "ok" if outcome.ok else "fail"))
@@ -179,12 +207,12 @@ class AgenticLoop:
             if proposal.done and (not executed or made_progress):
                 result.converged = True
                 result.reason = "已达标，循环收敛"
-                result.records.append(StageRecord(iteration, STAGE_CORRECT,
+                emit(StageRecord(iteration, STAGE_CORRECT,
                                                   "判定达标", "converged"))
                 return result
 
             no_progress_streak = 0 if made_progress else no_progress_streak + 1
-            result.records.append(StageRecord(
+            emit(StageRecord(
                 iteration, STAGE_CORRECT,
                 f"未达标（{'有进展' if made_progress else f'连续 {no_progress_streak} 轮无进展'}）",
                 "progress" if made_progress else "stalled"))

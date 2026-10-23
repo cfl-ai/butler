@@ -883,6 +883,39 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="本项目自定的实现参数，无外部来源可引用",
         code_reuse="n/a",
     ),
+    Decision(
+        key="U57",
+        phase="P2",
+        title="append-only 会话事件账本（轨迹 / 回放 / 恢复的地基）",
+        plan_quote="（计划书全文无「事件日志 / 轨迹 / 回放 / 恢复」任何表述——"
+                   "本项为文档未定义项，按「开源借鉴」处理）",
+        status=RESOLVED,
+        source="实现参数",
+        decided_at=_D3,
+        resolution="2026-10-23 用户指令「按优先级和稳定性全部处理」中的 P2 项。"
+                   "按「开源借鉴」实现 Event Sourcing 模式："
+                   "① 不存当前状态，存到达状态的全部事件，状态 = 事件的 fold；"
+                   "② append-only——存储端口（JournalStore）只有 load/append，"
+                   "没有 update/delete，改历史只能追加新事件；"
+                   "③ 每条事件 seq 连续 + sha256 链式绑定，verify() 断裂即拒"
+                   "（fail-closed，回放前必须先过校验）；"
+                   "④ 先脱敏后入账（Redactor.redact_deep + assert_clean），"
+                   "与 harness/context.py 的顺序纪律同构；"
+                   "⑤ 崩溃恢复 = 新实例从 store 重载续写（seq 不重号）"
+                   "+ 最后一个 checkpoint 起 replay；"
+                   "⑥ 事件类型与 evaluation/trace.py 五类过程痕迹一一对应，"
+                   "账本同时是 P9 评测中台的数据源；"
+                   "⑦ 接线：scheduler 的 Trace 埋点经 journal_observer 桥接落账"
+                   "（observe.Observer 加 @runtime_checkable），harness loop 的"
+                   "StageRecord 与终局快照实时落账（try/finally 覆盖 4 处 return"
+                   "+ 异常路径）；不传 journal 时行为与接线前完全一致"
+                   "（没有账本时不冒充已持久化）。",
+        references=(),
+        license_note="计划书未定义项；设计模式为 Event Sourcing（公开领域模式，"
+                     "Martin Fowler 2005），另参照 dsh（DeepSeek Harness）的"
+                     "append-only 日志对照设计",
+        code_reuse="n/a",
+    ),
 )
 
 

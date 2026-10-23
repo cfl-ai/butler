@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Iterator, Protocol, Sequence
+from typing import Any, Iterator, Protocol, Sequence, runtime_checkable
 
 TRACE_HEADER = "X-Trace-Id"
 
@@ -74,6 +74,7 @@ class Span:
                 "started_at": self.started_at, "fields": dict(self.fields)}
 
 
+@runtime_checkable
 class Observer(Protocol):
     def on_span(self, span: Span) -> None:
         ...
