@@ -139,7 +139,7 @@ class AgenticLoop:
         try:
             return await self._run_inner(goal=goal, items=items, redactor=redactor,
                                          summarizer=summarizer, max_items=max_items,
-                                         result=result, emit=_emit)
+                                         result=result, emit=_emit, journal=journal)
         finally:
             # 终局快照入账：4 处 return（含 Hook 拦截/审批暂停/上限归档）都覆盖。
             # 崩溃恢复 = 重放此 checkpoint 及其后事件。
@@ -150,11 +150,15 @@ class AgenticLoop:
                          redactor: Redactor,
                          summarizer: Callable[[str], str] | None,
                          max_items: int, result: LoopResult,
-                         emit: Callable[[StageRecord], None]) -> LoopResult:
+                         emit: Callable[[StageRecord], None],
+                         journal: EventJournal | None = None) -> LoopResult:
 
         # ---- 阶段一：上下文收集（含脱敏与压缩）----
+        # U58：journal 传入即把让位记录与分项计量落账（只让位不删除，
+        # 崩溃恢复后知道压掉了什么、为什么）。
         context = compress(items, redactor=redactor, max_items=max_items,
-                           summarizer=summarizer, where="Harness 上下文")
+                           summarizer=summarizer, where="Harness 上下文",
+                           journal=journal)
         result.context = context
         emit(StageRecord(
             0, STAGE_COLLECT,

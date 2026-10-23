@@ -48,13 +48,15 @@ EV_EXCEPTION = "exception"
 EV_CLAIMED_OUTCOME = "claimed_outcome"
 EV_SPAN = "span"                # observe.Span 落账（scheduler 埋点）
 EV_STAGE = "stage"              # harness 四阶循环的阶段记录
+EV_CONTEXT_SHADOW = "context_shadow"   # 上下文压缩让位记录（U58）
 EV_SESSION_START = "session_start"
 EV_SESSION_END = "session_end"
 EV_CHECKPOINT = "checkpoint"
 
 EVENT_TYPES: tuple[str, ...] = (
     EV_RETRIEVAL, EV_TOOL_CALL, EV_LLM_CALL, EV_EXCEPTION, EV_CLAIMED_OUTCOME,
-    EV_SPAN, EV_STAGE, EV_SESSION_START, EV_SESSION_END, EV_CHECKPOINT,
+    EV_SPAN, EV_STAGE, EV_CONTEXT_SHADOW, EV_SESSION_START, EV_SESSION_END,
+    EV_CHECKPOINT,
 )
 
 

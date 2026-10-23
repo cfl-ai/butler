@@ -885,7 +885,7 @@ DECISIONS: tuple[Decision, ...] = (
     ),
     Decision(
         key="U57",
-        phase="P2",
+        phase="P0-1",
         title="append-only 会话事件账本（轨迹 / 回放 / 恢复的地基）",
         plan_quote="（计划书全文无「事件日志 / 轨迹 / 回放 / 恢复」任何表述——"
                    "本项为文档未定义项，按「开源借鉴」处理）",
@@ -914,6 +914,37 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="计划书未定义项；设计模式为 Event Sourcing（公开领域模式，"
                      "Martin Fowler 2005），另参照 dsh（DeepSeek Harness）的"
                      "append-only 日志对照设计",
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U58",
+        phase="P10",
+        title="上下文分项计量与 shadowing 压缩（对 U36 的扩展）",
+        plan_quote="（计划书三、P10 步骤7 只定义「上下文压缩机制」与「摘要脱敏」；"
+                   "分项计量口径、影子让位语义、token 估算方式均为未定义项）",
+        status=RESOLVED,
+        source="实现参数",
+        decided_at=_D3,
+        resolution="2026-10-23 用户指令「按优先级和稳定性全部处理」中的 P3 项，"
+                   "对 U36 的压缩机制做两项扩展："
+                   "① **shadowing（只让位不删除）**：U36 原实现的 dropped 只是计数，"
+                   "被压内容连同让位原因（超条数/超预算）以影子记录留存，"
+                   "带脱敏后原文，可经账本或 restore_shadowed() 重建完整上下文；"
+                   "② **分项计量（contextBreakdown）**：压缩结果按 source / scope / "
+                   "相关度分带（high≥0.8 / mid≥0.4 / low）统计条数与 token，"
+                   "输出压力值 pressure=占用/预算——单维度总数回答不了"
+                   "「哪类内容挤占预算」。"
+                   "③ **token 口径如实标注**：默认 CharHeuristicCounter（CJK≈1 token/字，"
+                   "其余≈1 token/4 字符），estimated=True；精确计数为可注入端口"
+                   "（TokenCounter 协议），接 tiktoken 类实现即生效，"
+                   "本项目不内置该依赖（E-26 形状：不为不可核实上游加原生依赖）。"
+                   "④ 摘要 token 并入分项计量，不另起口径。"
+                   "⑤ 预算内至少保留一条：空上下文比超预算更糟。"
+                   "⑥ 让位记录与分项经 EV_CONTEXT_SHADOW 事件落账（U57 账本），"
+                   "harness loop.run(journal=) 已接线。",
+        references=(),
+        license_note="计划书未定义项；shadowing/contextBreakdown 为 dsh"
+                     "（DeepSeek Harness）对照设计",
         code_reuse="n/a",
     ),
 )
