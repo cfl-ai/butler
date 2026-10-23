@@ -2,7 +2,7 @@
 
 为什么要有它
 ------------
-架构规范第 12 章把分支模型写得很完整，`.gitea/workflows/ci.yml` 也早就就位，
+架构规范第 12 章把分支模型写得很完整，`.github/workflows/ci.yml` 也早就就位，
 但**仓库本身从未 `git init`** —— 规范和 CI 是「写了却没接上」的状态。
 这是本项目反复出现的同一个毛病的又一例（MEMORY E-21 / E-29 / E-33）。
 
@@ -22,7 +22,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC_PATH = ROOT / "docs" / "统一架构规范文档.md"
-CI_PATH = ROOT / ".gitea" / "workflows" / "ci.yml"
+CI_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 
 #: 含凭据的环境文件。计划书三、P0-1 要求隐私字段独立加密，
 #: 这些文件无论如何都不能进版本库 —— **只允许 .env.example 入库**。
@@ -46,7 +46,7 @@ def _git(*args: str) -> subprocess.CompletedProcess[str]:
 def test_repository_is_initialised():
     """仓库必须真的存在 —— 规范与 CI 都在，唯独仓库缺席过一次。"""
     assert (ROOT / ".git").exists(), (
-        "项目根缺少 .git：架构规范第 12 章与 .gitea/workflows/ci.yml 就位，"
+        "项目根缺少 .git：架构规范第 12 章与 .github/workflows/ci.yml 就位，"
         "但仓库从未初始化，CI 没有可运行的前提"
     )
     proc = _git("rev-parse", "--is-inside-work-tree")
@@ -106,7 +106,7 @@ def test_spec_branch_model_matches_ci_triggers():
     规范第 13 章写着「分支表与 CI 触发条件一致（`tests/test_ci_pipeline.py`）」，
     但那个文件**并没有这条断言** —— 又一处「写了却没接上」。这里补上。
 
-    映射说明：Gitea Actions 的 glob 用 `**` 匹配含斜杠的分支名，
+    映射说明：CI 触发用 `**` 匹配含斜杠的分支名（GitHub Actions 与 Gitea 一致），
     故规范的 `feature/*` 对应 CI 的 `feature/**`。
     """
     spec = _spec_branches()

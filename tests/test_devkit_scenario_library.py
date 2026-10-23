@@ -158,7 +158,7 @@ def test_module_coverage_is_reported(library):
 # ------------------------------ CI 流水线 ------------------------------ #
 def test_ci_workflow_is_valid_yaml_and_covers_plan_requirements():
     """计划书三、P0-2「制定 Git 分支规范、CI 自动构建、自动部署流水线」。"""
-    doc = yaml.safe_load((ROOT / ".gitea" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    doc = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
 
     assert doc["name"] == "CI"
     assert "push" in doc[True] or "on" in doc

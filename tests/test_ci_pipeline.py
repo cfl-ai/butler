@@ -20,7 +20,8 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-CI_PATH = ROOT / ".gitea" / "workflows" / "ci.yml"
+#: 平台：GitHub Actions（2026-10-23 由 Gitea 切换，U54；此前在 .gitea/workflows/ 下）
+CI_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 
 #: 流水线里**必须出现**的验证命令。
 #: 加新的验证脚本时，这里也要加一条 —— 否则它会悄悄留在 CI 之外。

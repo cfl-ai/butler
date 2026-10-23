@@ -802,6 +802,33 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="本项目自定的实现参数，无外部来源可引用",
         code_reuse="n/a",
     ),
+    # ==================== U54：CI 平台切换到 GitHub Actions ====================
+    Decision(
+        key="U54", title="CI 平台由 Gitea + act_runner 切换为 GitHub Actions", phase="P0",
+        plan_quote="三、P0-2「制定 Git 分支规范、CI 自动构建、自动部署流水线」——"
+                   "计划书要求 CI 自动构建，但未指定托管平台；U11 曾据「github.com "
+                   "在本机与工具链均不可达」裁定 Gitea + act_runner",
+        status=RESOLVED, source="人工授权", decided_at=_D3,
+        resolution="2026-10-23 用户指令「用GitHub不用gitea」，平台切换为 GitHub Actions。"
+                   "**网络实测（切换依据，勿凭旧结论行事）**：github.com 主站与 git 端点"
+                   "全域不通（直连/代理/SSH 22/ssh.github.com:443 均失败，"
+                   "`git ls-remote` 报 Empty reply）——U11 的判定对此精确成立；"
+                   "但 **api.github.com 可达（200）**、codeload 可达。"
+                   "最终形态：① 代码由使用者在可访问 github 的终端**自行推送**"
+                   "（本机 git 端点不通，无法代推）；② CI 完全跑在 GitHub 托管 runner 上，"
+                   "**本机不需要任何 runner**——外部 action（actions/checkout@v4、"
+                   "setup-python@v5、upload-artifact@v4、dart-lang/setup-dart@v1）与 "
+                   "docker.io 服务镜像均可直接用；③ ci.yml 从 .gitea/workflows/ 迁至 "
+                   ".github/workflows/，服务镜像从 daocloud 源改回 canonical 名；"
+                   "④ 本机自建的 Gitea 容器与 remote 随之退场（数据卷保留待命）。"
+                   "分支触发条件（main/develop/release/**/feature/**/hotfix/**）不变，"
+                   "守护测试 tests/test_ci_pipeline.py、test_repo_hygiene.py、"
+                   "test_devkit_scenario_library.py 的三处 CI_PATH 已同步。"
+                   "U11 记录保留（历史裁定），本文档为其继任者。",
+        references=(),
+        license_note="平台切换由用户指令触发；网络可达性为本机实测事实，无外部来源可引用",
+        code_reuse="n/a",
+    ),
 )
 
 

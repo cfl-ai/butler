@@ -3,9 +3,14 @@
 #   「制定 Git 分支规范、CI 自动构建、自动部署流水线」
 #   「对接 Harness 自进化体系，评测数据自动流入迭代闭环」
 #
-# 平台选型：Gitea + act_runner（裁定 U11）。
-#   理由：github.com 在本机与工具链均不可达，GitHub Actions 出局；
-#   Gitea MIT、官方提供 Windows runner 二进制、界面中文、Docker/host 双执行模式。
+# 平台选型：GitHub Actions（2026-10-23 改，用户指令「用GitHub不用gitea」，登记 U54）。
+#   沿革：U11 曾裁定 Gitea + act_runner，依据是「github.com 在本机与工具链均不可达」。
+#   该判定对**主站与 git 端点**精确成立（直连/代理/SSH 22/ssh.github.com:443 全域不通，
+#   `git ls-remote` 实测 Empty reply），但 api.github.com 可达（200）。
+#   最终形态：代码由使用者在可访问 github 的终端自行推送；CI 完全跑在 GitHub 托管的
+#   runner 上 —— 本机不需要任何 runner，外部 action（checkout/setup-python 等）与
+#   docker.io 镜像均可直接用，回到计划书原生的 GitHub Actions 形态。
+#   服务镜像因此从 daocloud 镜像源改回 canonical 名（GitHub runner 侧无此约束）。
 #
 # 与计划书四环境隔离的对应：CI 只跑 test 环境；预发布/生产由部署流水线单独触发。
 #
@@ -32,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: docker.m.daocloud.io/pgvector/pgvector:pg16
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_USER: aibutler
           POSTGRES_PASSWORD: ci-only-password
