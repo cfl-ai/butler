@@ -32,6 +32,12 @@ Python 的**包名与模块名只能用 ASCII**，所以目录叫 `data_platform
 | MODULE_TITLES | 包目录名 | 该包的层级中文名 | 三、各阶段标题 / P0 级基础设施层 |
 | SUBAGENT_TITLES | 子 Agent 机读 key | 计划书点名的中文名 | 三、P4「包含子 Agent：设备感知、天气感知…」 |
 | CROSSCUT_TITLES | 横切 Agent 机读 key | 中文名 | 三、P3「智能规划」「质检校验」 |
+| USER_AGENT_TITLES | **用户指令新增** Agent 的 key | 中文名 | **用户原话**（非计划书），须有对应人工授权裁定 |
+
+USER_AGENT_TITLES 单独一张表，是为了**不冒充计划书用语**：
+计划书没点名的东西混进 CROSSCUT_TITLES，时间一长就分不清哪些名字
+有计划书依据、哪些是后加的。分开登记 + 守护测试强制对应人工授权裁定，
+新增用户指令 Agent 时出处永远可查。
 
 机读 key 保持英文不变：它是 registry 字典键、State 字段前缀、
 agent_results 的索引，改中文会牵动全链路；中文名只做**展示层**。
@@ -115,6 +121,14 @@ CROSSCUT_TITLES: dict[str, str] = {
     "tour_agent": "旅游 Agent",
 }
 
+#: **用户指令新增**的 Agent（计划书未点名）。中文名来自用户原话，
+#: 每条必须在 core/decisions.py 有 source=人工授权 的对应裁定，
+#: 且中文名出现在该裁定的 resolution 里（由守护测试机检）。
+#: 2026-10-23：用户「再补充添加一个评测中台 agent」→ 裁定 U55。
+USER_AGENT_TITLES: dict[str, str] = {
+    "eval_platform_agent": "评测中台 Agent",
+}
+
 
 def module_title(package: str) -> str:
     """包目录 → 计划书层级中文名。
@@ -135,7 +149,7 @@ def module_title(package: str) -> str:
 
 def agent_title(key: str) -> str:
     """Agent 机读 key → 中文名。横切 Agent 与 P4 子 Agent 都查得到。"""
-    for table in (CROSSCUT_TITLES, SUBAGENT_TITLES):
+    for table in (CROSSCUT_TITLES, SUBAGENT_TITLES, USER_AGENT_TITLES):
         if key in table:
             return table[key]
     # 阶段 Agent 的 key 就是 phases 里的 key，中文名同样派生

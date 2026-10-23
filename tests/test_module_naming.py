@@ -170,6 +170,22 @@ def test_crosscut_titles_are_traceable_to_the_plan():
     assert "中间件" in PLAN_LINE_MIDDLEWARE or True   # 中间件一词见计划书三、P0-1
 
 
+def test_user_agent_titles_have_human_authorized_decisions():
+    """用户指令新增的 Agent 不许冒充计划书用语。
+
+    这些名字的出处是用户原话而非计划书原文，因此**必须**能在台账里找到
+    一条 source=人工授权 的裁定，且中文名出现在该裁定的 resolution 里。
+    没有对应的授权裁定，就说明这个名字是私自起的——拒绝放行。
+    """
+    from ai_butler.core import decisions as d
+    for key, title in naming.USER_AGENT_TITLES.items():
+        matched = [item for item in d.DECISIONS
+                   if item.source == "人工授权" and title in (item.resolution or "")]
+        assert matched, (
+            f"{key} 的中文名 {title!r} 来自用户指令，但没有对应的人工授权裁定"
+            f"（source=人工授权且 resolution 含该名字）")
+
+
 # ============================== 全量覆盖 ============================== #
 def _concrete_agent_classes() -> list[type]:
     """扫出所有**具体** Agent 类（排除 name 为空的抽象基类）。"""

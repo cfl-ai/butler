@@ -93,7 +93,7 @@ def test_p9_decisions_are_registered_and_resolved():
     是「写了没接上」的又一形态（E-65）：**新增台账条目必须同步这里的集合**。
     """
     keys = {d.key for d in decisions.DECISIONS if d.phase == "P9"}
-    assert keys == {"U28", "U29", "U30", "U31", "U50"}
+    assert keys == {"U28", "U29", "U30", "U31", "U50", "U55", "U56"}
     for key in keys:
         assert decisions.get(key).status == decisions.RESOLVED
     assert not decisions.pending(), "台账不应有未裁定项"
