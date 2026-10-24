@@ -49,6 +49,9 @@ class _ThrowingVad implements VadPort {
   Future<void> start() async {}
 
   @override
+  void feed(List<double> samples) {}
+
+  @override
   Future<void> stop() async {
     stopCalls++;
     throw StateError('没启动过就停 —— 释放路径不应因此中断');
@@ -127,7 +130,10 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       rig.vad.emit(false);                      // 全程无人声 → 由超时兜底返回
       final events = await future;
-      expect(events.single.kind, PipelineEventKind.failed);
+      // 语义修正：「没听到人声」与「识别失败」是两件不同的事。
+      // 前者该提示「请再说一次」，后者才该提示「链路坏了」。
+      expect(events.first.kind, PipelineEventKind.listening);
+      expect(events.last.kind, PipelineEventKind.voiceNoSpeech);
       expect(rig.transport.streams, isEmpty);
     });
 

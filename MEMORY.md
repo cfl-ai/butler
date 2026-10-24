@@ -1174,12 +1174,104 @@ CI 只写在配置里、平时不跑，**新加的验证入口不会自动进去
 
 ---
 
+## E-71 一条忽略规则可以同时挡对和挡错：`models/` 吞掉了端侧随包模型
+
+- 本轮给 VAD 加了随包模型 `mobile/assets/models/vad/silero_vad.onnx`（1.8 MB）。
+  跑完测试、编过 APK，一切正常。直到顺手 `git ls-files mobile/assets` —— **空的**。
+
+- 根因：`.gitignore` 第 28 行写的是 `models/`，**没有前导斜杠**。
+  git 对无锚点目录模式按「任意层级名为 models 的目录」匹配，
+  于是 `mobile/assets/models/` 被一并吞掉。**唤醒词的 4.9 MB 也因此一直没入库**，
+  只是本机上文件都在，从来没人发现。
+
+- 表现极有迷惑性：文件在磁盘上 → `flutter build apk` 成功 → 测试全绿 →
+  `git status` 也不报。**只有换台机器 clone 下来才会发现 assets 是空的**，
+  而且报错点会在「模型文件不存在」，让人误以为是下载脚本的问题。
+
+- 修法：把规则锚定根目录 `/models/`（云端权重在仓库根，端侧资产在 `mobile/assets/` 下，
+  一锚一不锚正好分开）。
+
+- **教训**：忽略规则有**两个方向**，只守一个方向等于没守。
+  既有守护 `test_gitignore_rules_actually_work` 只问「该排的排掉了吗」，
+  从没问过「不该排的有没有被误伤」。现已补
+  `test_shipped_assets_are_not_swallowed_by_model_ignore_rule`，
+  一条断言双向：随包资产**不得**被忽略 + 云端权重**仍须**被忽略
+  （后一半防的是「修好了误伤却放跑了 1.2 GB」）。
+  按 E-40 造违规复验：把规则改回 `models/`，该用例立刻变红。
+
+---
+
+## E-72 端口里**没有那个方法**时，「功能没接上」是结构性的，测试再全也抓不到
+
+- 补 VAD/ASR 时才发现：P7 标着「已实现」的「随时打断」，**采样从来没喂给 VAD 和 ASR**。
+  原因不是忘了写调用，而是 `VadPort` **压根没有 `feed()` 方法** ——
+  `VoicePipeline.captureUtterance()` 订阅了麦克风，却没有可调的东西把帧送进去。
+  同样，`AsrPort` 缺 `finish()`，ASR 永远拿不到「说完了」的信号。
+
+- 这与 E-21/E-29/E-33/E-69（写好了却从没接上）是同一族，但是**更早一个阶段**：
+  前几次是「实现了没人调」，这次是「**接口不存在，所以调用无处可写**」。
+  后者的危害更大：代码里连一行可疑的调用都没有，审查看不出、测试也测不到 ——
+  测试只能测到已存在的端口，端口缺方法是**测试的视野之外**。
+
+- 怎么发现的：不是靠读代码，是靠**把端口对上真实实现**。
+  写 `SileroVad` 适配器时问了一句「流水线拿什么喂它」，才发现无处可喂。
+
+- 顺带修掉第二条同源缺陷：**TTS 失败把整轮对话判成失败** ——
+  文字已经渲染出来了，只因为合成没成功就整轮标红。已降级为 warn（声音没了，回答还在）。
+  并补 `PipelineEventKind.voiceNoSpeech`：**「没说话」和「出错了」不是一回事**，
+  合成一个状态会让用户以为麦克风坏了。
+
+- **教训**：判断「某能力已实现」时，光看有没有实现类和有没有测试是不够的，
+  还要问一句 **「调用方拿什么把它驱动起来」**。端口定义（ports.dart / ports.py）
+  本身就是被守护的对象 —— 方法缺了，下游一切恒绿。
+
+---
+
+## E-73 `flutter test` 的本地 websocket 会被系统代理截获
+
+- 现象：`flutter test` 报
+
+  ```text
+  Failed to load ".../widget_test.dart":
+  Unable to connect to flutter_tester process: WebSocketException: Invalid WebSocket upgrade request
+  ```
+
+  只在 `loading` 阶段失败，一条用例都没跑起来。容易被当成「测试代码写坏了」
+  或「Flutter 装坏了」，但两者都不是。
+
+- 真因：环境里存在 `HTTP_PROXY` / `HTTPS_PROXY` / `https_proxy`
+  （本机是回环代理 `127.0.0.1:61588`）。`flutter_tester` 通过
+  **本机回环的 websocket** 与测试宿主通信，而代理把这条连接也接了过去，
+  于是升级请求被当成普通 HTTP 转发，握手失败。
+  **测试进程本身没问题，是它连不上自己。**
+
+- 修法：
+
+  ```bash
+  unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy ALL_PROXY all_proxy
+  export NO_PROXY=127.0.0.1,localhost
+  flutter test
+  ```
+
+  之后 5/5 通过。`dart test`（aibutler_core，59 项）不受影响 ——
+  它走的是进程内通道，不经 websocket。
+
+- **教训**：与 E-59 同源 —— 测试一次性全崩、且失败在 `loading` 阶段时，
+  **先怀疑环境，再怀疑代码**。尤其是「连不上自己」这种形态，
+  十有八九是代理 / 防火墙 / 端口占用，而不是测试内容有问题。
+
+---
+
 ## 二、环境基线（复现上述解决方案所必需）
 
 - 操作系统：Windows AMD64，16 逻辑核，内存 11 GB，C 盘可用 36.5 GB / D 盘可用 106.7 GB
 - GPU：NVIDIA RTX 4060 Laptop 8 GB（Python 侧 torch 为 CPU 版，GPU 仅 Ollama 可用）
 - 运行时：Python 3.12.7、Node v24.19.0、Git 2.55.0、Docker 29.8.0
-- 本地模型：Ollama `qwen2.5:7b-instruct-q4_K_M`（capabilities: tools，实测 38.6 tok/s）
+- 本地模型：Ollama `qwen2.5vl:3b`（3.2 GB，Q4_K_M，capabilities: **completion + vision**）、`moondream:latest`
+  > **更正（2026-10-24 实测）**：早先此处记的是 `qwen2.5:7b-instruct-q4_K_M`（带 tools），
+  > 本机**已不存在**该模型。现在的 `qwen2.5vl:3b` **没有 tools 能力**，
+  > 只用于「文字/图文问答 + 流式输出」。需要 function calling 的路径要么换带 tools 的模型，
+  > 要么走非 Ollama 供应商 —— 不核实就跑，会得到「供应商都不可用」这种看不出真因的报错。
 - 项目解释器：`ai-butler-ecosystem\.venv`（`--system-site-packages`，继承 langgraph / chromadb / langchain / fastapi 等）
 
 ---

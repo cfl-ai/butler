@@ -51,6 +51,11 @@ chromadb>=0.5
 rank-bm25>=0.2.2
 jieba>=0.42
 
+# --- 图文识别 / 图文输出（台账 U61/U62，计划书未定义项）---
+# Pillow：图片归一化（EXIF 摆正、等比缩放）与结果卡片渲染。
+# 视觉推理本身走 Ollama / OpenAI 兼容端点，不在此依赖里。
+Pillow>=10.0
+
 # --- 测试 ---
 pytest
 fakeredis

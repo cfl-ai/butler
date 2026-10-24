@@ -28,6 +28,16 @@ dependencies:
   # 把随包的唤醒词模型释放到可写目录：sherpa-onnx 需要文件路径，
   # 而 assets 在 APK 里是压缩资源，不能直接当路径用。
   path_provider: ^2.1.6
+  # 图片输入（台账 U61）：相机/相册取图。
+  # 选它而不是自己写 Intent：拍照走系统相机 Activity，**不需要 CAMERA 权限**，
+  # 而自实现很容易在 Android 14+ 的媒体权限上踩坑。
+  image_picker: ^1.1.2
+  # 播报播放（P7 步骤5「同步 TTS 播报」）。
+  # 为什么必须单独引一个播放器：`record` 只能录音不能出声；
+  # sherpa-onnx 的 Dart 包只负责把文本合成成采样，**不负责播放**。
+  # 用 audioplayers 而不是自己写 MediaPlayer 通道：后者要自己处理
+  # 音频焦点、蓝牙路由与生命周期，是本阶段不该重复造的轮子。
+  audioplayers: ^6.1.0
 
 dev_dependencies:
   flutter_test:
@@ -42,3 +52,6 @@ flutter:
   # keywords.txt 只放本项目登记的唤醒词；模型仓自带的那份含第三方商标，不下发。
   assets:
     - assets/models/kws/
+    # 端侧 VAD 模型（裁定 U22：silero-vad，1.7MB）。
+    # 必须随包：它决定「用户一开口就停播」的响应速度，走下载的话第一次断网就失灵。
+    - assets/models/vad/

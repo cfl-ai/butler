@@ -66,7 +66,7 @@ DECISIONS: tuple[Decision, ...] = (
     ),
     Decision(
         key="U02", title="Jev 决策模型本体形态", phase="P3",
-        plan_quote="「Jev 决策模型接入网关」「集成 LLM 推理层」（三、P0-1）；"
+        plan_quote="「Jev 决策模型接入网关」「集成 LLM 推理层」（三、P0-1）；\n"
                    "未说明 Jev 是微调小模型还是受限大模型",
         status=RESOLVED, source="开源借鉴", decided_at=_D,
         resolution="走「受限小模型」路线：Qwen2.5-0.5B/1.5B 为基座，输出用 JSON Schema 硬约束"
@@ -95,7 +95,7 @@ DECISIONS: tuple[Decision, ...] = (
         key="U07", title="三档预算的金额阈值", phase="P8",
         plan_quote="「低/中/高预算」只有语义描述（三、P8），未给出「小额」「大额」的分界数值",
         status=RESOLVED, source="开源借鉴", decided_at=_D,
-        resolution="中预算默认「单笔 ≤1000 元免密 + 单卡单日累计 ≤3000 元封顶」，锚定银联/建行现网惯例；"
+        resolution="中预算默认「单笔 ≤1000 元免密 + 单卡单日累计 ≤3000 元封顶」，锚定银联/建行现网惯例；\n"
                    "低预算阈值 = 0（逐笔人工确认）；高预算不设固定金额，改用月度预算剩余比例。"
                    "阈值引擎采用 Actual Budget 的「条件 → 动作」规则模型（amount / payee / date）。",
         references=("https://accounts2.ccb.com/chn/2025-02/24/article_2025022414432570876.shtml",
@@ -230,22 +230,22 @@ DECISIONS: tuple[Decision, ...] = (
     Decision(
         key="U27", title="P4 子 Agent 名册的阶段归属（此前的实现错位）", phase="P4",
         plan_quote="三、P4「包含子 Agent：**设备感知、天气感知、时间进度、增量抽取、"
-                   "路线方案、备选预案、代码迭代 Agent**」；"
+                   "路线方案、备选预案、代码迭代 Agent**」；\n"
                    "三、P5 才是「动态事件运营 Agent」、三、P6 才是「内容质检 Agent」。",
         status=RESOLVED, source="文档推导", decided_at=_D,
         resolution="按计划书原文更正阶段归属：此前把「规划 Agent」「质检 Agent」当作 P4 交付"
                    "是**错的**——计划书三、P5 才是动态事件运营 Agent（方案生成引擎），"
                    "三、P6 才是内容质检 Agent。计划书三、P4 真正要求的是 7 个感知与基础执行 Agent，"
                    "本阶段尚未实现。已实现的 registry/capabilities/facts/triggers 四件套"
-                   "对应计划书三、P4「开发规范」部分，定位正确、予以保留；"
+                   "对应计划书三、P4「开发规范」部分，定位正确、予以保留；\n"
                    "planner/qa 两个 Agent 保留实现，但改标为 P5/P6 交付物，"
                    "待相应阶段按原文补齐其完整开发步骤。",
     ),
     Decision(
         key="U25", title="多意图澄清话术的来源（U14 与计划书的效力冲突）", phase="P3",
         plan_quote="计划书三处写明 Jev 不得输出自由文本："
-                   "一、项目概述「Jev 仅输出结构化枚举标签 + 置信概率，不输出自由文本」；"
-                   "三、P3「Jev 仅输出结构化枚举，不输出自由文本」；"
+                   "一、项目概述「Jev 仅输出结构化枚举标签 + 置信概率，不输出自由文本」；\n"
+                   "三、P3「Jev 仅输出结构化枚举，不输出自由文本」；\n"
                    "Skill-01 同款硬限制。"
                    "而 U14 借鉴 CLAMBER 时引入的 clarifying_question 属于自由文本。",
         # 由效力顺序（计划书 ＞ Skills 集合 ＞ 统一架构规范文档 ＞ 台账裁定）唯一确定
@@ -258,7 +258,7 @@ DECISIONS: tuple[Decision, ...] = (
     ),
     Decision(
         key="U24", title="知识图谱库的域归属（公共 / 私有）", phase="P1",
-        plan_quote="P1 点名的四大核心数据表中，「素材溯源库属于 Agent-Wiki 公共 Workspace 无用户 ID；"
+        plan_quote="P1 点名的四大核心数据表中，「素材溯源库属于 Agent-Wiki 公共 Workspace 无用户 ID；\n"
                    "用户画像、设备状态、私有 Wiki Vault 必须绑定 user_id」——"
                    "**知识图谱库未被列入任一侧**",
         # 来源为「文档推导」而非「人工授权」：答案由计划书自身的域定义唯一确定，
@@ -335,7 +335,7 @@ DECISIONS: tuple[Decision, ...] = (
         key="U22", title="VAD 人声检测选型", phase="P7",
         plan_quote="「开发 VAD 人声检测、实时收音、随时打断机制」（三、P7）——未指定实现",
         status=RESOLVED, source="开源借鉴", decided_at=_D,
-        resolution="silero-vad（ONNX 可端侧，已被 sherpa-onnx 内置集成）；"
+        resolution="silero-vad（ONNX 可端侧，已被 sherpa-onnx 内置集成）；\n"
                    "webrtcvad 作为极轻量打断判定备选。",
         references=("https://github.com/snakers4/silero-vad", "https://github.com/wiseman/py-webrtcvad"),
         license_note="silero-vad MIT（其徽章图仍写 CC BY-NC 4.0，属历史遗留，以 LICENSE 原文为准）；"
@@ -360,9 +360,9 @@ DECISIONS: tuple[Decision, ...] = (
         plan_quote="「周期性增量微调流水线；支持微调 Jev 决策 Question 模板与垂类模型」（三、P9）"
                    "——未指定框架与微调方式",
         status=RESOLVED, source="开源借鉴", decided_at=_D,
-        resolution="微调编排用 LLaMA-Factory；参数高效方式用 **LoRA**，显存不足时退到 4bit **QLoRA**；"
+        resolution="微调编排用 LLaMA-Factory；参数高效方式用 **LoRA**，显存不足时退到 4bit **QLoRA**；\n"
                    "底层张量适配库为 HuggingFace PEFT。"
-                   "**训练作业本身不进 CI**：本机为 CPU 推理环境，无 GPU；"
+                   "**训练作业本身不进 CI**：本机为 CPU 推理环境，无 GPU；\n"
                    "CI 只验证「数据集构建 → 配置生成 → 流水线编排」这段可确定的部分。",
         references=("https://pypi.org/project/llamafactory/",
                     "https://llamafactory.readthedocs.io/zh-cn/latest/getting_started/data_preparation.html",
@@ -375,13 +375,13 @@ DECISIONS: tuple[Decision, ...] = (
     ),
     Decision(
         key="U29", title="领域 SFT 数据集格式", phase="P9",
-        plan_quote="「领域 SFT 数据集构建；剥离用户身份隐私；禁止把私有 Vault 原始隐私放入训练集；"
+        plan_quote="「领域 SFT 数据集构建；剥离用户身份隐私；禁止把私有 Vault 原始隐私放入训练集；\n"
                    "公共 Workspace 知识库可用于训练」（三、P9）——未指定数据集格式",
         status=RESOLVED, source="开源借鉴", decided_at=_D,
         resolution="采用 LLaMA-Factory 的 **Alpaca 指令监督微调格式**："
                    "`instruction`（人类指令）/ `input`（人类输入，选填）/ "
                    "`output`（模型回答）/ `system`（系统提示词，选填）/ "
-                   "`history`（多轮，选填）；"
+                   "`history`（多轮，选填）；\n"
                    "并在 `dataset_info.json` 里用 `columns` 做列名映射。",
         references=("https://llamafactory.readthedocs.io/zh-cn/latest/getting_started/data_preparation.html",),
         license_note="数据格式本身无许可约束；LLaMA-Factory Apache-2.0",
@@ -392,7 +392,7 @@ DECISIONS: tuple[Decision, ...] = (
         plan_quote="「原始用户隐私数据脱敏，禁止展示明文用户信息」「日志自动沉淀…隐私脱敏」"
                    "「剥离用户身份隐私」（三、P9）——未指定脱敏实现",
         status=RESOLVED, source="开源借鉴", decided_at=_D,
-        resolution="Microsoft Presidio（analyzer + anonymizer）为主；"
+        resolution="Microsoft Presidio（analyzer + anonymizer）为主；\n"
                    "中文场景补充 cn-pii-anonymization，并保留一层自研正则（手机号 / 身份证 / 邮箱 / "
                    "账号标识 user-*）作为**确定性兜底** —— 中文姓名与地址的模型召回不稳，"
                    "纯模型方案会漏。",
@@ -407,7 +407,7 @@ DECISIONS: tuple[Decision, ...] = (
         key="U31", title="指标看板实现", phase="P9",
         plan_quote="「全维度指标监控看板搭建」（三、P9）——未指定看板技术",
         status=RESOLVED, source="开源借鉴", decided_at=_D,
-        resolution="指标**由本项目 P9 模块计算**并以只读接口暴露（指标口径是资产，必须先固化）；"
+        resolution="指标**由本项目 P9 模块计算**并以只读接口暴露（指标口径是资产，必须先固化）；\n"
                    "可视化层自托管 Metabase 消费该接口。Grafana 作为时序监控备选。",
         references=("https://www.metabase.com/", "https://grafana.com/"),
         license_note="Metabase 开源版 **AGPL-3.0**；Grafana **AGPL-3.0**",
@@ -422,7 +422,7 @@ DECISIONS: tuple[Decision, ...] = (
                    "未定义循环多少轮、何时停",
         status=RESOLVED, source="开源借鉴", decided_at=_D,
         resolution="借鉴 OpenHands 把 **max iteration 显式化**的做法（并让模型知道上限）："
-                   "本项目 `max_iterations = 8`；**连续 2 轮无实质进展即提前终止**；"
+                   "本项目 `max_iterations = 8`；**连续 2 轮无实质进展即提前终止**；\n"
                    "到达上限仍未收敛则归档为「未收敛」并转人工，**不允许无限自转**。"
                    "与业务链路的「全局最大回退 2 次」同属有界循环原则。",
         references=("https://pypi.org/project/openhands-ai/",
@@ -433,16 +433,16 @@ DECISIONS: tuple[Decision, ...] = (
     Decision(
         key="U33", title="Hook 风险分级档位与审批口径", phase="P10",
         plan_quote="「所有生产变更风险分级，高危操作强制人工审批」+ 表 10「Hook 安全校验："
-                   "禁止移除 user_id 行级过滤与鉴权；禁止读取未脱敏私有 Vault；"
+                   "禁止移除 user_id 行级过滤与鉴权；禁止读取未脱敏私有 Vault；\n"
                    "修改 Jev 模板、Wiki 公共知识库大规模变更强制人工审批」"
                    "（三、P10）——表注给了三条红线，**未给出分级刻度**",
         status=RESOLVED, source="文档推导", decided_at=_D,
         resolution="依计划书表 10 的原文措辞，把三条红线落成三档："
-                   "`low`（普通缺陷修复、测试补充，自动放行）；"
-                   "`medium`（影响面较大的代码变更、知识库小范围维护，记录并复检）；"
+                   "`low`（普通缺陷修复、测试补充，自动放行）；\n"
+                   "`medium`（影响面较大的代码变更、知识库小范围维护，记录并复检）；\n"
                    "`high`（**命中红线**：改动行级过滤/鉴权、读取未脱敏私有 Vault、"
                    "修改 Jev 模板、公共知识库大规模变更）→ **强制人工审批，不得自动放行**。"
-                   "**原文并未给出分级刻度，三档刻度由本项推导而来**；"
+                   "**原文并未给出分级刻度，三档刻度由本项推导而来**；\n"
                    "**红线一律判 high，不设「紧急通道」**。",
         references=(),
         code_reuse="n/a",
@@ -467,7 +467,7 @@ DECISIONS: tuple[Decision, ...] = (
                    "——未指定 MCP 实现",
         status=RESOLVED, source="开源借鉴", decided_at=_D,
         resolution="用官方 `mcp` Python SDK（其已在技术栈内）。"
-                   "工具以 **Skill 注册表**组织，每个 Skill 显式声明**作用域**；"
+                   "工具以 **Skill 注册表**组织，每个 Skill 显式声明**作用域**；\n"
                    "「Agent-Wiki 维护 Skill」**只允许公共 Workspace**，"
                    "在注册层就拒绝任何带 user_id 的目标。",
         references=("https://pypi.org/project/mcp/", "https://modelcontextprotocol.io/"),
@@ -497,7 +497,7 @@ DECISIONS: tuple[Decision, ...] = (
                    "去重；输出转为 Agent-Wiki 公共 Workspace 的 source 源页面」（五、第二阶段）"
                    "——**未指定任何具体数据源**",
         status=RESOLVED, source="开源借鉴", decided_at=_D,
-        resolution="天气用**和风天气**（中文文档、国内直连；"
+        resolution="天气用**和风天气**（中文文档、国内直连；\n"
                    "OpenWeatherMap 作为国际备用）；景区/POI 用 **OpenStreetMap Overpass API**"
                    "（开放数据、可自建镜像）。二者都只出**公共** source 页面，"
                    "经 P2 既有采集器统一清洗、来源标记、去重。",
@@ -513,7 +513,7 @@ DECISIONS: tuple[Decision, ...] = (
         plan_quote="「生成初步路线；内置校验逻辑，检查路线时间冲突、距离不合理等问题」"
                    "（五、第二阶段）——未指定规划算法",
         status=RESOLVED, source="开源借鉴", decided_at=_D,
-        resolution="规模化路线优化以 **Google OR-Tools**（TSP/VRP）为目标算法；"
+        resolution="规模化路线优化以 **Google OR-Tools**（TSP/VRP）为目标算法；\n"
                    "本项目**先实现不依赖外部求解器的贪心最近邻 + 显式校验**，"
                    "把 OR-Tools 作为**端口注入**的升级路径。"
                    "理由：求解器是可选增强，而「时间冲突 / 距离不合理」的校验是**必须始终生效**的底线。",
@@ -537,13 +537,13 @@ DECISIONS: tuple[Decision, ...] = (
     ),
     Decision(
         key="U40", title="行程重规划触发条件", phase="V1",
-        plan_quote="「持续监听天气、交通、景区状态变化；**Jev 高速决策判断是否达到重规划条件**；"
+        plan_quote="「持续监听天气、交通、景区状态变化；**Jev 高速决策判断是否达到重规划条件**；\n"
                    "判定为 true 才触发重新调整行程」（五、第二阶段）"
                    "——原文给了三类事件，**未给出判定条件**",
         status=RESOLVED, source="文档推导", decided_at=_D,
         resolution="依原文点名的三类事件（天气变化、交通延误、景区临时闭园）推导出"
                    "**确定性前置条件**，再由 Jev 做最终判定："
-                   "① 景区闭园 → 必然触发；② 天气达到影响出行的等级 → 触发；"
+                   "① 景区闭园 → 必然触发；② 天气达到影响出行的等级 → 触发；\n"
                    "③ 交通延误超过行程时间余量 → 触发。"
                    "**前置条件不成立时根本不调用大模型**——原文「条件成立才调用大模型重算路线」，"
                    "前置判据省下的调用量正是这条设计的意义所在。",
@@ -552,7 +552,7 @@ DECISIONS: tuple[Decision, ...] = (
     ),
     Decision(
         key="U42", title="云端 HTTP 接口层与账号表形态", phase="P7",
-        plan_quote="三、P7 步骤5「对接云端流式接口…请求带上会话 Token」；"
+        plan_quote="三、P7 步骤5「对接云端流式接口…请求带上会话 Token」；\n"
                    "步骤7「上报携带会话身份」——**计划书只描述了接口行为，"
                    "未定义接口清单、路径、账号表结构**",
         status=RESOLVED, source="文档推导", decided_at=_D,
@@ -560,10 +560,10 @@ DECISIONS: tuple[Decision, ...] = (
                    "POST /api/session/login、POST /api/chat/stream、POST /api/device/report。"
                    "① /api/session/login 加入 PUBLIC_PATHS —— 登录本身不可能携带会话，"
                    "是**唯一允许匿名的业务入口**；其余业务接口一律仍需合法会话（七、11）。"
-                   "② 账号表：计划书只要求「加盐哈希、不存明文」，未定义存储形态；"
+                   "② 账号表：计划书只要求「加盐哈希、不存明文」，未定义存储形态；\n"
                    "当前实现为存储根下的 users.json，只存 bcrypt 哈希。"
                    "③ 设备上报的 user_id **以会话为准**，请求体里冒充他人一律 403。"
-                   "④ **不做公开注册接口**：计划书 P7 只规定登录，未定义注册；"
+                   "④ **不做公开注册接口**：计划书 P7 只规定登录，未定义注册；\n"
                    "匿名注册等于让人随意往系统塞账号，缺口不能顺手开。账号由 "
                    "scripts/create_account.py 离线开户。"
                    "⑤ **/api/chat/stream 尚未实现** —— 它要把 SceneScheduler.run() 接成 SSE，"
@@ -584,7 +584,7 @@ DECISIONS: tuple[Decision, ...] = (
                    "仅含编码而无越权指令则 TAINT（编码本身即可疑，不作为事实依据）。"
                    "③ **虚假信息**：**不判真假，只判可信度** —— 未给可核验证据的"
                    "「已确认 / 官方证实 / 绝对」等断言一律 TAINT，"
-                   "由 P6 质检与 Agent-Wiki 证据链决定能否入库；"
+                   "由 P6 质检与 Agent-Wiki 证据链决定能否入库；\n"
                    "给出 URL / DOI / 文件等证据位的输入不受此标记。"
                    "④ **判定真假不是程序该做的事**，本条只回答「能否作为事实依据」。",
         references=("https://owasp.org/www-project-top-10-for-large-language-model-applications/",),
@@ -597,7 +597,7 @@ DECISIONS: tuple[Decision, ...] = (
     # 来源日期 2026-10-19（接管后新增，与 U01–U42 的 2026-10-16 区分）。
     Decision(
         key="U43", title="Agent 能力分级模型", phase="P4",
-        plan_quote="「无跨模块越权调用」「所有子 Agent 只读全局状态、仅写入自有字段」（三、P4）；"
+        plan_quote="「无跨模块越权调用」「所有子 Agent 只读全局状态、仅写入自有字段」（三、P4）；\n"
                    "「模块边界界定（复用规则）」（五、5）——只规定「不得越权」，未规定能力如何**分级**",
         status=RESOLVED, source="开源借鉴", decided_at=_D2,
         resolution="借 Claude Enterprise 的权限分层与多 Agent 治理实践：把「能力」从布尔开关升为**四级**——"
@@ -614,7 +614,7 @@ DECISIONS: tuple[Decision, ...] = (
     ),
     Decision(
         key="U44", title="数据密级分级", phase="P0-1",
-        plan_quote="「手机号、位置、支付信息等隐私字段独立加密存储」（三、P0-1）；"
+        plan_quote="「手机号、位置、支付信息等隐私字段独立加密存储」（三、P0-1）；\n"
                    "「区分公共 Workspace 与用户私有 Vault」（一、项目概述）——"
                    "给出的是**公私二分**，未规定密级**分级**",
         status=RESOLVED, source="开源借鉴", decided_at=_D2,
@@ -630,15 +630,15 @@ DECISIONS: tuple[Decision, ...] = (
     ),
     Decision(
         key="U45", title="用户角色分级与审批分层", phase="P0-1",
-        plan_quote="「会话管理中间件：会话 Token 生成、校验」（三、P0-1）；"
+        plan_quote="「会话管理中间件：会话 Token 生成、校验」（三、P0-1）；\n"
                    "「付款动作必须经人工确认」（三、P8）——只有**是否登录**与**是否人工确认**两点，"
                    "未规定角色分级，也未规定何种操作需何种级别的审批",
         status=RESOLVED, source="开源借鉴", decided_at=_D2,
         resolution="① 角色四级：owner（账号主体）/ admin（可管本账号下 Agent 配置）/ "
                    "member（日常使用）/ auditor（只读，可看审计不可改）。"
                    "② 审批分三档（借 AI Agent 治理的「按副作用定审批边界」思路）："
-                   "Tier0 免审批（低风险可逆：建任务、打标签）；"
-                   "Tier1 单人确认（用户可见或改数据：付款、改画像——对应 P8 人工确认红线）；"
+                   "Tier0 免审批（低风险可逆：建任务、打标签）；\n"
+                   "Tier1 单人确认（用户可见或改数据：付款、改画像——对应 P8 人工确认红线）；\n"
                    "Tier2 双人/强校验（高危：删数据、改权限、批量外传）。"
                    "③ 三条硬原则：**默认拒绝**、**最小权限**、**权限不可传递**"
                    "（Agent 不得以「被调用者权限」替调用方升级，必须各自独立校验）。",
@@ -651,14 +651,14 @@ DECISIONS: tuple[Decision, ...] = (
     Decision(
         key="U46", title="检索路由器：何时走单路线、何时走多路线", phase="P2",
         plan_quote="「BM25 + 向量检索 + Rerank 三重混合检索服务」（三、P2）——"
-                   "规定了**有什么检索手段**，未规定**何时用哪一条**；"
+                   "规定了**有什么检索手段**，未规定**何时用哪一条**；\n"
                    "用户补充需求：关键字特别明确的直接走规则路由不走大模型",
         status=RESOLVED, source="开源借鉴", decided_at=_D2,
         resolution="新增 rag/routing.py 的 QueryRouter，把查询分三档，判据**先看证据不看直觉**："
                    "① **规则直查**（单路线）：查询命中精确标识（ID / 错误码 / 型号 / 时间范围 / 枚举字段）"
-                   "→ 直接查结构化库与 BM25，**完全不经过大模型**；"
+                   "→ 直接查结构化库与 BM25，**完全不经过大模型**；\n"
                    "② **混合检索**（多路线）：判据为「无精确标识但语义可判」"
-                   "→ BM25 与向量并行 → RRF 融合 → topN 候选 → Rerank → topK；"
+                   "→ BM25 与向量并行 → RRF 融合 → topN 候选 → Rerank → topK；\n"
                    "③ **大模型分析**：判据为「多意图冲突 / 证据互相矛盾 / 置信低于阈值」"
                    "→ 交给大模型，并**把该次歧义样本落盘**供 P9 增量微调与 Agent-Wiki Question 沉淀。"
                    "三档的选择**复用五层意图路由的结论**（P3 已冻结，不得新增第六层），"
@@ -671,7 +671,7 @@ DECISIONS: tuple[Decision, ...] = (
     ),
     Decision(
         key="U47", title="回答前的复检回路与逃逸上限", phase="P2",
-        plan_quote="「内容质检 Agent｜全局防错、防幻、防假」（三、P6）；"
+        plan_quote="「内容质检 Agent｜全局防错、防幻、防假」（三、P6）；\n"
                    "「质检 Agent 校验纠错（调用 Wiki 做事实溯源）」（四、1）——"
                    "质检定位在**产出之后**，未规定**回答发出之前**是否要再检索一遍",
         status=RESOLVED, source="开源借鉴", decided_at=_D2,
@@ -690,7 +690,7 @@ DECISIONS: tuple[Decision, ...] = (
     ),
     Decision(
         key="U48", title="Agent 独立运行入口形态", phase="P4",
-        plan_quote="「逐个开发、逐个单测、逐个上线」（三、P4）；"
+        plan_quote="「逐个开发、逐个单测、逐个上线」（三、P4）；\n"
                    "「数据中台｜全系统唯一可信数据源」（三、P1）——"
                    "要求逐个可测可上线，但未规定**脱离会话**的独立调用入口形态",
         status=RESOLVED, source="开源借鉴", decided_at=_D2,
@@ -708,13 +708,13 @@ DECISIONS: tuple[Decision, ...] = (
     ),
     Decision(
         key="U49", title="Harness 自进化闭环的评测指标", phase="P10",
-        plan_quote="「评测迭代效果，未达标持续循环修复」（四、2）；"
+        plan_quote="「评测迭代效果，未达标持续循环修复」（四、2）；\n"
                    "「自动化评测脚本：计划书点名的 8 项指标」（三、P0-2）——"
                    "8 项指标是**业务链路**的，未定义**进化链路自身**如何被评测",
         status=RESOLVED, source="开源借鉴", decided_at=_D2,
         resolution="Harness 自身评测分两组，与业务 8 项指标**分开计量**（双链路隔离，不得混算）："
                    "① **进化有效性**：缺陷修复成功率、回归引入率（修 A 坏 B）、"
-                   "收敛轮次（达到目标所需 loop 数）、人工驳回率；"
+                   "收敛轮次（达到目标所需 loop 数）、人工驳回率；\n"
                    "② **进化安全性**：红线触碰次数（harness/risk.detect_redlines）、"
                    "沙箱逃逸尝试、私有数据流入离线链路的次数（**必须为 0**）。"
                    "评测结果**回流驱动下一轮进化**：未达标则继续循环，"
@@ -726,14 +726,14 @@ DECISIONS: tuple[Decision, ...] = (
     ),
     Decision(
         key="U50", title="歧义样本的学习回流口径", phase="P9",
-        plan_quote="「指标评估与增量微调体系」（三、P9）；"
+        plan_quote="「指标评估与增量微调体系」（三、P9）；\n"
                    "「日志沉淀与案例分类、领域 SFT 数据集」——"
                    "规定了要有 SFT 数据集，未规定**歧义/冲突样本**如何采集与回流",
         status=RESOLVED, source="开源借鉴", decided_at=_D2,
         resolution="检索路由第③档（大模型分析）与复检不通过的样本，统一落盘为**歧义样本**："
                    "含原查询、召回证据、冲突点、最终判定、人工/系统裁决结果。"
                    "回流去向有三，且**必须先脱敏**（P10 红线）："
-                   "① P9 增量微调的 SFT 数据集；② Agent-Wiki 的 Question 开放问题与 Contradiction 矛盾条目；"
+                   "① P9 增量微调的 SFT 数据集；② Agent-Wiki 的 Question 开放问题与 Contradiction 矛盾条目；\n"
                    "③ Jev 决策的难例集（用于 U03 阈值重新标定）。"
                    "**不进**离线链路原始日志——只进脱敏后的结构化样本。",
         references=("https://mem0.ai/blog/reducing-hallucinations-llms-with-grounded-memory",),
@@ -763,9 +763,9 @@ DECISIONS: tuple[Decision, ...] = (
         resolution="每个定义了具体 Agent 类的模块都加 `if __name__ == \"__main__\"` 入口，"
                    "委托 ai_butler/agents/cli.py。三条边界："
                    "①**不带参数只打印档案**，只读 ClassVar，不实例化、不连库、不碰外部依赖 —— "
-                   "此前右键运行会静默退出（退出码 0、零输出），开发者以为文件坏了；"
-                   "能跑但不说话比不能跑更糟，因为它伪装成正常；"
-                   "②**执行业务必须显式 user_id 与 session_id**，缺一个即报错，绝不默认填假值；"
+                   "此前右键运行会静默退出（退出码 0、零输出），开发者以为文件坏了；\n"
+                   "能跑但不说话比不能跑更糟，因为它伪装成正常；\n"
+                   "②**执行业务必须显式 user_id 与 session_id**，缺一个即报错，绝不默认填假值；\n"
                    "③**不旁路任何校验**，权限三层、State 契约、写作用域全部复用 U48 的 "
                    "run_standalone，省掉的只有 LangGraph 编排。"
                    "另要求 sys.path 引导必须位于**业务 import 之前**：放在文件末尾的兜底 "
@@ -778,21 +778,21 @@ DECISIONS: tuple[Decision, ...] = (
     # ==================== U53 起：运行时内核补齐（2026-10-23） ====================
     Decision(
         key="U53", title="工具统一调度的权限闸接线（在线编排路径）", phase="P3",
-        plan_quote="三、P3「实现工具统一调度、重复调用拦截、无增量终止」；"
+        plan_quote="三、P3「实现工具统一调度、重复调用拦截、无增量终止」；\n"
                    "七、验收 9–14「越权用例回归」——计划书要求工具统一调度与越权回归，"
                    "但未规定**三层权限判定落在调度路径的哪一步**",
         status=RESOLVED, source="实现参数", decided_at=_D3,
         resolution="闸门落在 `ToolDispatcher.dispatch` 内、handler 执行**之前**、"
                    "重复调用拦截**之前**（顺序即安全：放行一次不得靠缓存复用一生）。"
                    "① **未绑定权限上下文（ToolPermission）一律拒绝** —— "
-                   "无从判定即拒绝，没有「未绑定时放行」的分支；"
+                   "无从判定即拒绝，没有「未绑定时放行」的分支；\n"
                    "② 角色缺省 MEMBER（最保守的已登录身份）：会话链路尚未携带角色"
-                   "（U42：/api/chat/stream 未实现），不给「大概是个 admin」留默认值；"
+                   "（U42：/api/chat/stream 未实现），不给「大概是个 admin」留默认值；\n"
                    "③ 调度器自身按 L1 绑定：编排者不直接触发进程外动作，"
                    "需要 L2 及以上的调用方以自己的 AgentIdentity 求值"
-                   "（dispatch(..., agent=...)），U51 权限不可传递；"
+                   "（dispatch(..., agent=...)），U51 权限不可传递；\n"
                    "④ Tier1/Tier2 在审批服务接入前**挂起不执行**（U45，计划书三、P8"
-                   "「付款动作必须经人工确认」）—— 不等同于「先执行后补审批」；"
+                   "「付款动作必须经人工确认」）—— 不等同于「先执行后补审批」；\n"
                    "⑤ 工具未声明 required 时按 L2（调外部工具）对待，"
                    "与 U43「不得用布尔量推导」同一立场。"
                    "此前权限只接在 run_standalone 与 CLI 上，dispatch 路径零求值 —— "
@@ -812,14 +812,14 @@ DECISIONS: tuple[Decision, ...] = (
         resolution="2026-10-23 用户指令「用GitHub不用gitea」，平台切换为 GitHub Actions。"
                    "**网络实测（切换依据，勿凭旧结论行事）**：github.com 主站与 git 端点"
                    "全域不通（直连/代理/SSH 22/ssh.github.com:443 均失败，"
-                   "`git ls-remote` 报 Empty reply）——U11 的判定对此精确成立；"
+                   "`git ls-remote` 报 Empty reply）——U11 的判定对此精确成立；\n"
                    "但 **api.github.com 可达（200）**、codeload 可达。"
                    "最终形态：① 代码由使用者在可访问 github 的终端**自行推送**"
                    "（本机 git 端点不通，无法代推）；② CI 完全跑在 GitHub 托管 runner 上，"
                    "**本机不需要任何 runner**——外部 action（actions/checkout@v4、"
                    "setup-python@v5、upload-artifact@v4、dart-lang/setup-dart@v1）与 "
                    "docker.io 服务镜像均可直接用；③ ci.yml 从 .gitea/workflows/ 迁至 "
-                   ".github/workflows/，服务镜像从 daocloud 源改回 canonical 名；"
+                   ".github/workflows/，服务镜像从 daocloud 源改回 canonical 名；\n"
                    "④ 本机自建的 Gitea 容器与 remote 随之退场（数据卷保留待命）。"
                    "分支触发条件（main/develop/release/**/feature/**/hotfix/**）不变，"
                    "守护测试 tests/test_ci_pipeline.py、test_repo_hygiene.py、"
@@ -833,7 +833,7 @@ DECISIONS: tuple[Decision, ...] = (
     Decision(
         key="U55", title="新增评测中台 Agent（结果+过程七大维度评测）", phase="P9",
         plan_quote="三、P9「全维度指标监控看板搭建；业务指标聚合统计」——"
-                   "计划书要求指标监控，但未定义**过程侧**的评测口径；"
+                   "计划书要求指标监控，但未定义**过程侧**的评测口径；\n"
                    "用户指令（2026-10-23）「再补充添加一个评测中台 agent……"
                    "真正的评测绝非仅靠大模型离线评分，而是需要全面覆盖结果与过程的"
                    "七大核心维度」",
@@ -845,7 +845,7 @@ DECISIONS: tuple[Decision, ...] = (
                    "~{eval_platform}~。七维度（前六管过程、第七个管结果）："
                    "① 检索召回率 ② 证据忠实度 ③ 工具调用真实性 ④ 稳定性与异常 "
                    "⑤ 成本与效率 ⑥ 安全与权限 ⑦ 输出质量。"
-                   "与「离线跑分」的本质区别：黄金数据集+大模型评分只覆盖结果侧一维；"
+                   "与「离线跑分」的本质区别：黄金数据集+大模型评分只覆盖结果侧一维；\n"
                    "过程侧（漏检索/幻觉/虚构成功/不稳定/无从判责/越权）必须靠痕迹评。"
                    "**未接线项（如实登记，不假装已完成）**：痕迹的**生产端**"
                    "（各阶段 Agent 运行时埋点，把 ToolDispatcher 调用写进 State）"
@@ -863,20 +863,20 @@ DECISIONS: tuple[Decision, ...] = (
                    "总体结论，也未给各维度阈值",
         status=RESOLVED, source="实现参数", decided_at=_D3,
         resolution="① **fail-closed**：维度适用但数据缺失（没痕迹/没金标准）="
-                   "无从判定=不通过，「没有记录」不能当成「没有问题」；"
+                   "无从判定=不通过，「没有记录」不能当成「没有问题」；\n"
                    "② **门槛维度取最差一次运行**（召回/忠实/工具/安全/输出）："
                    "坏过一次就是坏过，不拿平均值粉饰；计量维度（成本）看聚合，"
                    "稳定性看方差；③ **不适用≠通过**：纯问答用例的工具真实性记"
-                   "「不适用」并从聚合剔除，不送虚假满分稀释总分；"
+                   "「不适用」并从聚合剔除，不送虚假满分稀释总分；\n"
                    "④ **安全一票否决**：安全维度不通过则总体不通过，无论其他维度"
-                   "多好（与 U49 进化安全性同构——安全性是准入项不是扣分项）；"
+                   "多好（与 U49 进化安全性同构——安全性是准入项不是扣分项）；\n"
                    "⑤ **分数看趋势，结论看红线**：overall_score 为适用维度等权均分"
-                   "（跨版本比较用），verdict 由红线决定，两者不互相推导；"
+                   "（跨版本比较用），verdict 由红线决定，两者不互相推导；\n"
                    "⑥ 默认阈值：召回率 1.0、忠实度 1.0（零容忍幻觉）、一致性 1.0、"
-                   "相似度 0.6；成本不设预算（权衡非红线）；"
+                   "相似度 0.6；成本不设预算（权衡非红线）；\n"
                    "⑦ 维度二默认确定性启发式裁判（字符二元组包含度≥0.5），"
-                   "LLM 裁判为可注入端口，报告如实记录用了哪种（不冒充模型级判定）；"
-                   "⑧ 报告出口必经 Redactor 并 assert_deep_clean（P9 脱敏纪律）；"
+                   "LLM 裁判为可注入端口，报告如实记录用了哪种（不冒充模型级判定）；\n"
+                   "⑧ 报告出口必经 Redactor 并 assert_deep_clean（P9 脱敏纪律）；\n"
                    "⑨ 维度 key 契约冻结（dimensions.DIMENSION_KEYS），"
                    "改名等于破坏历史可比性（与 metrics.METRIC_KEYS 同纪律）。",
         references=(),
@@ -894,17 +894,17 @@ DECISIONS: tuple[Decision, ...] = (
         decided_at=_D3,
         resolution="2026-10-23 用户指令「按优先级和稳定性全部处理」中的 P2 项。"
                    "按「开源借鉴」实现 Event Sourcing 模式："
-                   "① 不存当前状态，存到达状态的全部事件，状态 = 事件的 fold；"
+                   "① 不存当前状态，存到达状态的全部事件，状态 = 事件的 fold；\n"
                    "② append-only——存储端口（JournalStore）只有 load/append，"
-                   "没有 update/delete，改历史只能追加新事件；"
+                   "没有 update/delete，改历史只能追加新事件；\n"
                    "③ 每条事件 seq 连续 + sha256 链式绑定，verify() 断裂即拒"
-                   "（fail-closed，回放前必须先过校验）；"
+                   "（fail-closed，回放前必须先过校验）；\n"
                    "④ 先脱敏后入账（Redactor.redact_deep + assert_clean），"
-                   "与 harness/context.py 的顺序纪律同构；"
+                   "与 harness/context.py 的顺序纪律同构；\n"
                    "⑤ 崩溃恢复 = 新实例从 store 重载续写（seq 不重号）"
-                   "+ 最后一个 checkpoint 起 replay；"
+                   "+ 最后一个 checkpoint 起 replay；\n"
                    "⑥ 事件类型与 evaluation/trace.py 五类过程痕迹一一对应，"
-                   "账本同时是 P9 评测中台的数据源；"
+                   "账本同时是 P9 评测中台的数据源；\n"
                    "⑦ 接线：scheduler 的 Trace 埋点经 journal_observer 桥接落账"
                    "（observe.Observer 加 @runtime_checkable），harness loop 的"
                    "StageRecord 与终局快照实时落账（try/finally 覆盖 4 处 return"
@@ -920,7 +920,7 @@ DECISIONS: tuple[Decision, ...] = (
         key="U58",
         phase="P10",
         title="上下文分项计量与 shadowing 压缩（对 U36 的扩展）",
-        plan_quote="（计划书三、P10 步骤7 只定义「上下文压缩机制」与「摘要脱敏」；"
+        plan_quote="（计划书三、P10 步骤7 只定义「上下文压缩机制」与「摘要脱敏」；\n"
                    "分项计量口径、影子让位语义、token 估算方式均为未定义项）",
         status=RESOLVED,
         source="实现参数",
@@ -929,7 +929,7 @@ DECISIONS: tuple[Decision, ...] = (
                    "对 U36 的压缩机制做两项扩展："
                    "① **shadowing（只让位不删除）**：U36 原实现的 dropped 只是计数，"
                    "被压内容连同让位原因（超条数/超预算）以影子记录留存，"
-                   "带脱敏后原文，可经账本或 restore_shadowed() 重建完整上下文；"
+                   "带脱敏后原文，可经账本或 restore_shadowed() 重建完整上下文；\n"
                    "② **分项计量（contextBreakdown）**：压缩结果按 source / scope / "
                    "相关度分带（high≥0.8 / mid≥0.4 / low）统计条数与 token，"
                    "输出压力值 pressure=占用/预算——单维度总数回答不了"
@@ -961,15 +961,15 @@ DECISIONS: tuple[Decision, ...] = (
                    "按「开源借鉴」实现一次性凭据模型（core/approval.py）："
                    "① **一次性**：approve 不直接触发执行；dispatch 凭 approval_id "
                    "consume 后才放行，用一次即焚——防「放行一次、缓存复用一生」"
-                   "（与 U53 权限闸先于重复拦截同一立场）；"
+                   "（与 U53 权限闸先于重复拦截同一立场）；\n"
                    "② **签名绑定**：票与（工具名 + 规范化入参签名）绑定，"
-                   "批准调用 A 执行不了调用 B；"
+                   "批准调用 A 执行不了调用 B；\n"
                    "③ **主体绑定**：票与（agent, role）绑定，换身份消费即拒"
-                   "（U51 权限不可传递的延伸）；"
+                   "（U51 权限不可传递的延伸）；\n"
                    "④ **无人应答即拒**：TTL 到期未决自动作废（expired），"
-                   "不存在永远有效的票；clock 为可注入端口，测试不睡真时间；"
+                   "不存在永远有效的票；clock 为可注入端口，测试不睡真时间；\n"
                    "⑤ **状态机单向**：pending → approved/rejected/expired，"
-                   "不可回退，重复决策一律拒（幂等不等于放任）；"
+                   "不可回退，重复决策一律拒（幂等不等于放任）；\n"
                    "⑥ 审批必须署名（decided_by 非空）——匿名放行不可审计。"
                    "dispatch 三条分支没有第四条：带票→验票放行；无票且服务在→"
                    "建票挂起（返回携带 approval_id）；服务未绑→维持 U45 一律不执行。",
@@ -990,16 +990,172 @@ DECISIONS: tuple[Decision, ...] = (
                    "① **协作式超时**：ToolSpec.timeout_seconds 声明即经单线程执行，"
                    "future.result(timeout) 判超时。协作式的含义是**不假装杀死线程**"
                    "——超时只保证调用方不再等待，执行体可能仍在后台，"
-                   "副作用可能延迟发生，ToolResult.note 如实标注（比谎称已终止诚实）；"
-                   "不限时的工具**不开线程**，与接线前行为逐字节一致；"
+                   "副作用可能延迟发生，ToolResult.note 如实标注（比谎称已终止诚实）；\n"
+                   "不限时的工具**不开线程**，与接线前行为逐字节一致；\n"
                    "② **按错误码判责**：handler 异常显式带 .code（如 PAYMENT_TIMEOUT / "
                    "INTERFACE_DOWN）即透传；超时为 TASK_TIMEOUT；未分类落 HANDLER_ERROR。"
-                   "ToolResult.error_code/timed_out 供评测维度四直接消费；"
+                   "ToolResult.error_code/timed_out 供评测维度四直接消费；\n"
                    "③ snapshot 增 error_codes 聚合分布与 approval_bound 字段"
                    "（审计要能分别看见「服务没接」与「被拦下」）。",
         references=(),
         license_note="计划书未定义项；协作式取消（cooperative cancellation）为"
                      "公开领域模式，另参照 dsh 超时按错误码判责的对照设计",
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U61",
+        phase="P7",
+        title="图片输入：计划书「双输入」之外新增的第三条输入",
+        plan_quote="三、P7「双输入（语音 + 文字）」——**原文没有图片输入**",
+        status=RESOLVED,
+        source="人工授权",
+        decided_at=_D3,
+        resolution="2026-10-24 用户指令「支持图文识别和输出」追加。"
+                   "① 端云分层不变：端上只取图/压缩/上传与渲染，**识别一律在云端**；\n"
+                   "② 取图用 image_picker：拍照走系统相机 Activity，**不需要 CAMERA 权限**，"
+                   "避免在 Android 14+ 媒体权限上自造坑；端上先压到长边 1600 / q88 再上传；\n"
+                   "③ 识别供应商按 VISION_PROVIDER_ORDER 择一可用者：ollama（本地视觉模型，"
+                   "可查 /api/tags 判断模型是否已拉取）优先，OpenAI 兼容端点备选；\n"
+                   "**无可用供应商时 fail-closed 返回 503 + 可执行原因**（例如 ollama pull xxx），"
+                   "绝不返回一段编造的『看起来像结果』的文本；\n"
+                   "④ 客观事实（尺寸/亮度/主色）与模型文本**分开返回**，不依赖模型、可交叉校验；\n"
+                   "⑤ 默认模型 qwen2.5vl:3b：实测 moondream 对中文 OCR 输出乱码（见台账 note），"
+                   "qwen2.5vl 对『订单编号/金额/签收人』三行识别全对。"
+                   "接口：GET /api/vision/availability、POST /api/vision/recognize。",
+        references=(),
+        license_note="计划书未定义项；视觉推理走 Ollama（MIT）与 OpenAI 兼容协议，"
+                     "图像处理用 Pillow（HPND）",
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U62",
+        phase="P7",
+        title="图文输出：文字 + 服务端渲染结果卡片（不引入生成式绘图）",
+        plan_quote="（计划书未定义图文输出的形态；P7 步骤5 只要求「逐字文字渲染 + 同步 TTS」）",
+        status=RESOLVED,
+        source="人工授权",
+        decided_at=_D3,
+        resolution="2026-10-24 与 U61 同批追加。**图文输出 = 文字 + 一张真实生成的 PNG 卡片**，"
+                   "由服务端 Pillow 渲染：标题、识别正文（按像素宽度折行，中文逐字试排）、"
+                   "客观事实脚注（尺寸/平均色/亮度）。"
+                   "三条边界：① 卡片随识别结果一起在 blocks 里下发（type=image, purpose=card），"
+                   "移动端按序渲染，**图文同源**，不做二次拼装；② 没有中文字体时**在卡片上标注**，"
+                   "不默默输出方块图；③ 不接生成式绘图模型：输出内容必须**可追溯到识别结果**，"
+                   "生成图会让「这段文字对应哪张图」失去确定性，与评测维度二（证据忠实度）冲突。",
+        references=(),
+        license_note="计划书未定义项；卡片渲染用 Pillow（HPND），中文字体用系统微软雅黑/黑体",
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U63",
+        phase="P7",
+        title="声纹识别：登录后按账号登记与校验（计划书未定义）",
+        plan_quote="（计划书 P7 未提及声纹；仅要求「唤醒后先校验本地登录会话状态」）",
+        status=RESOLVED,
+        source="人工授权",
+        decided_at=_D3,
+        resolution="2026-10-24 用户指令「登录后可以语音唤起且支持声纹识别」追加。\n"
+                   "① 模型取 3D-Speaker CAM++（192 维中文说话人 embedding，约 27MB），"
+                   "经 sherpa-onnx SpeakerEmbeddingExtractor 推理，**只在云端跑**；\n"
+                   "② **只存 embedding，不存音频原件**：embedding 无法还原成可听语音，"
+                   "是「能比对且不留声纹原件」的最小留存，落盘为 storage_root/voiceprints.json"
+                   "（每账号最多 3 条，超过淘汰最旧 —— 声纹会随年龄/设备漂移）；\n"
+                   "③ 判定阈值 0.35 偏严：宁可让本人重说一次，也不要放错人（放错人不可回滚）；\n"
+                   "④ **取不到分数一律判不匹配**，绝不把 None 当通过 —— 声纹是身份凭据，"
+                   "任何「拿不到就放行」的实现等于没有声纹；\n"
+                   "⑤ 只做**账号内 1:1**（比对自己的登记样本，取样本余弦的最大值）。"
+                   "跨账号 1:N 不在本阶段范围：一旦阈值偏松就是大规模冒认；\n"
+                   "⑥ 门槛：属成员能力（U64），访客不得登记 —— 否则匿名方能往声纹库写样本。"
+                   "接口：POST /api/voice/speaker/enroll、POST /api/voice/speaker/verify。",
+        references=("https://github.com/modelscope/3D-Speaker",),
+        license_note="3D-Speaker (Apache-2.0)：只使用其发布的 CAM++ 模型权重（数据/权重），"
+                     "不复用其训练与推理代码；实际推理走 sherpa-onnx",
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U64",
+        phase="P7",
+        title="登录模式改造：未登录只能文字查询，登录后才有语音与声纹",
+        plan_quote="七、验收标准 11「未登录状态下所有业务接口拒绝执行」；"
+                   "三、P7 触发时机「唤醒后先校验本地登录会话状态，未登录引导登录」",
+        status=RESOLVED,
+        source="人工授权",
+        decided_at=_D3,
+        resolution="2026-10-24 用户指令「未登录时两端都只能文字查询，登录后可以语音唤起"
+                   "且支持声纹识别」。这与验收标准 11 的字面存在张力，处理方式是"
+                   "**不放宽鉴权，只放宽能力面**：\n"
+                   "① 验收标准 11 约束的是**身份**（不得访问私有数据与业务副作用），"
+                   "该条原样保留：私有 Vault 检索、设备上报、支付、记忆写入对访客一律拒绝；\n"
+                   "② 新增**访客层**：`POST /api/session/guest` 签发**有期限（1h）+ 有额度（30 次）**"
+                   "的访客凭据，走同一套 SessionAuthMiddleware 校验 —— **它不是免鉴权白名单**，"
+                   "白名单里只放「签发凭据」这个动作；\n"
+                   "③ 能力表集中在 core/access.py（AccessTier × Capability），所有入口查表，"
+                   "未登记的能力直接报错而不是默认放行；\n"
+                   "④ 语音输入/播报/唤醒/声纹/图文识别/私有检索一律要求成员层级。"
+                   "理由不是省算力：**声纹与唤醒本身就是身份凭据**；\n"
+                   "⑤ 层级从会话身份派生（guest: 前缀），**不采信请求体** —— 否则客户端改个字段"
+                   "就自授权；\n"
+                   "⑥ 端侧只拿能力档案**渲染按钮**，权限真值源在服务端；端侧表与之不一致时"
+                   "以服务端 403 为准；\n"
+                   "⑦ 登录成功后丢弃访客身份：两个身份并存会让「用哪个 token」变成猜的。",
+        references=(),
+        license_note="计划书未定义项：访客层级为人工授权新增，无外部来源",
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U65",
+        phase="P7",
+        title="语音模型的落地方式：VAD 端侧随包，ASR/TTS 走云端",
+        plan_quote="三、P7 步骤4「开发 VAD 人声检测、实时收音、随时打断机制」；"
+                   "一、项目概述「移动端（仅感知 + 交互）… 云端（全部智能运算）」；"
+                   "U20 流式 ASR / U21「云端为主，端侧 VITS 兜底」",
+        status=RESOLVED,
+        source="人工授权",
+        decided_at=_D3,
+        resolution="2026-10-24 用户指令「完善 ASR、VAD、TTS」后确定三者各在哪一端跑。"
+                   "判据是**响应时间**与**安装包体积**，不是「哪个更先进」：\n"
+                   "① **VAD 必须在端侧**（silero_vad.onnx 1.7MB，随包）："
+                   "「随时打断」按毫秒算，走云端要一次网络往返，播报会继续说 —— 那叫排队不叫打断；\n"
+                   "② **ASR 走云端**（流式 ZipFormer zh-14M int8，约 24MB）："
+                   "识别属「智能运算」，放云端符合端云分层；端侧只负责录音与上传 16k 单声道 PCM16 WAV，"
+                   "静音由云端 VAD 裁掉；端侧模型**可选**，缺模型时不得假装可用；\n"
+                   "③ **TTS 走云端**（VITS-zh 多说话人，127MB）：随包会把 APK 从 49MB 推到 175MB，"
+                   "不现实；端侧用 audioplayers 播返回的 WAV。U21 的「端侧兜底」保留为可选能力；\n"
+                   "④ 模型**不进 git**：由 scripts/download_speech_models.py 按文件清单从镜像拉取，"
+                   "缺模型时接口 fail-closed 返回 503 + 「跑哪个脚本」；\n"
+                   "⑤ 端侧管线修复两个真实缺陷：采样从未被喂给 VAD/ASR（「随时打断」曾是死代码）、"
+                   "TTS 失败会把整轮对话判成失败（现降级为只影响声音，不影响已渲染文字）。",
+        references=("https://github.com/k2-fsa/sherpa-onnx",),
+        license_note="以依赖形式使用：sherpa-onnx (Apache-2.0)、silero-vad (MIT)、"
+                     "ZipFormer zh-14M 与 VITS-zh 权重 (Apache-2.0)、audioplayers (MIT)；"
+                     "不复制其代码到本仓库",
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U66",
+        phase="P3",
+        title="检索侧的具体分类与工具选择（「用什么查」的显式化）",
+        plan_quote="四、1「五层意图路由：规则匹配 → Jev → 向量 → 垂类决策模型 → 大模型兜底」；"
+                   "三、P2「BM25 + 向量检索 + Rerank 三重混合检索服务」",
+        status=RESOLVED,
+        source="人工授权",
+        decided_at=_D3,
+        resolution="2026-10-24 用户指令「检索信息和检索意图路由要么有具体分类和方法选择合适工具」。"
+                   "落地为 retrieval/planner.py，**三层职责严格分开、互不越界**：\n"
+                   "① 五层意图路由判「这句话想干什么」（冻结，不改层数）；"
+                   "② 本模块判「这句话属于哪一类查询」，共 10 类：精确标识/事实问答/规则政策/"
+                   "操作步骤/对比选择/推荐方案/私有回忆/闲聊/多意图/未知 —— **只收「会改变动作」的类别**；"
+                   "③ 每类固定一条工具序列（primary → fallback → synthesize），工具注册表集中一处，"
+                   "不在调用点写字符串；方法枚举含直查/BM25/向量/混合重排/私有库/业务工具/"
+                   "直接回答/反问；\n"
+                   "④ U46 的检索路线（直查/混合/大模型）**照旧消费，不改写**；两者冲突时记录信号而不偷改分类；\n"
+                   "⑤ **工具按层级裁剪**（U64）：访客拿不到 vault.search 与业务工具，"
+                   "被裁掉必须进 dropped_tools 并写明理由 —— 规划期就裁，别等执行期才 403，"
+                   "否则用户看到的是「查不到」而不是「去登录」；\n"
+                   "⑥ 判据先确定性后概率性：闲聊 → 多意图 → 逐条正则信号 → 五层兜底结论 → 未知，"
+                   "每条结论都带 matched_signals，说得出是哪一条命中的（E-53）。",
+        references=(),
+        license_note="计划书未定义项：分类粒度与工具注册表为人工授权新增",
         code_reuse="n/a",
     ),
 )

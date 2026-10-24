@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
+from typing import Any, Mapping
 
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -39,15 +39,28 @@ class TimeoutMiddleware:
       否则逐字文字渲染与同步 TTS 播报会被中途掐断（计划书三、P0-7）。
     """
 
-    def __init__(self, app: ASGIApp, *, timeout_seconds: float) -> None:
+    def __init__(self, app: ASGIApp, *, timeout_seconds: float,
+                 path_timeouts: Mapping[str, float] | None = None) -> None:
         self.app = app
         self.timeout = float(timeout_seconds)
+        # 按路径前缀单独给超时（台账 U61）：
+        # 视觉推理要走模型，几十秒是常态，用通用 30s 会**必然** 504 ——
+        # 这不是配置调优，而是语义不同：通用超时防的是「接口卡住」，
+        # 视觉接口的等待是**预期内的计算**。所以按路径区分，而不是把全局值调大。
+        self.path_timeouts = dict(path_timeouts or {})
+
+    def _timeout_for(self, path: str) -> float:
+        for prefix, seconds in self.path_timeouts.items():
+            if path.startswith(prefix):
+                return float(seconds)
+        return self.timeout
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
+        timeout = self._timeout_for(scope.get("path", ""))
         started = asyncio.Event()
 
         async def send_wrapper(message: Message) -> None:
@@ -56,7 +69,7 @@ class TimeoutMiddleware:
             await send(message)
 
         task = asyncio.create_task(self.app(scope, receive, send_wrapper))
-        done, _pending = await asyncio.wait({task}, timeout=self.timeout)
+        done, _pending = await asyncio.wait({task}, timeout=timeout)
 
         if task in done:
             await task                      # 正常结束；异常按原样抛出

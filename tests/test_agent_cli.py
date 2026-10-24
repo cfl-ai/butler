@@ -265,3 +265,20 @@ def test_business_run_without_tools_fails_cleanly():
     assert "声明了能力" in combined, f"拒绝信息不明确：\n{combined}"
     assert "AttributeError" not in combined, "崩成了 NoneType —— 难看的崩溃不是干净的拒绝"
     assert "ValueError" not in combined, "枚举转换又坏了（按值查找回归）"
+
+
+def test_butler_refuses_business_run_as_governor():
+    """管家是管辖者不是被管辖者 —— 对它跑业务是范畴错误，必须干净拒绝。
+
+    曾经的形态：崩 `TypeError: 'ButlerAgent' object is not callable`。
+    """
+    proc = subprocess.run(
+        [PY, str(AGENTS_DIR / "butler.py"),
+         "--user-id", "u1", "--session-id", "s1"],
+        capture_output=True, text=True, encoding="utf-8", timeout=180,
+        cwd=str(REPO_ROOT),
+    )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode != 0
+    assert "管辖者" in combined, f"拒绝理由不是范畴错误：\n{combined}"
+    assert "TypeError" not in combined, "崩成了不可调用 —— 难看的崩溃不是干净的拒绝"

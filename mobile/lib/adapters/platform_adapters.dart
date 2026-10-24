@@ -25,7 +25,9 @@ import 'dart:typed_data';
 
 import 'package:aibutler_core/aibutler_core.dart';
 import 'package:aibutler_voice/aibutler_voice.dart' as voice;
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:record/record.dart' as rec;
@@ -299,79 +301,222 @@ class SherpaWakeWord implements WakeWordPort {
 }
 
 // --------------------------------------------------------------------------- //
-// VAD / ASR / TTS：结构与裁定已就位，但**必须给出模型路径**
+// VAD（U22）：**端侧真实运行**，模型随包
 // --------------------------------------------------------------------------- //
-Never _modelMissing(String what, String decision) => throw UnimplementedError(
-    what +
-    '需要先提供模型文件：' +
-    decision +
-    '。构造时给出模型路径即可启用；'
-    '在没有模型的情况下**不做假装能跑的假实现**。');
-
-/// VAD 人声检测（U22：silero-vad，sherpa-onnx 内置）。
+/// silero-vad 人声检测。
+///
+/// 状态是「真话」：
+/// - 模型没释放出来 → `start()` 明确抛错，不静默返回空流；
+/// - 引擎起来了 → `speechActivity` 按**状态变化**发事件（true=开始说、false=说完了），
+///   而不是每帧都发（否则下游每 32ms 被叫醒一次，白耗电）。
 class SileroVad implements VadPort {
-  SileroVad({this.modelPath});
+  SileroVad({this.modelPath, this.modelPathResolver});
 
-  /// ~{silero_vad.onnx}~ 路径；为空表示尚未提供模型。
+  /// 模型路径；为空时用 [modelPathResolver] 在 `start()` 时异步解析
+  /// （随包模型要先释放到可写目录，构造期等不了异步）。
   final String? modelPath;
+  final Future<String> Function()? modelPathResolver;
+
+  final StreamController<bool> _activity = StreamController<bool>.broadcast();
+  voice.VadEngine? _engine;
+  bool _inSpeech = false;
+
+  /// 本次收音期间累计切出的人声片段数（供自检与排障）。
+  int _segments = 0;
+  int get segments => _segments;
 
   @override
-  Stream<bool> get speechActivity => const Stream<bool>.empty();
+  Stream<bool> get speechActivity => _activity.stream;
 
   @override
   Future<void> start() async {
-    if (modelPath == null) {
-      _modelMissing('VAD', '裁定 U22：silero-vad（sherpa-onnx 内置）');
+    final path = modelPath ?? await modelPathResolver?.call();
+    if (path == null || path.isEmpty) {
+      throw UnimplementedError(
+          'VAD 需要 silero_vad.onnx：裁定 U22。随包模型应经 asset_models.dart 释放；'
+          '缺模型时不做「假装在听」的实现。');
+    }
+    _engine?.free();
+    _engine = voice.VadEngine(voice.VadEngineConfig(modelPath: path));
+    _inSpeech = false;
+    _segments = 0;
+  }
+
+  @override
+  void feed(List<double> samples) {
+    final engine = _engine;
+    if (engine == null || samples.isEmpty) return;
+    final segments = engine.feed(Float32List.fromList(samples));
+    _segments += segments.length;
+    final speaking = engine.isSpeechDetected;
+    if (speaking != _inSpeech) {
+      _inSpeech = speaking;
+      if (!_activity.isClosed) _activity.add(speaking);
     }
   }
 
   @override
-  Future<void> stop() async {}
+  Future<void> stop() async {
+    final engine = _engine;
+    _engine = null;
+    _inSpeech = false;
+    engine?.free();
+  }
 }
 
-/// 流式 ASR（U20：sherpa-onnx 流式 ZipFormer）。
-class SherpaAsr implements AsrPort {
-  SherpaAsr({this.encoder, this.decoder, this.joiner, this.tokens});
+// --------------------------------------------------------------------------- //
+// ASR / TTS（U20 / U21 → U65 裁定：**云端执行**）
+// --------------------------------------------------------------------------- //
+/// 云端语音识别：录音 → 上传 WAV → 拿文字。
+///
+/// 为什么不像 VAD 那样端侧推理（U65）
+/// --------------------------------
+/// 中文流式 ASR 全套 24MB。放进安装包会让 APK 从 49MB 涨到 73MB，
+/// 而计划书 P7 的端云分层本来就写明「云端全部智能运算」——
+/// 识别属于智能运算，放云端完全合规；真正必须留在端侧的只有「毫秒级打断判断」（VAD）。
+///
+/// 三个如实标注：
+/// 1. **整段上传**：不做端侧切音，静音由云端 VAD 裁掉。代价是多传几十 KB，
+///    换来的是端侧不必再维护一套切音逻辑（少一处可能出错的地方）。
+/// 2. **有长度上限**：超过 [maxSeconds] 直接拒绝，而不是悄悄截断 ——
+///    截断会让用户说的话消失且无从察觉。
+/// 3. **失败要能分辨**：模型不可用（503）与音频不合规（400）给不同指引。
+class CloudAsr implements AsrPort {
+  CloudAsr({
+    required ApiClient api,
+    required SessionManager session,
+    this.sampleRate = 16000,
+    this.maxSeconds = 30,
+  })  : _api = api,
+        _session = session;
 
-  final String? encoder;
-  final String? decoder;
-  final String? joiner;
-  final String? tokens;
+  final ApiClient _api;
+  final SessionManager _session;
+  final int sampleRate;
+  final int maxSeconds;
+
+  final StreamController<String> _partial = StreamController<String>.broadcast();
+  final List<double> _buffer = [];
+  bool _running = false;
 
   @override
-  Stream<String> get partialText => const Stream<String>.empty();
+  Stream<String> get partialText => _partial.stream;
 
   @override
   Future<void> start() async {
-    if (encoder == null || tokens == null) {
-      _modelMissing('流式 ASR', '裁定 U20：sherpa-onnx 流式 ZipFormer');
+    // 语音识别属成员能力（U64）：本地先挡，别让用户对着手机说完一整句才收到 401
+    if (!_session.isSignedIn) {
+      throw StateError('未登录，无法使用语音识别（U64：语音能力需登录）');
     }
+    _buffer.clear();
+    _running = true;
   }
 
   @override
-  Future<void> feed(List<double> samples) async {}
+  Future<void> feed(List<double> samples) async {
+    if (!_running) return;
+    // 到上限就停止累积，而不是无限吃内存（一次对话不该录满 30 秒以上）
+    final capacity = maxSeconds * sampleRate;
+    if (_buffer.length >= capacity) return;
+    _buffer.addAll(samples.take(capacity - _buffer.length));
+  }
 
   @override
-  Future<void> stop() async {}
+  Future<String> finish() async {
+    _running = false;
+    if (_buffer.isEmpty) return '';
+    if (_buffer.length >= maxSeconds * sampleRate) {
+      throw StateError('录音超过 $maxSeconds 秒上限，已停止；请分段说话。');
+    }
+    final wav = encodeWavPcm16(_buffer, sampleRate);
+    final result = await _api.transcribe(wav);
+    if (!result.isEmpty) {
+      if (!_partial.isClosed) _partial.add(result.text);
+    }
+    return result.text;
+  }
+
+  @override
+  Future<void> stop() async {
+    _running = false;
+    _buffer.clear();
+  }
+
+  /// 把 [-1,1] 浮点采样编码成 16bit 单声道 WAV。
+  ///
+  /// 服务端只认这一种：格式一旦不统一，就会变成「同一段音频在两端理解不同」。
+  static Uint8List encodeWavPcm16(List<double> samples, int sampleRate) {
+    final dataLength = samples.length * 2;
+    final bytes = Uint8List(44 + dataLength);
+    final view = ByteData.sublistView(bytes);
+
+    void ascii(int offset, String text) {
+      for (var i = 0; i < text.length; i++) {
+        bytes[offset + i] = text.codeUnitAt(i);
+      }
+    }
+
+    ascii(0, 'RIFF');
+    view.setUint32(4, 36 + dataLength, Endian.little);
+    ascii(8, 'WAVE');
+    ascii(12, 'fmt ');
+    view.setUint32(16, 16, Endian.little);      // fmt 块大小
+    view.setUint16(20, 1, Endian.little);       // PCM
+    view.setUint16(22, 1, Endian.little);       // 单声道
+    view.setUint32(24, sampleRate, Endian.little);
+    view.setUint32(28, sampleRate * 2, Endian.little);  // 字节率
+    view.setUint16(32, 2, Endian.little);       // 块对齐
+    view.setUint16(34, 16, Endian.little);      // 位深
+    ascii(36, 'data');
+    view.setUint32(40, dataLength, Endian.little);
+
+    for (var i = 0; i < samples.length; i++) {
+      final clamped = samples[i].clamp(-1.0, 1.0);
+      view.setInt16(44 + i * 2, (clamped * 32767).round(), Endian.little);
+    }
+    return bytes;
+  }
 }
 
-/// TTS 播报（U21：云端 CosyVoice2 为主，端侧 sherpa-onnx VITS 兜底）。
-class SherpaTts implements TtsPort {
-  SherpaTts({this.modelPath, this.tokens, this.lexicon});
+/// 云端语音合成 + 端侧播放（U21「云端为主」的落地形态）。
+///
+/// 为什么不端侧合成：VITS 中文模型 127MB，随包不现实（见 U65）。
+/// 为什么不端侧播 raw 采样：Flutter 没有内置的「播 PCM」能力，
+/// `audioplayers` 播文件最稳（音频焦点、蓝牙路由都交给它）。
+class CloudTts implements TtsPort {
+  CloudTts({required ApiClient api, AudioPlayer? player, int? speakerId})
+      : _api = api,
+        _player = player ?? AudioPlayer(),
+        _speakerId = speakerId;
 
-  final String? modelPath;
-  final String? tokens;
-  final String? lexicon;
+  final ApiClient _api;
+  final AudioPlayer _player;
+  final int? _speakerId;
 
   @override
   Future<void> speak(String text) async {
-    if (modelPath == null) {
-      _modelMissing('端侧 TTS', '裁定 U21：sherpa-onnx VITS 兜底');
+    if (text.trim().isEmpty) return;
+    // 语音合成属成员能力（U64）：未登录时明确拒绝，不静默不出声
+    if (_speakerId == null && !_api.hasMemberSession) {
+      throw StateError('未登录，无法使用语音播报（U64：语音能力需登录）');
     }
+    final wav = await _api.synthesize(text, speakerId: _speakerId);
+    final dir = await getTemporaryDirectory();
+    final file = File(
+        dir.path + Platform.pathSeparator + 'tts_${DateTime.now().millisecondsSinceEpoch}.wav');
+    await file.writeAsBytes(wav, flush: true);
+    await _player.stop();
+    await _player.play(DeviceFileSource(file.path));
   }
 
   @override
-  Future<void> stop() async {}
+  Future<void> stop() async {
+    try {
+      await _player.stop();
+    } catch (_) {
+      // 没在播时 stop 也可能抛错 —— 停播是尽力动作，不该影响主流程
+    }
+  }
 }
 
 /// 麦克风收音：16kHz 单声道 PCM16 → [-1, 1] 的浮点采样。
@@ -474,6 +619,16 @@ class WakeForegroundService {
   Future<bool> stop() async {
     if (!supported) return false;
     return await _channel.invokeMethod<bool>('stop') ?? false;
+  }
+
+  /// 请求通知权限（Android 13+ 必需）。
+  ///
+  /// 不申请会怎样：前台服务照样能起，但**常驻通知不可见** ——
+  /// 用户既看不到"管家在待命"，也没法一键停掉麦克风，属于隐蔽占用。
+  /// 返回 true 表示此刻已授予；false 表示尚未授予（系统弹窗是异步的）。
+  Future<bool> requestNotificationPermission() async {
+    if (!supported) return false;
+    return await _channel.invokeMethod<bool>('requestNotification') ?? false;
   }
 
   /// 常驻通知被用户关掉时，前台服务会被系统降级 —— 引导去开。

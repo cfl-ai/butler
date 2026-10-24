@@ -140,11 +140,17 @@ class FakeVad implements VadPort {
   int startCalls = 0;
   int stopCalls = 0;
 
+  /// 收到的采样总数：验证「管线真的把麦克风采样喂给了 VAD」。
+  int fedSamples = 0;
+
   @override
   Stream<bool> get speechActivity => _activity.stream;
 
   @override
   Future<void> start() async => startCalls++;
+
+  @override
+  void feed(List<double> samples) => fedSamples += samples.length;
 
   @override
   Future<void> stop() async => stopCalls++;
@@ -158,6 +164,10 @@ class FakeAsr implements AsrPort {
   final List<double> fed = [];
   int startCalls = 0;
   int stopCalls = 0;
+  int finishCalls = 0;
+
+  /// 终态文本。**过程文本可能还在被改写，终态才是管线该信的那个**（见 AsrPort 契约）。
+  String finalText = '';
 
   @override
   Stream<String> get partialText => _partials.stream;
@@ -169,9 +179,19 @@ class FakeAsr implements AsrPort {
   Future<void> feed(List<double> samples) async => fed.addAll(samples);
 
   @override
+  Future<String> finish() async {
+    finishCalls++;
+    return finalText;
+  }
+
+  @override
   Future<void> stop() async => stopCalls++;
 
-  void emit(String text) => _partials.add(text);
+  /// 测试驱动：同时更新过程文本与终态文本（真机上由模型在收尾时定稿）。
+  void emit(String text) {
+    finalText = text;
+    _partials.add(text);
+  }
 }
 
 class FakeTts implements TtsPort {

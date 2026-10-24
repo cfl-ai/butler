@@ -258,3 +258,42 @@ def test_documented_case_count_matches_reality():
     actual = len(default_library().cases)
     for n in stated:
         assert int(n) == actual, f"文档写 {n} 条，实际 {actual} 条"
+
+
+def test_documented_ledger_count_matches_reality():
+    """文末「未定义项台账：N 项」的那个 N 和四项分布，也必须是**真的**。
+
+    这是上一条的同类问题：台账从 41 长到 66，而文档结尾一直写着
+    「41 项全部裁定（开源借鉴 26 / 人工授权 6 / 实现参数 1 / 文档推导 8）」。
+    数字本身没错过，只是**没人回头改**——正好是「文档里的数字也是断言」
+    最容易漏掉的那一半：过期不等于写错，但读者一样被误导。
+
+    这里连**分布**一起守，因为只对总数时，改了分类归属也不会变红。
+    """
+    from collections import Counter
+
+    from ai_butler.core import decisions
+
+    text = DOC.read_text(encoding="utf-8")
+    matched = re.search(
+        r"未定义项台账\*\*：(\d+)\s*项全部裁定"
+        r"（开源借鉴\s*(\d+)\s*/\s*人工授权\s*(\d+)\s*/\s*实现参数\s*(\d+)\s*/\s*文档推导\s*(\d+)）",
+        text,
+    )
+    assert matched, "文末没找到「未定义项台账：N 项全部裁定（…）」的表述（判据可能已失效）"
+
+    total, borrow, manual, param, derived = (int(g) for g in matched.groups())
+    items = decisions.resolved()
+    actual = Counter(i.source for i in items)
+
+    assert total == len(items), f"文档写 {total} 项，实际 {len(items)} 项"
+    assert borrow == actual["开源借鉴"], f"文档写开源借鉴 {borrow}，实际 {actual['开源借鉴']}"
+    assert manual == actual["人工授权"], f"文档写人工授权 {manual}，实际 {actual['人工授权']}"
+    assert param == actual["实现参数"], f"文档写实现参数 {param}，实际 {actual['实现参数']}"
+    assert derived == actual["文档推导"], f"文档写文档推导 {derived}，实际 {actual['文档推导']}"
+
+    # 分布之和必须等于总数：否则即使四项各自「看着对」，也拼不回总数。
+    assert borrow + manual + param + derived == total, (
+        f"四项分布之和 {borrow + manual + param + derived} 不等于总数 {total}"
+    )
+

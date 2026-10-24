@@ -214,6 +214,15 @@ def main(module: Any, argv: list[str] | None = None) -> int:
             f"{label} 是集群模块，成员由 P4 集群统一调度；"
             f"请改为运行 ai_butler/agents/p4_mops.py")
 
+    # 执行业务只认 SubAgent：管家是**管辖者**不是被管辖者，
+    # 对它跑 run_standalone 是范畴错误（会崩 'ButlerAgent' object is not
+    # callable）—— 难看的崩溃不如干净的拒绝。管家要跑业务请走具体阶段模块。
+    executable = [c for c in agents if _is_subagent(c)]
+    if not executable:
+        raise CliError(
+            f"{label} 没有可独立执行的业务 Agent（管家 Agent 是管辖者，"
+            f"请运行具体阶段模块，如 p1_data_platform.py）")
+
     from ai_butler.agents.standalone import (
         StandaloneContext,
         StandaloneError,
@@ -227,7 +236,7 @@ def main(module: Any, argv: list[str] | None = None) -> int:
         sensitivity=_sensitivity(opts.sensitivity),
         required=_capability(opts.required),
     )
-    agent = agents[0]()
+    agent = executable[0]()
     try:
         result = run_standalone(agent, ctx=ctx)
     except StandaloneError as exc:

@@ -6,3 +6,4 @@
 library;
 
 export 'src/keyword_spotter_engine.dart';
+export 'src/vad_engine.dart';

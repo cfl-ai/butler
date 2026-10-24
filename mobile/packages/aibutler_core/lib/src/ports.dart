@@ -79,6 +79,13 @@ abstract class VadPort {
   Stream<bool> get speechActivity;
   Future<void> start();
   Future<void> stop();
+
+  /// 喂入一段采样（16k 单声道 [-1,1]）。
+  ///
+  /// **必须由外部驱动**：VAD 自己不持有麦克风。之前没有这个方法，
+  /// 于是管线启动了 VAD 却从不喂数据，`speechActivity` 永远是空流 ——
+  /// 「随时打断」实际上从未生效（靠真机联调才发现，见 P7 缺陷记录）。
+  void feed(List<double> samples);
 }
 
 /// 流式 ASR 端口（U20）。
@@ -87,6 +94,13 @@ abstract class AsrPort {
   Future<void> start();
   Future<void> feed(List<double> samples);
   Future<void> stop();
+
+  /// 收尾并返回**最终**识别文本。
+  ///
+  /// 与 `partialText` 的分工：后者是过程（可能不断被改写），
+  /// 前者是终态。管线只信终态 —— 过程文本可能是「你好管家今天」而终态是
+  /// 「你好管家，今天天气怎么样」。
+  Future<String> finish();
 }
 
 /// TTS 播报端口（U21）。

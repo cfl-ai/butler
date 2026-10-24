@@ -3,6 +3,7 @@
 /// 这里承载全部 P7 业务规则，**不依赖 Flutter**，因此可以用 dart test 直接验证。
 library;
 
+export 'src/access_policy.dart';
 export 'src/api_client.dart';
 export 'src/local_cache.dart';
 export 'src/models.dart';

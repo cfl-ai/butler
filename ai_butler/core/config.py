@@ -136,6 +136,43 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = ""
 
+    # ---------- 图文识别 / 图文输出（台账 U61/U62，**计划书未定义**）----------
+    # 计划书 P7「双输入」只写了语音 + 文字；图片输入与图文输出由人工指令
+    # （2026-10-24「支持图文识别和输出」）追加，按「开源借鉴」处理。
+    # 默认顺序 ollama → openai：前者离线可查（模型没拉取能被 /api/tags 发现），
+    # 后者用于接入任意 OpenAI 兼容的多模态端点。
+    vision_provider_order: str = "ollama,openai"
+    vision_timeout_seconds: float = 120.0          # 视觉推理比纯文本慢，单独给超时
+    ollama_vision_model: str = "qwen2.5vl:3b"      # 中文 OCR 可用；moondream 实测中文无效
+    openai_vision_base_url: str = ""
+    openai_vision_api_key: str = ""
+    openai_vision_model: str = ""
+
+    # ---------- 语音链路（P7；模型落地方式见台账 U65）----------
+    # 计划书 P7 要求 VAD/ASR/TTS；U65 明确「识别在云端执行、端侧模型可选」，
+    # 因此服务端必须有可跑的一整套模型，且缺模型时 fail-closed 而不是返回空文本。
+    speech_models_root: str = "models/speech"
+    speech_enable: bool = True
+    speech_max_audio_seconds: float = 60.0      # 单次上传音频上限（实现参数）
+    speech_tts_speaker: int = 0                  # VITS-zh 多说话人：0 号默认女声
+    speech_tts_speed: float = 1.0                # 0.5~2.0 之外直接拒绝（音质会明显劣化）
+    speech_num_threads: int = 2                  # 单进程推理线程数
+    voiceprint_threshold: float = 0.35           # U63：声纹判等阈值，偏严
+    voiceprint_max_samples: int = 3              # 每账号最多保留的声纹样本数
+
+    # ---------- 访客模式（台账 U64，**计划书未定义**）----------
+    # 「未登录只能文字查询」由人工授权扩宽了可用面，但**没有放宽鉴权**：
+    # 访客仍持短期凭据、仍过同一套中间件，只是能力表里只有 text_query。
+    guest_enable: bool = True
+    guest_session_ttl_seconds: int = 3600        # 访客凭据有效期，短于成员
+    guest_text_query_budget: int = 30            # 访客问答次数上限（成本闸）
+
+    # ---------- 文字查询链路（检索 + 复检，U66）----------
+    search_reranker_enable: bool = False         # bge-reranker-base 约 1GB；关时如实报 reranked=False
+    chat_verify_enable: bool = True              # 回答前复检（P6 的口径前置到问答链路）
+    chat_top_k: int = 5
+    guest_public_scope: str = "public-workspace"  # 访客检索用的公共作用域标识
+
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-chat"
     deepseek_base_url: str = "https://api.deepseek.com"
@@ -180,6 +217,10 @@ class Settings(BaseSettings):
     @property
     def provider_order(self) -> list[str]:
         return [p.strip().lower() for p in self.llm_provider_order.split(",") if p.strip()]
+
+    @property
+    def vision_provider_order_list(self) -> list[str]:
+        return [p.strip().lower() for p in self.vision_provider_order.split(",") if p.strip()]
 
     @property
     def write_dsn(self) -> str:

@@ -36,6 +36,13 @@ BULKY_PATHS = (
     "mobile/.dart_tool/flutter_build/does-not-matter.bin",
 )
 
+#: 端侧随包模型：**必须能入库**。它们进 APK 的 assets，缺了新克隆的仓库就编不出 APK。
+#: 与根目录 `models/`（云端权重，约 1.2 GB，脚本下载）是两码事，不能被同一条规则误伤。
+SHIPPED_ASSET_PATHS = (
+    "mobile/assets/models/vad/silero_vad.onnx",
+    "mobile/assets/models/kws/encoder-epoch-12-avg-2-chunk-16-left-64.int8.onnx",
+)
+
 
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -82,6 +89,38 @@ def test_gitignore_rules_actually_work():
         "以下路径没有被 .gitignore 覆盖（规则无效或缺失，"
         "当前没出事只是因为文件恰好不存在）：\n  " + "\n  ".join(unchecked)
     )
+
+
+def test_shipped_assets_are_not_swallowed_by_model_ignore_rule():
+    """端侧随包模型必须**不被**忽略 —— 否则新克隆的仓库编不出 APK。
+
+    真事：`.gitignore` 里写的是 `models/`（无前导斜杠），它按「任意层级名为 models
+    的目录」匹配，于是 `mobile/assets/models/` 被一并吞掉。表现极具迷惑性：
+    本机上文件都在、`flutter build apk` 也照样成功，只有 `git ls-files mobile/assets`
+    是空的 —— **换台机器 clone 下来才会发现 VAD 和唤醒词都没有**。
+
+    与 `test_gitignore_rules_actually_work` 正好互补：那条守「该排的要排掉」，
+    这条守「不该排的别误伤」。同一条规则的两个方向都得有人看着。
+    """
+    swallowed: list[str] = []
+    for rel in SHIPPED_ASSET_PATHS:
+        proc = _git("check-ignore", "-q", rel)
+        # check-ignore 命中返回 0（被忽略），未命中返回 1（可入库）
+        if proc.returncode == 0:
+            rule = _git("check-ignore", "-v", rel).stdout.strip()
+            swallowed.append(f"{rel}  <- {rule}")
+        elif proc.returncode != 1:
+            swallowed.append(f"{rel}  <- check-ignore 异常：{proc.stderr.strip()}")
+
+    assert not swallowed, (
+        "以下端侧随包模型被 .gitignore 忽略了，新克隆的仓库将编不出 APK\n"
+        "（根目录 `models/` 规则须写成 `/models/` 锚定根目录）：\n  "
+        + "\n  ".join(swallowed)
+    )
+
+    # 另一方向：根目录的云端权重仍须被挡住，防止「修好了误伤」却放跑了 1.2 GB。
+    leaked = [rel for rel in BULKY_PATHS if _git("check-ignore", "-q", rel).returncode != 0]
+    assert not leaked, "云端权重目录的忽略规则被改坏了：\n  " + "\n  ".join(leaked)
 
 
 def _spec_branches() -> list[str]:

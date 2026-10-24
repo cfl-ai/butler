@@ -43,10 +43,14 @@ def test_health_is_public_and_business_paths_are_not(settings, redis_client):
 
     health, business = asyncio.run(main())
     assert health.status_code == 200 and health.json()["status"] == "ok"
-    # 公开白名单只有两项：探活 + 登录。
-    # 登录本身不可能携带会话（三、P7 步骤3），是唯一允许匿名的业务入口；
-    # 其余业务接口一律需要合法会话（计划书七、11）。
-    assert PUBLIC_PATHS == {"/health", "/api/session/login"}
+    # 公开白名单只允许「拿凭据」与「探活」两类：
+    #   /health            —— 基础设施探活
+    #   /api/session/login —— 登录本身不可能携带会话（三、P7 步骤3）
+    #   /api/session/guest —— 访客凭据（U64）：**签发的只是凭据，不是免检通行证**，
+    #                         拿到之后仍然过同一套中间件，能力表里只有 text_query
+    # 这条断言的作用是**防止**有人图省事把业务接口加进白名单：一旦加了，下面
+    # 的 401 断言会立刻红。
+    assert PUBLIC_PATHS == {"/health", "/api/session/login", "/api/session/guest"}
     # 未登录拒绝一切业务接口（计划书七、11）
     assert business.status_code == 401
     assert business.json()["code"] == SESSION_EXPIRED_CODE

@@ -8,8 +8,18 @@
 ///
 /// 编排原则
 /// --------
-/// 管线只做**编排**：谁先谁后、何时打断、何时停播。
-/// 识别与生成都在云端（端云分层），端上只跑唤醒词与 VAD/ASR 的推理。
+/// 管线只做**编排**：谁先谁后、何时打断、何时停播、采样喂给谁。
+/// 识别与合成在云端（端云分层），端上只跑唤醒词与 VAD 的推理。
+///
+/// 本轮修掉的两个真实缺陷（P7 验收时暴露）
+/// ------------------------------------
+/// 1. **采样从未被喂给 VAD/ASR**：`captureUtterance()` 启动了麦克风与 VAD，
+///    却没有把 `mic.samples` 转发下去。结果 `vad.speechActivity` 永远是空流，
+///    只能靠 8 秒超时退出 —— 「检测到人声即打断」成了死代码。
+///    现在由管线统一订阅 `mic.samples`，同时喂 VAD 与 ASR（**同一条流，不复制录音**）。
+/// 2. **TTS 失败会把整轮对话判成失败**：没有本地 TTS 模型时 `speak()` 抛错，
+///    文本已经渲染出来却被标成「交互失败」。播报失败只该影响**声音**，
+///    不该影响**屏幕上已经正确的文字**，所以这里降级为记一条警告。
 library;
 
 import 'dart:async';
@@ -27,6 +37,9 @@ enum PipelineEventKind {
   interrupted,
   sessionExpired,
   failed,
+  /// 收音结束但一句人声都没听到 —— **与「识别失败」不是一回事**，
+  /// 提示语也不同（「请再说一次」vs「识别失败：模型不可用」）。
+  voiceNoSpeech,
 }
 
 class PipelineEvent {
@@ -93,21 +106,48 @@ class VoicePipeline {
   /// 一次完整交互：先说（收音识别），再说（渲染播报）。
   Stream<PipelineEvent> runOnce({required DateTime now}) async* {
     _interrupted = false;
-    final utterance = await captureUtterance();
+    yield const PipelineEvent(PipelineEventKind.listening, text: '正在听…');
+    var lastPartial = '';
+    final partialSub = _asr.partialText.listen((text) => lastPartial = text);
+
+    String utterance;
+    try {
+      utterance = await captureUtterance();
+    } finally {
+      await partialSub.cancel();
+    }
     if (utterance.trim().isEmpty) {
-      yield const PipelineEvent(PipelineEventKind.failed, text: '未识别到有效语音');
+      // 到这一步才判「没听到」；走到这里说明收音流程本身是通的
+      yield PipelineEvent(PipelineEventKind.voiceNoSpeech,
+          text: lastPartial.isEmpty ? '没有听到人声' : lastPartial);
       return;
     }
+    yield PipelineEvent(PipelineEventKind.partial, text: utterance);
     yield* respond(utterance: utterance, now: now);
   }
 
   /// 采集一轮语音并返回识别文本。
+  ///
+  /// **采样只采集一次，同时喂给 VAD 与 ASR**：再开一路录音既浪费，
+  /// 安卓上也拿不到第二路（同一时刻只有一个 AudioRecord 能拿到数据）。
   Future<String> captureUtterance() async {
     await _mic.start();
     await _vad.start();
     await _asr.start();
-    var last = '';
-    final asrSub = _asr.partialText.listen((t) => last = t);
+
+    final pump = _mic.samples.listen((samples) {
+      try {
+        _vad.feed(samples);
+      } catch (error) {
+        _logger.warn('VAD 喂采样失败：$error');
+      }
+      // ASR 的 feed 是异步的，这里不 await：它是「尽力接收」，
+      // 真正的终态以 finish() 为准（见 AsrPort 的契约）
+      unawaited(_asr.feed(samples).catchError((Object error) {
+        _logger.warn('ASR 喂采样失败：$error');
+      }));
+    }, onError: (Object error) => _logger.warn('麦克风流出错：$error'));
+
     try {
       var heardSpeech = false;
       try {
@@ -121,11 +161,13 @@ class VoicePipeline {
       } on TimeoutException {
         _logger.info('收音超时（未检测到有效语音），返回空文本而不是一直等下去');
       }
-      await _asr.stop();
-      return last;
+      // 终态由 ASR 给：过程文本可能还在被改写
+      final text = await _asr.finish();
+      return text.trim().isEmpty ? '' : text.trim();
     } finally {
-      await asrSub.cancel();
+      await pump.cancel();
       await _vad.stop();
+      await _asr.stop();
       await _mic.stop();
     }
   }
@@ -156,7 +198,12 @@ class VoicePipeline {
         yield PipelineEvent(PipelineEventKind.chunk, text: chunk.text, chunk: chunk);
         if (chunk.speech.isNotEmpty) {
           yield PipelineEvent(PipelineEventKind.speech, text: chunk.speech);
-          await _tts.speak(chunk.speech);
+          // 播报失败只影响声音，不影响已经正确的文字（见文件头缺陷 2）
+          try {
+            await _tts.speak(chunk.speech);
+          } catch (error) {
+            _logger.warn('播报失败（文字仍保留）：$error');
+          }
           if (_interrupted) {
             yield const PipelineEvent(PipelineEventKind.interrupted, text: '已被用户打断');
             return;
