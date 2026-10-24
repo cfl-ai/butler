@@ -133,6 +133,16 @@ def main() -> int:
     check("默认未绑定（走画像匹配）", models.get("binding") in (None, {}))
     check("额度可见", "quota" in models, json.dumps(models.get("quota"), ensure_ascii=False))
 
+    free_before_prefs = (models.get("quota") or {}).get("free_remaining")
+    st, prefs = call("POST", "/api/accounts/prefs", {"prefs": ["vision"]}, token=token)
+    check("画像标签可改，且立刻能看到会匹配到哪个模型",
+          st == 200 and prefs.get("prefs") == ["vision"] and bool(prefs.get("matched_model")),
+          f"{prefs.get('prefs')} → {prefs.get('matched_model')}")
+    st, models_p = call("GET", "/api/models", token=token)
+    check("改标签不扣额度（预览不等于调用）",
+          (models_p.get("quota") or {}).get("free_remaining") == free_before_prefs,
+          f"{free_before_prefs} → {(models_p.get('quota') or {}).get('free_remaining')}")
+
     secret_key = "sk-" + secrets.token_hex(16)
     st, byok = call("POST", "/api/models/byok", {
         "base_url": "https://api.example.com/v1", "model": "smoke-model",

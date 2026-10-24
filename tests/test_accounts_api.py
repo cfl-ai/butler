@@ -407,3 +407,58 @@ def test_chat_consumes_the_users_model_quota(settings, redis_client):
     before, after = _run(settings, redis_client, flow)
     assert before["quota"]["free_remaining"] == settings.model_free_daily_calls
     assert after["quota"]["free_remaining"] == settings.model_free_daily_calls - 1
+
+
+def test_prefs_can_be_updated_and_show_the_matched_model(settings, redis_client):
+    """画像标签必须能改 —— 否则「按用户画像匹配」只在注册那一刻成立。"""
+    async def flow(client):
+        reg = (await client.post("/api/session/register", json=_register(client))).json()
+        headers = {"authorization": "Bearer " + reg["token"]}
+        return await client.post("/api/accounts/prefs",
+                                 json={"prefs": ["vision", "美食"]}, headers=headers)
+
+    response = _run(settings, redis_client, flow)
+    assert response.status_code == 200
+    body = response.json()
+    assert body["prefs"] == ["vision", "美食"]
+    # 命中理由要能看见：标了 vision 就该匹配到带视觉的模型
+    assert body["matched_model"]
+
+
+def test_prefs_update_does_not_burn_the_free_quota(settings, redis_client):
+    """改标签不是提问，不许扣额度。这条挂了就说明有人用 resolve() 去取预览。"""
+    async def flow(client):
+        reg = (await client.post("/api/session/register", json=_register(client))).json()
+        headers = {"authorization": "Bearer " + reg["token"]}
+        before = (await client.get("/api/models", headers=headers)).json()
+        await client.post("/api/accounts/prefs", json={"prefs": ["vision"]},
+                          headers=headers)
+        after = (await client.get("/api/models", headers=headers)).json()
+        return before, after
+
+    before, after = _run(settings, redis_client, flow)
+    assert before["quota"]["free_remaining"] == after["quota"]["free_remaining"]
+
+
+def test_prefs_must_be_a_list(settings, redis_client):
+    async def flow(client):
+        reg = (await client.post("/api/session/register", json=_register(client))).json()
+        headers = {"authorization": "Bearer " + reg["token"]}
+        return await client.post("/api/accounts/prefs",
+                                 json={"prefs": "vision"}, headers=headers)
+
+    response = _run(settings, redis_client, flow)
+    assert response.status_code == 400
+    assert response.json()["code"] == "bad_request"
+
+
+def test_guest_cannot_change_prefs(settings, redis_client):
+    async def flow(client):
+        guest = (await client.post("/api/session/guest",
+                                   json={"device_id": "g"})).json()
+        headers = {"authorization": "Bearer " + (guest.get("token") or "")}
+        return await client.post("/api/accounts/prefs",
+                                 json={"prefs": ["vision"]}, headers=headers)
+
+    response = _run(settings, redis_client, flow)
+    assert response.status_code == 403

@@ -11,6 +11,19 @@ import 'package:flutter/material.dart';
 
 import 'package:aibutler_core/aibutler_core.dart';
 
+/// 画像标签：前两个是**模型匹配**用的（有没有视觉、要不要长上下文），
+/// 后面几个同时喂「附近」推荐的排序。键是服务端认的字符串，值是给人看的。
+const Map<String, String> _kProfileTags = {
+  'vision': '需要看图',
+  'long_context': '长文本',
+  '美食': '美食',
+  '历史': '历史',
+  '自然': '自然风光',
+  '亲子': '亲子',
+  '夜景': '夜景',
+  '购物': '购物',
+};
+
 class AccountPage extends StatefulWidget {
   const AccountPage({
     super.key,
@@ -23,6 +36,7 @@ class AccountPage extends StatefulWidget {
     required this.onBindByok,
     required this.onRemoveModel,
     required this.onSignOut,
+    required this.onSetPrefs,
   });
 
   final AccountProfile profile;
@@ -39,12 +53,17 @@ class AccountPage extends StatefulWidget {
   final Future<void> Function() onRemoveModel;
   final Future<void> Function() onSignOut;
 
+  /// 保存画像标签。返回服务端归一化后的标签，以及**按新标签会匹配到哪个模型**。
+  final Future<({List<String> prefs, String matchedModel})> Function(
+      List<String> prefs) onSetPrefs;
+
   @override
   State<AccountPage> createState() => _AccountPageState();
 }
 
 class _AccountPageState extends State<AccountPage> {
   late AccountProfile _profile = widget.profile;
+  late List<String> _prefs = List<String>.of(widget.profile.prefs);
   late Map<String, dynamic> _models = widget.models;
   bool _busy = false;
   String? _message;
@@ -120,16 +139,40 @@ class _AccountPageState extends State<AccountPage> {
     }, done: '昵称已更新');
   }
 
-  AccountProfile _copyProfile({String? nickname}) => AccountProfile(
+  AccountProfile _copyProfile({String? nickname, List<String>? prefs}) => AccountProfile(
         userId: _profile.userId,
         identKind: _profile.identKind,
         identMasked: _profile.identMasked,
         nickname: nickname ?? _profile.nickname,
-        prefs: _profile.prefs,
+        prefs: prefs ?? _profile.prefs,
       );
 
-  Future<void> _changePassword() async {
-    final oldController = TextEditingController();
+  /// 保存画像标签。刻意不复用 `_run()`：这里要把「匹配到哪个模型」拼进提示语，
+  /// 而 `_run(done: ...)` 的文案是静态的。
+  Future<void> _savePrefs() async {
+    setState(() {
+      _busy = true;
+      _error = null;
+      _message = null;
+    });
+    try {
+      final result = await widget.onSetPrefs(List<String>.of(_prefs));
+      if (!mounted) return;
+      setState(() {
+        _prefs = List<String>.of(result.prefs);
+        _profile = _copyProfile(prefs: _prefs);
+        _message = result.matchedModel.isEmpty
+            ? '偏好已保存'
+            : '偏好已保存，默认模型：${result.matchedModel}';
+      });
+    } catch (error) {
+      if (mounted) setState(() => _error = _humanize(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _changePassword() async {    final oldController = TextEditingController();
     final newController = TextEditingController();
     final ok = await showDialog<bool>(
       context: context,
@@ -286,6 +329,43 @@ class _AccountPageState extends State<AccountPage> {
             const SizedBox(height: 8),
             Text(_error!, style: TextStyle(color: theme.colorScheme.error)),
           ],
+          const Divider(height: 32),
+          Text('偏好与画像', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            '这些标签决定两件事：默认给你哪个模型，以及「附近」怎么排序。'
+            '改完立刻生效，不消耗问答次数。',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: _kProfileTags.entries.map((entry) {
+              final selected = _prefs.contains(entry.key);
+              return FilterChip(
+                label: Text(entry.value),
+                selected: selected,
+                onSelected: _busy
+                    ? null
+                    : (on) => setState(() {
+                          if (on) {
+                            _prefs = [..._prefs, entry.key];
+                          } else {
+                            _prefs = _prefs.where((p) => p != entry.key).toList();
+                          }
+                        }),
+              );
+            }).toList(growable: false),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: _busy ? null : _savePrefs,
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('保存偏好'),
+            ),
+          ),
           const Divider(height: 32),
           Text('大模型', style: theme.textTheme.titleMedium),
           const SizedBox(height: 4),

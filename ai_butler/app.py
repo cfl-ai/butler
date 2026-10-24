@@ -428,6 +428,42 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
         """
         return JSONResponse({"nickname": accounts_mod.random_nickname()})
 
+    @app.post("/api/accounts/prefs")
+    async def account_set_prefs(request: Request) -> JSONResponse:
+        """改画像标签（U70 ②）。它同时喂两处：默认模型的匹配理由、以及推荐排序。
+
+        没有这个接口时，「按用户画像匹配」只在注册那一刻成立 —— 之后用户
+        永远改不了自己的偏好，等于把画像钉死在注册表单上。
+        """
+        unavailable = _accounts_or_503()
+        if unavailable:
+            return unavailable
+        uid, tier = _authed(request)
+        access.require(tier, access.Capability.PROFILE_EDIT)
+        body = await _read_json(request)
+        if body is None:
+            return JSONResponse({"code": "bad_request", "message": "请求体不是 JSON"},
+                                status_code=400)
+        raw = body.get("prefs")
+        if not isinstance(raw, list):
+            return JSONResponse({"code": "bad_request",
+                                 "message": "prefs 必须是字符串数组"}, status_code=400)
+        try:
+            account = accounts.set_prefs(  # type: ignore[union-attr]
+                user_id=uid, prefs=[str(x) for x in raw if str(x).strip()])
+        except accounts_mod.AccountError as exc:
+            return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
+        # 顺手把「现在会匹配到哪个模型」回给端侧：用户改完偏好应该立刻看得见效果，
+        # 而不是下次提问才发现换了模型。用 preview_default 而**不是** resolve ——
+        # resolve 会扣额度，改标签不该消耗问答次数。
+        matched = ""
+        if model_access is not None:
+            try:
+                matched = model_access.preview_default(user_id=uid).key
+            except model_mod.ModelAccessError:
+                matched = ""
+        return JSONResponse({"prefs": list(account.prefs), "matched_model": matched})
+
     @app.post("/api/accounts/password")
     async def account_change_password(request: Request) -> JSONResponse:
         """改密码（需原密码）。成功后吊销全部会话，旧设备立刻失效。"""

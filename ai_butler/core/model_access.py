@@ -453,6 +453,15 @@ class ModelAccess:
             model=spec.model, api_key=api_key, matched_by=matched_by,
         )
 
+    def preview_default(self, *, user_id: str) -> ModelSpec:
+        """按当前画像会匹配到哪个模型 —— **不扣额度、不发请求**。
+
+        给「改完偏好立刻看得见效果」用的。刻意不复用 `resolve()`：
+        那个方法会 `consume()`，如果界面每次保存偏好都调它一次，
+        用户光是改标签就能把自己的免费额度点光。
+        """
+        return self._match_by_profile(user_id)
+
     def _match_by_profile(self, user_id: str) -> ModelSpec:
         """U70 ②：按用户画像匹配，且**命中理由可解释**。
 

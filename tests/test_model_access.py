@@ -325,3 +325,15 @@ def test_missing_platform_key_does_not_burn_quota(tmp_path: Path) -> None:
     assert err.value.code == "missing_credential"
     assert without_key.remaining(user_id=USER_A, tier=m.TRIAL) == before
 
+
+
+def test_preview_default_does_not_consume_quota(access: m.ModelAccess) -> None:
+    """预览匹配结果与「真的调一次」必须分开。
+
+    界面每保存一次偏好就跑一次 resolve() 的话，用户光是改标签就能把
+    免费额度点光 —— 那不是"额度"，是陷阱。
+    """
+    before = access.remaining(user_id=USER_A, tier=m.FREE)
+    spec = access.preview_default(user_id=USER_A)
+    assert spec.key
+    assert access.remaining(user_id=USER_A, tier=m.FREE) == before

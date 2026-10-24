@@ -346,6 +346,33 @@ void main() {
     });
   });
 
+  group('偏好与画像（不扣额度）', () {
+    test('保存偏好后能拿到服务端归一化的标签与匹配到的模型', () async {
+      final transport = FakeTransport(responses: {
+        ApiClient.prefsPath: _json(200, {
+          'prefs': ['vision', '历史'],
+          'matched_model': 'local-vl',
+        }),
+      });
+      final api = _client(transport);
+
+      final result = await api.setPrefs(['vision', '历史', '不存在的标签']);
+
+      expect(result.prefs, ['vision', '历史']);
+      expect(result.matchedModel, 'local-vl');
+      final body = transport.lastPost(ApiClient.prefsPath).body;
+      expect(body['prefs'], ['vision', '历史', '不存在的标签']);
+    });
+
+    test('未登录时保存偏好不发请求', () async {
+      final transport = FakeTransport();
+      final api = _client(transport, member: false);
+      await expectLater(
+          () => api.setPrefs(['vision']), throwsA(isA<NotSignedInException>()));
+      expect(transport.posts, isEmpty);
+    });
+  });
+
   group('能力矩阵新增项', () {
     test('访客没有资料编辑与定位能力', () {
       final profile = AccessProfile.guest();

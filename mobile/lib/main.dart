@@ -481,6 +481,7 @@ class _AiButlerAppState extends State<AiButlerApp> {
           onRemoveModel: () async {
             await _api.removeModelBinding();
           },
+          onSetPrefs: _api.setPrefs,
           // 改密成功后服务端已吊销全部会话，本机必须同步降级：
           // 先关掉设置页，再拆成员态并回登录页（登出是回访客，改密是必须重登，
           // 两者出口不同，不能图省事复用 `_signOut`）。

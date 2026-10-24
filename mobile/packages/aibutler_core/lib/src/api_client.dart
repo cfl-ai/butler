@@ -110,6 +110,7 @@ class ApiClient {
   static const String nicknameRandomPath = '/api/accounts/nickname/random';
   static const String nicknameSuggestPath = '/api/accounts/nickname/suggest';
   static const String passwordPath = '/api/accounts/password';
+  static const String prefsPath = '/api/accounts/prefs';
   // 模型（U70）—— 用 POST 别名，因为 TransportPort 只有 post/stream
   static const String modelsListPath = '/api/models/list';
   static const String modelsSelectPath = '/api/models/select';
@@ -491,9 +492,26 @@ class ApiClient {
     return (body['nickname'] as String?) ?? nickname;
   }
 
+  /// 改画像标签（U70 ②）。返回 `(prefs, 匹配到的模型 key)`。
+  ///
+  /// 服务端用 `preview_default` 算匹配结果，**不扣额度** —— 改标签不是提问，
+  /// 不该消耗免费次数。端侧把 `matchedModel` 显示出来，用户才看得见改动生效。
+  Future<({List<String> prefs, String matchedModel})> setPrefs(
+      List<String> prefs) async {
+    final response = await _transport.post(prefsPath, body: {
+      'prefs': prefs,
+    }, token: _requireMemberToken('profile_edit'));
+    final body = _guardAccount(response, '保存偏好');
+    return (
+      prefs: ((body['prefs'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList(growable: false),
+      matchedModel: (body['matched_model'] as String?) ?? '',
+    );
+  }
+
   /// 随机刷新昵称（服务端有频控，超了会抛 `too_many_requests`）。
-  Future<String> refreshNickname() async {
-    final response = await _transport.post(nicknameRandomPath,
+  Future<String> refreshNickname() async {    final response = await _transport.post(nicknameRandomPath,
         body: const {}, token: _requireMemberToken('profile_edit'));
     final body = _guardAccount(response, '刷新昵称');
     return (body['nickname'] as String?) ?? '';
