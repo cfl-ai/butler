@@ -9,6 +9,8 @@ user_id、session_id、State 契约、三层权限、写作用域、审批标记
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from ai_butler.agents.standalone import (
@@ -39,6 +41,29 @@ class _FakeAgent:
     def __call__(self, state: dict) -> dict:
         self.seen = dict(state)
         return dict(self._updates)
+
+
+class _AsyncFakeAgent:
+    """异步 Agent：`agent(state)` 只返回协程对象，必须被跑到完。
+
+    真实项目里有 7 个这样的 Agent（P1/P5/P6/P8/P9/P10 + P4 集群全体成员）。
+    曾经的 bug：run_standalone 创建协程后不 await，updates 静默变成 {}，
+    调用方却看到「已独立执行（0 ms）」——伪装成功比失败更糟。
+    """
+
+    name = "p9_evaluation"
+    writes = ("p9_evaluation",)
+    capabilities = ()
+
+    def __init__(self) -> None:
+        self.entered = False
+
+    def __call__(self, state: dict):
+        return self._run(state)          # 只造协程，不执行
+
+    async def _run(self, state: dict) -> dict:
+        self.entered = True
+        return {"p9_evaluation": {"board": "built"}}
 
 
 def _ctx(**kw) -> StandaloneContext:
@@ -140,3 +165,65 @@ def test_audit_tracks_calls_and_pending_approvals():
     assert len(audit.pending_approvals()) == 1
     assert len(audit.by_user("u-1")) == 2
     assert len(audit.by_user("other")) == 0
+
+
+# ---------------------------- 异步 Agent 必须被跑到完 ---------------------------- #
+
+def test_async_agent_coroutine_is_driven_to_completion():
+    """异步 Agent 的协程不许「创建了不 await」。
+
+    判据是 **run() 真的进去了**（entered）且 updates 是真实返回值——
+    曾经的 bug 形态是 updates 静默变 {}、调用方却看到执行成功。
+    """
+    agent = _AsyncFakeAgent()
+    result = run_standalone(agent, ctx=_ctx())
+    assert agent.entered, "协程从未执行 —— run_standalone 只创建了它"
+    assert result.updates == {"p9_evaluation": {"board": "built"}}
+
+
+def test_async_agent_works_inside_a_running_loop():
+    """调用方自己已在事件循环里时（异步框架 / async 测试）也要能跑。
+
+    实现走「工作线程起新循环」分支，不劫持调用方的循环。
+    """
+
+    async def scenario():
+        return run_standalone(_AsyncFakeAgent(), ctx=_ctx())
+
+    result = asyncio.run(scenario())
+    assert result.updates == {"p9_evaluation": {"board": "built"}}
+
+
+def test_non_dict_result_is_rejected_not_silently_swallowed():
+    """返回值不是 dict 时明确报错，不许静默变成 {}。"""
+
+    class _BadAgent(_FakeAgent):
+        def __call__(self, state: dict):
+            return ["not", "a", "dict"]
+
+    with pytest.raises(StandaloneError, match="不是 dict"):
+        run_standalone(_BadAgent(), ctx=_ctx())
+
+
+# ---------------------------- 能力绑定不可省 ---------------------------- #
+
+def test_declared_capabilities_without_tools_is_rejected_cleanly():
+    """声明了能力却没绑工具面 → 干净的 StandaloneError。
+
+    曾经的形态：一路放到 run() 里崩 `'NoneType' object has no attribute
+    'require'` —— 难看的崩溃不是干净的拒绝（U48：省编排不省校验）。
+    """
+
+    class _NeedsTools(_FakeAgent):
+        capabilities = ("wiki_read",)
+
+    with pytest.raises(StandaloneError, match="声明了能力"):
+        run_standalone(_NeedsTools(), ctx=_ctx())
+
+
+def test_capability_guard_does_not_block_undeclared_agents():
+    """没声明能力的 Agent 不受该校验影响（守卫只治「声明了没接上」）。"""
+    agent = _FakeAgent()
+    assert getattr(agent, "capabilities", ()) == ()
+    result = run_standalone(agent, ctx=_ctx())
+    assert result.updates == {"p1_digest": {"ok": True}}

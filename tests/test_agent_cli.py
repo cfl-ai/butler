@@ -204,3 +204,64 @@ def test_cluster_module_refuses_business_run():
     )
     assert proc.returncode != 0
     assert "p4_mops" in (proc.stdout + proc.stderr)
+
+
+# ============================== 业务执行路径 ============================== #
+# 上面几条都在到达枚举转换/业务执行**之前**就拦下了 —— 「带完整身份跑业务」
+# 这条路曾经零覆盖，于是两个真 bug 藏了很久：
+#   ① `_role/_sensitivity/_capability` 用 `Enum(字符串)` 按值查找 IntEnum，
+#      三个选项 100% 崩 ValueError；
+#   ② 异步 Agent 的协程创建后不 await，updates 静默变 {} 却报「已独立执行」。
+# 覆盖缺口本身也是缺陷：这两个测试把路真正走完。
+
+def test_cli_enum_options_map_to_members():
+    """--role/--sensitivity/--required 的小写选项必须能映射到枚举成员。
+
+    三个权限枚举都是 IntEnum：`Enum("MEMBER")` 是**按值查找**（值是 0/1/2/3），
+    字符串永远查不到；必须用 `Enum["MEMBER"]` 按名查找。
+    """
+    from ai_butler.agents.cli import _capability, _role, _sensitivity
+    from ai_butler.core.permissions import (
+        CapabilityLevel, DataSensitivity, UserRole,
+    )
+
+    assert _role("member") is UserRole.MEMBER
+    assert _role("owner") is UserRole.OWNER
+    assert _sensitivity("l4_secret") is DataSensitivity.L4_SECRET
+    assert _capability("l2_side_effect") is CapabilityLevel.L2_SIDE_EFFECT
+
+
+def test_full_identity_runs_business_end_to_end():
+    """带全身份信息必须真的把业务跑完 —— 退出码 0 + 有执行结果输出。
+
+    样本取 eval_platform：不声明外部能力、同步 run，无需装配即可端到端执行。
+    """
+    proc = subprocess.run(
+        [PY, str(AGENTS_DIR / "eval_platform.py"),
+         "--user-id", "u1", "--session-id", "s1"],
+        capture_output=True, text=True, encoding="utf-8", timeout=180,
+        cwd=str(REPO_ROOT),
+    )
+    assert proc.returncode == 0, (
+        f"完整身份的独立业务执行失败：\n{proc.stdout}\n{proc.stderr}")
+    assert "已独立执行 eval_platform_agent" in proc.stdout
+    assert "eval_platform = " in proc.stdout, "没有执行结果输出 —— 可能又是静默空转"
+
+
+def test_business_run_without_tools_fails_cleanly():
+    """声明了能力却没绑工具面 → 明确的拒绝，不是 NoneType AttributeError。
+
+    qa 声明 wiki_read；直接命令行跑没有管家装配，必须干净地拒绝
+    （U48：声明了没接上，一律拒绝执行）。
+    """
+    proc = subprocess.run(
+        [PY, str(AGENTS_DIR / "qa.py"),
+         "--user-id", "u1", "--session-id", "s1"],
+        capture_output=True, text=True, encoding="utf-8", timeout=180,
+        cwd=str(REPO_ROOT),
+    )
+    combined = proc.stdout + proc.stderr
+    assert proc.returncode != 0
+    assert "声明了能力" in combined, f"拒绝信息不明确：\n{combined}"
+    assert "AttributeError" not in combined, "崩成了 NoneType —— 难看的崩溃不是干净的拒绝"
+    assert "ValueError" not in combined, "枚举转换又坏了（按值查找回归）"

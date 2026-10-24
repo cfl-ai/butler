@@ -1141,6 +1141,39 @@ CI 只写在配置里、平时不跑，**新加的验证入口不会自动进去
 
 ---
 
+## E-70 「拦在路上的测试」不等于「走过这条路的测试」
+
+- 用户问「这个生态有多少 Agent、支不支持单独使用」，去实跑 U48/U52 的独立入口，
+  `python ai_butler/agents/qa.py --user-id u1 --session-id s1` **当场崩**。
+  一条被文档和测试都覆盖为「已落地」的路径，从来没被真正走完过。两个 bug：
+
+  1. **CLI 三个权限选项 100% 崩**：`_role/_sensitivity/_capability` 写成
+     `UserRole(value.upper())` —— 三个枚举都是 IntEnum，`Enum(字符串)` 是
+     **按值查找**（值是 0/1/2/3），字符串永远查不到，必须 `Enum[名字]`。
+  2. **异步 Agent 静默空转**：7 个 Agent 的 run() 是 async，`run_standalone` 里
+     `agent(state)` 只创建协程**从不 await**，`isinstance(updates, dict)`
+     把协程吞成 `{}`，CLI 还打印「已独立执行 p9_evaluation（0 ms）」——
+     **伪装成功，最坏的失败形态**（E-21/E-62 同族）。
+
+- 为什么 70 个测试文件全绿也拦不住：既有 CLI 测试**全都拦在 bug 点之前** ——
+  `test_partial_identity_is_rejected` 在用法校验处就非零返回了，
+  `test_cluster_module_refuses_business_run` 在集群检查处就返回了，
+  「带完整身份跑业务」这条路**零覆盖**；`test_standalone.py` 的假 Agent
+  也全是同步的，异步路径从未被走过。
+  **测试拦下了错误用法 ≠ 测试走过了正确路径**——前者恒绿，后者才能抓到 bug。
+
+- 附带修掉一个难看的崩溃：声明了能力却没绑工具面时，原先一路放到 run() 里
+  崩 `'NoneType' object has no attribute 'require'`，现由 run_standalone
+  在执行业务前干净拒绝（U48「省编排不省校验」的又一刀）。
+
+- **教训**：验证「支持 X」的唯一标准是**把 X 真的跑一遍并看到真实结果**；
+  断言退出码非零、断言提前拦下的用法，都证明不了正路可走。
+  新写守护时必须包含「完整入参 → 退出码 0 → 结果里有真东西」这一路
+  （本次补：`test_full_identity_runs_business_end_to_end` 断言输出含
+  `eval_platform = ` 而非只断言 returncode == 0）。
+
+---
+
 ## 二、环境基线（复现上述解决方案所必需）
 
 - 操作系统：Windows AMD64，16 逻辑核，内存 11 GB，C 盘可用 36.5 GB / D 盘可用 106.7 GB

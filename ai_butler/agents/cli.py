@@ -214,7 +214,11 @@ def main(module: Any, argv: list[str] | None = None) -> int:
             f"{label} 是集群模块，成员由 P4 集群统一调度；"
             f"请改为运行 ai_butler/agents/p4_mops.py")
 
-    from ai_butler.agents.standalone import StandaloneContext, run_standalone
+    from ai_butler.agents.standalone import (
+        StandaloneContext,
+        StandaloneError,
+        run_standalone,
+    )
 
     ctx = StandaloneContext(
         user_id=opts.user_id,
@@ -224,7 +228,12 @@ def main(module: Any, argv: list[str] | None = None) -> int:
         required=_capability(opts.required),
     )
     agent = agents[0]()
-    result = run_standalone(agent, ctx=ctx)
+    try:
+        result = run_standalone(agent, ctx=ctx)
+    except StandaloneError as exc:
+        # 独立入口的校验失败是**用法/装配错误**，按 CliError 语义上报，
+        # 不静默降级成打印档案（那会让「没跑成」看起来像「不想跑」）。
+        raise CliError(str(exc)) from exc
     print(f"已独立执行 {result.agent_key}（{result.elapsed_ms} ms）")
     print(f"  审批档 Tier{result.approval_tier}"
           f"{'，待人工确认' if result.needs_approval else ''}")
@@ -235,14 +244,18 @@ def main(module: Any, argv: list[str] | None = None) -> int:
 
 def _role(value: str):
     from ai_butler.core.permissions import UserRole
-    return UserRole(value.upper())
+    # 三个权限枚举都是 IntEnum：`Enum(字符串)` 是**按值查找**（值是 0/1/2/3），
+    # 字符串永远查不到 —— 必须用 `Enum[名字]` 按名查找。
+    # 曾按值查找写成 `UserRole(value.upper())`，独立执行业务的路径 100% 崩
+    # ValueError（守护缺口：既有测试都在到达此处前就被拦下，见 test_agent_cli.py）。
+    return UserRole[value.upper()]
 
 
 def _sensitivity(value: str):
     from ai_butler.core.permissions import DataSensitivity
-    return DataSensitivity(value.upper())
+    return DataSensitivity[value.upper()]
 
 
 def _capability(value: str):
     from ai_butler.core.permissions import CapabilityLevel
-    return CapabilityLevel(value.upper())
+    return CapabilityLevel[value.upper()]

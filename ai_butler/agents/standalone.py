@@ -32,6 +32,9 @@
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
+import inspect
 import time
 from dataclasses import dataclass, field
 from typing import Any, Mapping
@@ -151,20 +154,66 @@ def run_standalone(agent: Any, *, ctx: StandaloneContext,
     # ---- 2) State 契约 ----
     state = build_state(ctx, extra)
 
-    # ---- 3) 业务逻辑（写作用域由 SubAgent.__call__ 内部守住）----
+    # ---- 3) 能力绑定校验：声明了能力就必须有工具面 ----
+    # 会话路径里 agent.tools 由 butler.enroll 装配；独立调用没有管家，
+    # 若 Agent 声明了 capabilities 却拿不到工具面，必须在这里明确拒绝 ——
+    # 否则 run() 里 `self.tools.require(...)` 会以 NoneType AttributeError 收场，
+    # 那是「难看的崩溃」而不是「干净的拒绝」（U48：省编排不省校验）。
+    # tools 已绑定但没发够能力的，由 AgentTools.require 自己抛 CapabilityError。
+    declared = tuple(getattr(agent, "capabilities", ()) or ())
+    if declared and getattr(agent, "tools", None) is None:
+        raise StandaloneError(
+            f"{agent_key} 声明了能力 {list(declared)}，但独立调用未提供任何能力实现"
+            f"（tools 为 None）。请经 butler.enroll 装配后调用，或给实例显式绑定 "
+            f"tools —— 声明了没接上，一律拒绝执行")
+
+    # ---- 4) 业务逻辑（写作用域由 SubAgent.__call__ 内部守住）----
     started = time.perf_counter()
-    updates = agent(state)
+    updates = _drive(agent(state))
     elapsed = int((time.perf_counter() - started) * 1000)
+
+    if not isinstance(updates, dict):
+        # SubAgent.__call__ 对非 dict 返回值会抛 WriteScopeError；
+        # 走到这里说明是鸭子类型的调用方，同样不许静默吞掉。
+        raise StandaloneError(
+            f"{agent_key} 执行结果不是 dict（实际 {type(updates).__name__}），"
+            f"无法作为 State 更新")
 
     return StandaloneResult(
         agent_key=agent_key,
         user_id=ctx.user_id,
         session_id=ctx.session_id,
-        updates=updates if isinstance(updates, dict) else {},
+        updates=updates,
         elapsed_ms=elapsed,
         approval_tier=int(verdict.tier),
         needs_approval=int(verdict.tier) >= 1,
     )
+
+
+def _drive(outcome: Any) -> Any:
+    """把 Agent 的执行结果跑到完：同步给值，异步给**跑完的协程结果**。
+
+    为什么必须有这个函数
+    -------------------
+    7 个 Agent 的 `run()` 是 async 的（P1/P5/P6/P8/P9/P10 + P4 集群全体成员）。
+    `agent(state)` 对异步 run 只返回**协程对象**——创建了不 await，
+    它就是一个从未执行的对象：`updates` 静默变成 {}，调用方却看到
+    「已独立执行 xxx（0 ms）」。**这是最坏的失败形态：伪装成功**
+    （E-21 同族：声明了没接上，还报告成功）。
+
+    事件循环两种处境都覆盖：
+    - 无活动循环（CLI / 同步测试）：asyncio.run 直接起一个；
+    - 调用方已在循环里（异步框架、async 测试）：换工作线程起新循环，
+      不劫持调用方自己的循环（本入口创建的连接也只在本循环内使用）。
+    """
+    if not inspect.isawaitable(outcome):
+        return outcome
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(outcome)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(asyncio.run, outcome).result()
 
 
 @dataclass
