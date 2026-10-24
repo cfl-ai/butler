@@ -97,13 +97,32 @@ def _check_apk(path: Path, expect_abi: str | None) -> list[str]:
 
 
 def _find_aapt2() -> str | None:
-    """找一个可用的 aapt2。找不到就跳过清单检查（并说明跳过了）。"""
+    """找一个可用的 aapt2。找不到就跳过清单检查（并**在结论里如实反映**）。
+
+    `ANDROID_HOME` 没设就整体跳过检查，是个太容易踩的默认：本机 SDK 都装好了，
+    只是这个 shell 没导出变量，脚本就会静默降级 —— 而它原先还会照样打印
+    「真机所需的声明已齐备」。所以这里除了环境变量，再兜几个常见安装位置。
+    """
     candidates = []
+    roots: list[str] = []
     for env_name in ("ANDROID_HOME", "ANDROID_SDK_ROOT"):
         root = os.environ.get(env_name)
         if root:
-            candidates.extend(Path(root).glob("build-tools/*/aapt2.exe"))
-            candidates.extend(Path(root).glob("build-tools/*/aapt2"))
+            roots.append(root)
+    # 常见安装位置：本地 SDK 目录、Windows 默认位置、Linux/macOS 默认位置
+    roots.extend(
+        [
+            str(ROOT / ".toolchains" / "android-sdk"),
+            r"D:\android-sdk",
+            os.path.expandvars(r"%LOCALAPPDATA%\Android\Sdk"),
+            str(Path.home() / "Android" / "Sdk"),
+        ]
+    )
+    for root in roots:
+        if not root or not Path(root).is_dir():
+            continue
+        candidates.extend(Path(root).glob("build-tools/*/aapt2.exe"))
+        candidates.extend(Path(root).glob("build-tools/*/aapt2"))
     found = shutil.which("aapt2")
     if found:
         candidates.append(Path(found))
@@ -216,6 +235,22 @@ def main() -> int:
         for p in problems:
             print("  - " + p)
         return 1
+
+    # 清单没检查过，就不能说「声明已齐备」—— 这正是本文件要防的那类过度结论：
+    # 检查范围缩水了，结论却还是全量的。
+    if not aapt2:
+        print("结论：**PARTIAL** —— 端侧语音原生栈已随包下发；"
+              "但**清单未检查**，不能断言权限与前台服务声明齐备")
+        print()
+        print("本次实际覆盖：")
+        print("  · 原生库是否随包（.so）")
+        print("  · 唤醒词模型是否随包（离线唤醒的前提），且不含第三方商标")
+        print()
+        print("本次**没覆盖**（找不到 aapt2，可用 ANDROID_HOME 指定 SDK 后重跑）：")
+        print("  · 清单是否声明了 P7 需要的全部权限")
+        print("  · 后台唤醒服务是否声明了 foregroundServiceType=microphone")
+        return 0
+
     print("结论：PASS —— 端侧语音原生栈已随包下发，且真机所需的声明已齐备")
     print()
     print("本脚本覆盖的是「声明层」：")
