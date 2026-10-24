@@ -38,6 +38,10 @@ dependencies:
   # 用 audioplayers 而不是自己写 MediaPlayer 通道：后者要自己处理
   # 音频焦点、蓝牙路由与生命周期，是本阶段不该重复造的轮子。
   audioplayers: ^6.1.0
+  # 导航跳转（U71）：把服务端生成的高德/百度/腾讯 URI scheme 交给系统打开。
+  # 不引地图 SDK（没有 key，且 SDK 会把包体和隐私面一起放大），
+  # 只做"生成链接 + 交给系统"，这也是「自己生成或自动跳转」里的前者。
+  url_launcher: ^6.3.1
 
 dev_dependencies:
   flutter_test:

@@ -139,6 +139,14 @@ STRUCTURAL_MARKS = {"parametrize", "skipif", "xfail",
                     "filterwarnings", "usefixtures"}
 
 NOT_IN_CI: dict[str, str] = {
+    "scripts/smoke_accounts.py": (
+        "验的是**装配起来的进程**而不是路由器：注册/改密/重置要真的写 Redis 会话、"
+        "真的落盘（FIELD_ENCRYPTION_KEY + HMAC 摘要），第 ⑤ 段还要真的调一次默认免费模型"
+        "（ollama qwen2.5vl:3b，约 3GB 权重）。CI 的 pytest 全都用假实现与内存存储，"
+        "既没有 Redis/PG，也不可能在跑一次 PR 的时间里拉 3GB 模型。"
+        "同一批契约已由 tests/test_accounts_api.py（22 项，ASGI 直连）覆盖；"
+        "本脚本补的是「进程真的起来之后还对不对」，归发布前人工执行。"
+        "**这是有意排除，不是遗漏。**"),
     "scripts/verify_android_artifact.py": (
         "校验的是**构建产物**（APK 里的 .so / 权限 / 前台服务 / 随包模型）；"
         "CI 只跑契约与单元测试，不打 APK（需 Flutter SDK + Android SDK + NDK）；"

@@ -39,7 +39,9 @@ import 'adapters/asset_models.dart';
 import 'adapters/platform_adapters.dart';
 import 'adapters/wake_runner.dart';
 import 'package:aibutler_core/aibutler_core.dart';
+import 'ui/account_page.dart';
 import 'ui/chat_page.dart';
+import 'ui/location_page.dart';
 import 'ui/login_page.dart';
 
 /// 云端基址。真实部署时按环境注入（四环境隔离）。
@@ -80,10 +82,18 @@ class _AiButlerAppState extends State<AiButlerApp> {
   late final WakeRunner _wakeRunner;
   StreamSubscription<String>? _wakeDetections;
 
+  /// 定位端口（U71）。**与设备上报共用同一个实现**：
+  /// 两处各建一个没意义，但权限申请必须走同一个入口，
+  /// 否则会出现「一处弹授权、另一处还以为没权限」。
+  late final GeolocatorLocation _location = const GeolocatorLocation();
+
   final List<ChatMessage> _messages = [];
 
   /// 当前身份的能力档案。**以服务端为准**，本地矩阵只是兜底。
   AccessProfile _profile = AccessProfile.fallback();
+
+  /// 登录后的账号资料（脱敏）。访客态为 null，设置页与后续界面都读它。
+  AccountProfile? _account;
 
   bool _signedIn = false;
   bool _ready = false;          // 是否已决定进入哪个界面
@@ -104,7 +114,7 @@ class _AiButlerAppState extends State<AiButlerApp> {
         store: FileCacheStore(Directory(
             (Platform.environment['AIBUTLER_CACHE_DIR'] ?? Directory.systemTemp.path))));
     _reporter = DeviceReporter(
-        location: const GeolocatorLocation(),
+        location: _location,
         deviceInfo: const BasicDeviceInfo(),
         api: _api,
         session: _session);
@@ -151,6 +161,12 @@ class _AiButlerAppState extends State<AiButlerApp> {
     if (restored) {
       await _cache.bindAccount(_session.userId!);
       _profile = await _fetchProfile(fallback: AccessProfile.member());
+      // 昵称单独拉一次：拉不到就不显示，别拿「AI 管家」冒充用户的昵称
+      try {
+        _account = await _api.accountProfile();
+      } catch (error) {
+        debugPrint('[WARN] 账号资料获取失败，标题不显示昵称：$error');
+      }
       if (!mounted) return;
       setState(() {
         _signedIn = true;
@@ -267,30 +283,99 @@ class _AiButlerAppState extends State<AiButlerApp> {
     }
   }
 
-  Future<void> _login(String account, String password) async {
-    try {
-      final creds = await _api.login(
-          account: account, password: password, deviceId: 'phone', now: DateTime.now());
-      await _cache.bindAccount(creds.userId);
-      final profile = await _fetchProfile(fallback: AccessProfile.member());
-      if (!mounted) return;
-      setState(() {
-        _signedIn = true;
-        _profile = profile;
-        _showLogin = false;
-        _loginError = null;
-        _sessionExpired = false;
-      });
-      // 登录成功后清空访客额度账，避免把试用余额带进正式身份
-      _api.adoptGuest(null);
-      await _startResidentWake();
-    } catch (error) {
-      if (mounted) setState(() => _loginError = '登录失败：' + error.toString());
-    }
+  /// 登录（手机号 / 邮箱，U67）。成功后服务端签发成员会话。
+  ///
+  /// 与旧的 `_login(account, password)` 的区别：**多带一个 `kind`**。
+  /// 服务端的账号表按「标识类型 + 摘要」定位，不带 kind 只能退回旧账号表。
+  Future<void> _loginWithKind(
+      IdentKind kind, String identifier, String password) async {
+    final account = await _api.loginWithIdentifier(
+      kind: kind.wire,
+      identifier: identifier,
+      password: password,
+      now: DateTime.now(),
+      deviceId: 'phone',
+    );
+    await _enterMember(account);
+  }
+
+  /// 注册（U67）。`nickname` 为 null 时由**服务端**生成随机昵称。
+  ///
+  /// 端侧不自己拼昵称：词表与校验规则只能有一处（U69）。
+  Future<void> _register(
+    IdentKind kind,
+    String identifier,
+    String password,
+    String? nickname,
+  ) async {
+    final account = await _api.register(
+      kind: kind.wire,
+      identifier: identifier,
+      password: password,
+      now: DateTime.now(),
+      deviceId: 'phone',
+      nickname: nickname,
+    );
+    await _enterMember(account);
+  }
+
+  /// 申请重置（U68）。返回值**只在开发通道**才有令牌，生产通道为 null。
+  ///
+  /// 这里不做「已发送」的假承诺：拿不到令牌就返回 null，
+  /// 由登录页显示「如果该账号已注册，重置方式已发送」。
+  Future<String?> _forgot(IdentKind kind, String identifier) async {
+    final result = await _api.requestPasswordReset(
+        kind: kind.wire, identifier: identifier);
+    return result.devToken;
+  }
+
+  /// 用一次性令牌设置新密码（U68）。
+  ///
+  /// 服务端改密后会**吊销该账号全部会话**，本地 token 也已被 `resetPassword`
+  /// 清掉，所以这里必须同步拆掉成员态 —— 否则界面还显示着成员能力，
+  /// 下一次请求才报「未登录」，用户会以为是刚才那步失败了。
+  Future<void> _reset(String token, String newPassword) async {
+    await _api.resetPassword(token: token, newPassword: newPassword);
+    await _teardownMember();
+    if (!mounted) return;
+    setState(() {
+      _showLogin = true;
+      _loginError = null;
+    });
+  }
+
+  /// 会话建立后的共同收尾：绑缓存 → 拉能力 → 进主界面 → 拉起唤醒。
+  Future<void> _enterMember(AccountProfile account) async {
+    await _cache.bindAccount(account.userId);
+    final profile = await _fetchProfile(fallback: AccessProfile.member());
+    if (!mounted) return;
+    setState(() {
+      _signedIn = true;
+      _account = account;
+      _profile = profile;
+      _showLogin = false;
+      _loginError = null;
+      _sessionExpired = false;
+    });
+    // 登录成功后清空访客额度账，避免把试用余额带进正式身份
+    _api.adoptGuest(null);
+    await _startResidentWake();
   }
 
   /// 登出 = 回到访客态，而不是回到登录页（U64 的同一逻辑）。
   Future<void> _signOut() async {
+    await _teardownMember();
+    await _enterGuest();
+  }
+
+  /// 拆掉成员态：停语音链路 → 松麦克风 → 清缓存 → 清本地会话。
+  ///
+  /// 顺序不能反：`interrupt` 之后管线才会放开录音器，
+  /// 这时再去 `_wakeRunner.dispose()` 才不会和管线抢同一个麦克风。
+  ///
+  /// **不碰 `_showLogin`**：登出走 `_enterGuest`（回访客），
+  /// 改密走登录页（必须重新输入新密码），两者出口不同。
+  Future<void> _teardownMember() async {
     await _pipeline.interrupt();
     await _wakeRunner.dispose();       // 先松开麦克风，否则下面的 stop 会互相打架
     await _wake.stop();
@@ -301,9 +386,23 @@ class _AiButlerAppState extends State<AiButlerApp> {
       setState(() {
         _signedIn = false;
         _sessionExpired = false;
+        _account = null;
       });
     }
-    await _enterGuest();
+  }
+
+  /// 会话失效对话框里的「重新登录」：拆成员态并**直接停在登录页**。
+  ///
+  /// 不复用 `_signOut`：登出的语义是「我要变访客」，而这里是「凭据过期了，
+  /// 让我重新登」。混用会让点了「重新登录」的人落到访客对话页 ——
+  /// 他刚被明确告知要重新登录，结果却是访客模式，只会再点一次。
+  Future<void> _relogin() async {
+    await _teardownMember();
+    if (!mounted) return;
+    setState(() {
+      _showLogin = true;
+      _loginError = '会话已失效，请重新登录';
+    });
   }
 
   /// 转成访客模式（登出后 / 成员会话失效后）。
@@ -328,6 +427,122 @@ class _AiButlerAppState extends State<AiButlerApp> {
         _loginError = '已登出，但访客模式不可用：$error';
       });
     }
+  }
+
+  /// 登录页「先不登录」：能回访客态就回，回不去就由 `_enterGuest` 如实说明。
+  ///
+  /// 没有这个出口，访客点了「登录」就再也回不到文字查询 ——
+  /// 登录页在 login 模式下本来没有返回箭头。
+  Future<void> _skipLogin() async {
+    if (_profile.isGuest) {
+      setState(() => _showLogin = false);
+      return;
+    }
+    await _enterGuest();
+  }
+
+  /// 把一句系统提示塞进对话流。**不用 SnackBar**：
+  /// 本 State 的 context 在 MaterialApp 之上，拿不到 ScaffoldMessenger；
+  /// 而对话流本来就是用户已经在看的地方。
+  void _announce(String text) {
+    if (!mounted) return;
+    setState(() =>
+        _messages.add(ChatMessage(role: ChatRole.assistant, text: text)));
+  }
+
+  /// 打开「账号与模型」页（U67 / U69 / U70）。
+  ///
+  /// 资料与模型列表**现拉一次**再进页，不复用登录时那一份：
+  /// 用户可能刚在另一台设备改了昵称或换了模型，给他看旧值等于骗他。
+  Future<void> _openAccount() async {
+    if (!_profile.canEditProfile) {
+      _announce(kUpgradeHint[Capability.profileEdit] ?? '当前身份不能修改账号设置');
+      return;
+    }
+    try {
+      final account = await _api.accountProfile();
+      final models = await _api.models();
+      if (!mounted) return;
+      setState(() => _account = account);
+
+      await Navigator.of(context).push<void>(MaterialPageRoute(
+        builder: (route) => AccountPage(
+          profile: account,
+          models: models,
+          onSetNickname: _api.setNickname,
+          onRefreshNickname: _api.refreshNickname,
+          onSelectModel: (modelKey) async {
+            await _api.selectModel(modelKey);
+          },
+          onBindByok: (baseUrl, model, apiKey, name) async {
+            await _api.bindByokModel(
+                baseUrl: baseUrl, model: model, apiKey: apiKey, displayName: name);
+          },
+          onRemoveModel: () async {
+            await _api.removeModelBinding();
+          },
+          // 改密成功后服务端已吊销全部会话，本机必须同步降级：
+          // 先关掉设置页，再拆成员态并回登录页（登出是回访客，改密是必须重登，
+          // 两者出口不同，不能图省事复用 `_signOut`）。
+          onChangePassword: (oldPassword, newPassword) async {
+            final revoked = await _api.changePassword(
+                oldPassword: oldPassword, newPassword: newPassword);
+            await _teardownMember();
+            if (mounted && route.mounted) Navigator.of(route).pop();
+            if (!mounted) return revoked;
+            setState(() {
+              _showLogin = true;
+              _loginError =
+                  '密码已更新，请用新密码重新登录（已吊销 $revoked 个会话）';
+            });
+            return revoked;
+          },
+          onSignOut: () async {
+            if (mounted && route.mounted) Navigator.of(route).pop();
+            await _signOut();
+          },
+        ),
+      ));
+      // 回到对话页后再拉一次资料：用户可能在设置页里改了昵称，
+      // 标题还挂着旧名字会让人以为「改了没生效」。
+      // 改密/登出后 `_signedIn` 已为 false，这条路径自然跳过。
+      if (!mounted || !_signedIn) return;
+      try {
+        final latest = await _api.accountProfile();
+        if (mounted) setState(() => _account = latest);
+      } catch (error) {
+        debugPrint('[WARN] 账号资料刷新失败：$error');
+      }
+    } on CapabilityRequiredException catch (error) {
+      _announce(error.message);
+    } on SessionExpiredException {
+      if (mounted) setState(() => _sessionExpired = true);
+    } catch (error) {
+      _announce('账号设置打不开：$error');
+    }
+  }
+
+  /// 打开「附近与推荐」页（U71）。
+  ///
+  /// 坐标**由 `GeolocatorLocation` 现场取**，上报前经过 `ApiClient.recommend`
+  /// 与服务端两道粗化 —— 精确坐标不出设备。
+  Future<void> _openLocation() async {
+    if (!_profile.canLocate) {
+      _announce(kUpgradeHint[Capability.locationShare] ?? '当前身份不能使用定位与推荐');
+      return;
+    }
+    await Navigator.of(context).push<void>(MaterialPageRoute(
+      builder: (_) => LocationPage(
+        onLocate: _location.current,
+        onRecommend: (lat, lon, prefs) =>
+            _api.recommend(latitude: lat, longitude: lon, prefs: prefs),
+        onNavigation: (item) => _api.navigationLinks(
+          destLat: item.lat!,
+          destLon: item.lon!,
+          destName: item.name,
+        ),
+      ),
+    ));
   }
 
   /// 图片输入（台账 U61）。**成员能力**（U64 的同一张能力表）。
@@ -555,7 +770,19 @@ class _AiButlerAppState extends State<AiButlerApp> {
     if (!_ready) {
       home = const Scaffold(body: Center(child: CircularProgressIndicator()));
     } else if (_showLogin) {
-      home = LoginPage(onSubmit: _login, errorText: _loginError);
+      home = LoginPage(
+        callbacks: AuthCallbacks(
+          onLogin: _loginWithKind,
+          onRegister: _register,
+          onForgot: _forgot,
+          onReset: _reset,
+          // 昵称建议走服务端公开接口：词表与校验规则只能有一处（U69）
+          onSuggestNickname: _api.suggestNickname,
+        ),
+        errorText: _loginError,
+        // 访客点进来的登录页必须能退回去，否则「试用」变成单向门
+        onSkip: _profile.isGuest && !_signedIn ? _skipLogin : null,
+      );
     } else {
       home = ChatPage(
         messages: _messages,
@@ -566,11 +793,15 @@ class _AiButlerAppState extends State<AiButlerApp> {
         onPickImage: _profile.canImage ? _pickImage : null,
         listening: _listening,
         sessionExpired: _sessionExpired,
-        onRelogin: _signOut,
+        onRelogin: _relogin,
         tier: _profile.tier,
         guestRemaining: _profile.textQueryRemaining,
         onLogin: _profile.isGuest ? () => setState(() => _showLogin = true) : null,
         onSignOut: _profile.isMember ? _signOut : null,
+        // 账号/定位两个入口同样按能力渲染（U67 / U71）
+        onOpenAccount: _profile.canEditProfile ? _openAccount : null,
+        onOpenLocation: _profile.canLocate ? _openLocation : null,
+        nickname: _account?.nickname,
       );
     }
     return MaterialApp(

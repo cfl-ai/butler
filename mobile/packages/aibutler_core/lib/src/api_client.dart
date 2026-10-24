@@ -101,6 +101,23 @@ class ApiClient {
   static const String speakerEnrollPath = '/api/voice/speaker/enroll';
   static const String speakerVerifyPath = '/api/voice/speaker/verify';
   static const String retrievalPlanPath = '/api/retrieval/plan';
+  // 账号与隐私（U67~U69）
+  static const String registerPath = '/api/session/register';
+  static const String forgotPath = '/api/session/forgot';
+  static const String resetPath = '/api/session/reset';
+  static const String accountMePath = '/api/accounts/me';
+  static const String nicknamePath = '/api/accounts/nickname';
+  static const String nicknameRandomPath = '/api/accounts/nickname/random';
+  static const String nicknameSuggestPath = '/api/accounts/nickname/suggest';
+  static const String passwordPath = '/api/accounts/password';
+  // 模型（U70）—— 用 POST 别名，因为 TransportPort 只有 post/stream
+  static const String modelsListPath = '/api/models/list';
+  static const String modelsSelectPath = '/api/models/select';
+  static const String modelsByokPath = '/api/models/byok';
+  static const String modelsRemovePath = '/api/models/remove';
+  // 定位 / 推荐 / 导航（U71）
+  static const String recommendPath = '/api/location/recommend';
+  static const String navigationPath = '/api/location/navigation';
 
   /// 访客凭据。**刻意不放进 SessionManager**：
   /// `isSignedIn` 的含义是「这是已登录的成员」，设备上报、语音管线、唤醒
@@ -360,6 +377,242 @@ class ApiClient {
     return _guard(response, '检索规划');
   }
 
+  // ================= 账号 / 昵称 / 密码（U67~U69） ================= //
+
+  /// 注册（手机号或邮箱）。成功后**服务端直接签发成员会话**。
+  Future<AccountProfile> register({
+    required String kind,
+    required String identifier,
+    required String password,
+    required DateTime now,
+    String deviceId = 'phone',
+    String? nickname,
+  }) async {
+    final response = await _transport.post(registerPath, body: {
+      'kind': kind,
+      'identifier': identifier,
+      'password': password,
+      'device_id': deviceId,
+      if (nickname != null) 'nickname': nickname,
+    });
+    if (response.statusCode == 409) {
+      throw AccountException('该手机号/邮箱已注册，请直接登录或找回密码',
+          code: 'identifier_taken');
+    }
+    final body = _guardAccount(response, '注册');
+    await _adoptMemberSession(body, now: now, deviceId: deviceId);
+    return AccountProfile.fromJson(
+        (body['profile'] as Map?)?.cast<String, dynamic>() ?? const {});
+  }
+
+  /// 用手机号/邮箱登录。**带 `kind` 走账号体系**；不带则退回旧账号表。
+  Future<AccountProfile> loginWithIdentifier({
+    required String kind,
+    required String identifier,
+    required String password,
+    required DateTime now,
+    String deviceId = 'phone',
+  }) async {
+    final response = await _transport.post(loginPath, body: {
+      'kind': kind,
+      'identifier': identifier,
+      'password': password,
+      'device_id': deviceId,
+    });
+    if (response.statusCode == 401) {
+      final body = response.body;
+      final code = (body['code'] as String?) ?? 'invalid_credentials';
+      throw AccountException(
+          (body['message'] as String?) ?? '账号或密码不正确', code: code);
+    }
+    final body = _guardAccount(response, '登录');
+    await _adoptMemberSession(body, now: now, deviceId: deviceId);
+    return AccountProfile.fromJson(
+        (body['profile'] as Map?)?.cast<String, dynamic>() ?? const {});
+  }
+
+  Future<void> _adoptMemberSession(Map<String, dynamic> body,
+      {required DateTime now, required String deviceId}) async {
+    final token = (body['token'] as String?) ?? '';
+    if (token.isEmpty) throw StateError('登录成功但服务端未返回 token');
+    final ttl = (body['expires_in_seconds'] as num?)?.toInt() ?? 0;
+    final credentials = SessionCredentials(
+      userId: (body['user_id'] as String?) ?? '',
+      token: token,
+      issuedAt: now,
+      expiresAt: now.add(Duration(seconds: ttl)),
+      idleTimeoutSeconds: (body['idle_timeout_seconds'] as num?)?.toInt() ?? 0,
+      deviceId: deviceId,
+    );
+    // 登录成功后丢弃访客身份（U64）：两个身份并存会让「用哪个 token」变成猜的
+    _guest = null;
+    await _session.adopt(credentials, now);
+  }
+
+  /// 申请重置。返回值里的 `devToken` **只在开发通道**才有；
+  /// 生产通道拿不到 —— 这条边界由服务端 `build_channel` 兜底。
+  Future<({String message, String? devToken})> requestPasswordReset({
+    required String kind,
+    required String identifier,
+  }) async {
+    final response = await _transport.post(forgotPath,
+        body: {'kind': kind, 'identifier': identifier});
+    final body = _guardAccount(response, '找回密码');
+    return (
+      message: (body['message'] as String?) ?? '如果该账号存在，重置方式已发送',
+      devToken: body['dev_token'] as String?,
+    );
+  }
+
+  /// 用令牌设置新密码。成功后服务端会吊销该账号全部会话，端侧需重新登录。
+  Future<int> resetPassword({
+    required String token,
+    required String newPassword,
+  }) async {
+    final response = await _transport.post(resetPath,
+        body: {'token': token, 'new_password': newPassword});
+    final body = _guardAccount(response, '重置密码');
+    await _session.signOut();
+    return (body['revoked_sessions'] as num?)?.toInt() ?? 0;
+  }
+
+  /// 当前账号资料（脱敏）。
+  Future<AccountProfile> accountProfile() async {
+    final response = await _transport.post(accountMePath,
+        token: _requireMemberToken('profile_edit'), body: const {});
+    return AccountProfile.fromJson(_guardAccount(response, '账号资料'));
+  }
+
+  Future<String> setNickname(String nickname) async {
+    final response = await _transport.post(nicknamePath, body: {
+      'nickname': nickname,
+    }, token: _requireMemberToken('profile_edit'));
+    final body = _guardAccount(response, '修改昵称');
+    return (body['nickname'] as String?) ?? nickname;
+  }
+
+  /// 随机刷新昵称（服务端有频控，超了会抛 `too_many_requests`）。
+  Future<String> refreshNickname() async {
+    final response = await _transport.post(nicknameRandomPath,
+        body: const {}, token: _requireMemberToken('profile_edit'));
+    final body = _guardAccount(response, '刷新昵称');
+    return (body['nickname'] as String?) ?? '';
+  }
+
+  /// 注册前取一个昵称建议。公开接口，无需登录。
+  ///
+  /// 走服务端而不是端侧自己拼：**词表与校验规则只能有一处**，
+  /// 否则端上能填、提交报非法的割裂迟早出现。
+  Future<String> suggestNickname() async {
+    final response = await _transport.post(nicknameSuggestPath, body: const {});
+    final body = _guardAccount(response, '昵称建议');
+    return (body['nickname'] as String?) ?? '';
+  }
+
+  Future<int> changePassword({
+    required String oldPassword,
+    required String newPassword,
+  }) async {
+    final response = await _transport.post(passwordPath, body: {
+      'old_password': oldPassword,
+      'new_password': newPassword,
+    }, token: _requireMemberToken('profile_edit'));
+    final body = _guardAccount(response, '修改密码');
+    await _session.signOut();
+    return (body['revoked_sessions'] as num?)?.toInt() ?? 0;
+  }
+
+  // ================= 模型（U70） ================= //
+
+  /// 可选模型 + 当前绑定 + 额度。返回原样 Map：字段多且会随裁定演进，
+  /// 端侧按需读取，不为了"每个字段建一个类"而拖慢迭代。
+  Future<Map<String, dynamic>> models() async {
+    final response = await _transport.post(modelsListPath,
+        body: const {}, token: _requireMemberToken('profile_edit'));
+    return _guardAccount(response, '模型列表');
+  }
+
+  Future<Map<String, dynamic>> selectModel(String modelKey) async {
+    final response = await _transport.post(modelsSelectPath,
+        body: {'model_key': modelKey}, token: _requireMemberToken('profile_edit'));
+    final body = _guardAccount(response, '选择模型');
+    return (body['binding'] as Map?)?.cast<String, dynamic>() ?? const {};
+  }
+
+  /// 接入自带模型。**`apiKey` 只上行，不回传**：服务端只存密文、只回掩码。
+  Future<Map<String, dynamic>> bindByokModel({
+    required String baseUrl,
+    required String model,
+    required String apiKey,
+    String displayName = '',
+  }) async {
+    final response = await _transport.post(modelsByokPath, body: {
+      'base_url': baseUrl,
+      'model': model,
+      'api_key': apiKey,
+      'display_name': displayName,
+    }, token: _requireMemberToken('profile_edit'));
+    final body = _guardAccount(response, '接入自带模型');
+    return (body['binding'] as Map?)?.cast<String, dynamic>() ?? const {};
+  }
+
+  Future<bool> removeModelBinding() async {
+    final response = await _transport.post(modelsRemovePath,
+        body: const {}, token: _requireMemberToken('profile_edit'));
+    final body = _guardAccount(response, '解除模型绑定');
+    return body['removed'] == true;
+  }
+
+  // ================= 定位 / 推荐 / 导航（U71） ================= //
+
+  /// 推荐。**交给服务端的坐标必须先粗化** —— 精确坐标不出端侧。
+  ///
+  /// 端侧这一层也粗化一次（调用方可能忘了），服务端再粗化一次：
+  /// 两道防线不嫌多，因为这条数据的性质是"泄漏了收不回来"。
+  Future<RecommendResult> recommend({
+    double? latitude,
+    double? longitude,
+    List<String> prefs = const [],
+    int? limit,
+  }) async {
+    final body = <String, dynamic>{
+      'prefs': prefs,
+      if (limit != null) 'limit': limit,
+    };
+    if (latitude != null && longitude != null) {
+      body['lat'] = _coarsen(latitude);
+      body['lon'] = _coarsen(longitude);
+    }
+    final response = await _transport.post(recommendPath,
+        body: body, token: _requireMemberToken('location_share'));
+    return RecommendResult.fromJson(_guardAccount(response, '推荐'));
+  }
+
+  /// 生成三大导航 App 的链接。起点**默认不传**，让各家 App 自己取定位。
+  Future<List<NavLink>> navigationLinks({
+    required double destLat,
+    required double destLon,
+    required String destName,
+  }) async {
+    final response = await _transport.post(navigationPath, body: {
+      'dest_lat': destLat,
+      'dest_lon': destLon,
+      'dest_name': destName,
+    }, token: _requireMemberToken('location_share'));
+    final body = _guardAccount(response, '导航链接');
+    final raw = (body['links'] as List?) ?? const [];
+    return raw
+        .whereType<Map>()
+        .map((item) => NavLink.fromJson(item.cast<String, dynamic>()))
+        .toList(growable: false);
+  }
+
+  /// 与 `geo.privacy_grid(decimals: 3)` 同口径：按位截断，不四舍五入。
+  static double _coarsen(double value) {
+    final scaled = value * 1000;
+    return (scaled >= 0 ? scaled.floor() : scaled.ceil()) / 1000;
+  }
+
   Map<String, dynamic> _guard(TransportResponse response, String what) {
     if (response.statusCode == 401) throw const SessionExpiredException();
     if (response.statusCode == 403) {
@@ -382,6 +635,26 @@ class ApiClient {
       );
     }
     return response.body;
+  }
+
+  /// 账号/模型/定位类接口的错误映射。
+  ///
+  /// 401 / 403 仍交给 `_guard`：**「会话失效」「能力不足」和「业务规则不满足」
+  /// 是三件事**，混成一个异常会让界面把「密码太短」也弹成"请重新登录"。
+  /// 其余非 2xx 统一抛 `AccountException` 并带上服务端 `code`：
+  /// 界面据此给不同的下一步（去登录 / 去改密码 / 15 分钟后再试）。
+  ///
+  /// 之前这些接口直接复用 `_guard`，于是注册失败会抛
+  /// `VoiceFailedException` —— 异常类型在说一件没发生的事。
+  Map<String, dynamic> _guardAccount(TransportResponse response, String what) {
+    final status = response.statusCode;
+    if (response.ok || status == 401 || status == 403) {
+      return _guard(response, what);
+    }
+    throw AccountException(
+      (response.body['message'] as String?) ?? '$what失败（HTTP $status）',
+      code: (response.body['code'] as String?) ?? 'unknown',
+    );
   }
 
   /// 「登录后才有」的接口用的 token：**只认成员会话**，访客一律拒绝发请求。

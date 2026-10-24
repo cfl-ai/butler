@@ -58,11 +58,20 @@ from ai_butler.infra.vision import (
 )
 from ai_butler.core.session_store import SessionStore
 from ai_butler.middleware.global_middleware import RequestLogMiddleware, TimeoutMiddleware
+from ai_butler.core import accounts as accounts_mod
+from ai_butler.core import geo as geo_mod
+from ai_butler.core import model_access as model_mod
+from ai_butler.core.security import FieldCipher
 from ai_butler.core.users import UserError, UserRegistry
-from ai_butler.middleware.session_auth import SessionAuthMiddleware, login as issue_session
+from ai_butler.middleware.session_auth import (
+    SessionAuthMiddleware,
+    force_logout,
+    login as issue_session,
+)
 from ai_butler.retrieval import describe_categories, describe_tools, plan as plan_query
 from ai_butler.retrieval.chat import ChatOrchestrator
 from ai_butler.retrieval.wiring import build_search_fn
+from ai_butler.verticals.tour.places import load_places
 
 #: 公开路径白名单：只有基础设施探活 + 登录/访客入口。
 #: **访客凭据不是白名单免鉴权**：它也走同一套中间件校验（U64），
@@ -73,6 +82,14 @@ PUBLIC_PATHS: frozenset[str] = frozenset({
     "/api/session/login",
     # 访客入口（U64）：未登录也能进文字查询，但拿到的凭据只有 text_query 一项能力
     "/api/session/guest",
+    # 注册 / 找回 / 重置（U67/U68）：这三件事**必然发生在登录之前**，
+    # 不放行就永远拿不到会话。注意它们放行的只是"动作本身"，
+    # 重置令牌仍然是服务端签发、一次性的。
+    "/api/session/register",
+    "/api/session/forgot",
+    "/api/session/reset",
+    # 昵称建议（U69）：注册前就要能点"随机一个"，无状态、不落库
+    "/api/accounts/nickname/suggest",
 })
 
 #: 图文识别的上传上限（base64 字符数），约合 9MB 原始图片。
@@ -101,6 +118,45 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     users = UserRegistry(Path(settings.storage_root) / "users.json")
 
+    # ---- 账号 / 模型 / 地点（U67~U71）----
+    # 构造失败**不连坐整个 App**（与视觉网关同一条政策）：只有这几个接口返回 503，
+    # 并说明缺什么。但「重置通道不安全」是例外 —— 那条必须让启动直接失败（U68）。
+    accounts_root = Path(settings.account_store_root or settings.storage_root)
+    accounts: accounts_mod.AccountStore | None = None
+    model_access: model_mod.ModelAccess | None = None
+    accounts_problem = ""
+    try:
+        field_cipher = FieldCipher(settings.field_encryption_key)
+    except ValueError as exc:
+        field_cipher = None
+        accounts_problem = f"隐私字段加密密钥未配置（FIELD_ENCRYPTION_KEY）：{exc}"
+    if field_cipher is not None:
+        channel = accounts_mod.build_channel(
+            settings.reset_channel,
+            environment=settings.environment,
+            smtp={
+                "host": settings.smtp_host,
+                "port": settings.smtp_port,
+                "sender": settings.smtp_sender,
+                "username": settings.smtp_user,
+                "password": settings.smtp_password,
+                "use_ssl": settings.smtp_ssl,
+            },
+        )
+        accounts = accounts_mod.AccountStore(
+            accounts_root,
+            cipher=field_cipher,
+            ident_secret=settings.session_token_secret,
+            channel=channel,
+        )
+        model_access = model_mod.ModelAccess(
+            accounts_root,
+            cipher=field_cipher,
+            platform_keys={"DEEPSEEK_API_KEY": settings.deepseek_api_key},
+            free_daily_calls=settings.model_free_daily_calls,
+            trial_daily_calls=settings.model_trial_daily_calls,
+        )
+
     app = FastAPI(
         title=f"{ECOSYSTEM} — P0 底座",
         docs_url=None,          # 隐私优先：默认关闭 API 文档与 schema 端点
@@ -125,13 +181,40 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
         except Exception:
             return JSONResponse({"code": "bad_request", "message": "请求体不是 JSON"},
                                 status_code=400)
-        account = str(body.get("account") or "").strip()
+        account = str(body.get("account") or body.get("identifier") or "").strip()
         password = str(body.get("password") or "")
         device_id = str(body.get("device_id") or "").strip()
+        kind = str(body.get("kind") or "").strip().lower()
         if not account or not password or not device_id:
             return JSONResponse({"code": "bad_request",
                                  "message": "account / password / device_id 均必填"},
                                 status_code=400)
+
+        # 带 kind 的请求走账号体系（U67：手机号/邮箱）；不带的仍走 U42 的
+        # storage_root/users.json 旧账号 —— 两条路都保留，避免已注册用户突然登不上。
+        # 新增注册一律进账号体系，旧表只减不增。
+        if kind in accounts_mod.IDENT_KINDS:
+            unavailable = _accounts_or_503()
+            if unavailable:
+                return unavailable
+            try:
+                account_row = accounts.login(  # type: ignore[union-attr]
+                    kind=kind, identifier=account, password=password)
+            except accounts_mod.AccountError as exc:
+                # 账号不存在 / 口令错 / 已锁定，都走同一个 401 出口；
+                # code 区分是为了让端上能提示「已锁定」，但**文案不透露账号是否存在**
+                return JSONResponse({"code": exc.code, "message": exc.message},
+                                    status_code=401)
+            token = await issue_session(store=store, settings=settings,
+                                        user_id=account_row.user_id, device_id=device_id)
+            return JSONResponse({
+                "user_id": account_row.user_id,
+                "token": token.token,
+                "expires_in_seconds": settings.session_ttl_seconds,
+                "idle_timeout_seconds": settings.session_idle_timeout_seconds,
+                "profile": accounts.public_profile(account_row.user_id),  # type: ignore[union-attr]
+            })
+
         if not users.verify(user_id=account, password=password):
             # 账号不存在与口令错误返回同一结果，不泄露账号是否存在
             return JSONResponse({"code": "invalid_credentials", "message": "账号或密码错误"},
@@ -169,6 +252,369 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
                                 status_code=401)
         # 当前只做身份校验与受理；落库形态见台账 U42（与账号表同属未定义项）。
         return JSONResponse({"status": "accepted", "user_id": authed})
+
+    # ================= 账号与隐私（U67 / U68 / U69）================= #
+    def _accounts_or_503() -> JSONResponse | None:
+        if accounts is None:
+            return JSONResponse(
+                {"code": "accounts_unavailable",
+                 "message": "账号服务不可用：" + (accounts_problem or "未初始化")},
+                status_code=503,
+            )
+        return None
+
+    def _body(payload: object) -> dict:
+        return payload if isinstance(payload, dict) else {}
+
+    async def _read_json(request: Request) -> dict | None:
+        try:
+            data = await request.json()
+        except Exception:
+            return None
+        return data if isinstance(data, dict) else None
+
+    def _authed(request: Request) -> tuple[str, access.AccessTier]:
+        uid = str(getattr(request.state, "user_id", "") or "")
+        return uid, access.AccessTier.from_user_id(uid)
+
+    @app.post("/api/session/register")
+    async def session_register(request: Request) -> JSONResponse:
+        """注册（U67）。手机号或邮箱二选一，注册成功直接签发成员会话。
+
+        注册接口**会**暴露"这个号已被占用" —— 这是必要的：否则用户永远登不上
+        也不知道为什么。防刷靠限流，不靠含糊其辞（登录/找回才做不可枚举）。
+        """
+        unavailable = _accounts_or_503()
+        if unavailable:
+            return unavailable
+        body = await _read_json(request)
+        if body is None:
+            return JSONResponse({"code": "bad_request", "message": "请求体不是 JSON"},
+                                status_code=400)
+        kind = str(body.get("kind") or "").strip().lower()
+        identifier = str(body.get("identifier") or body.get("account") or "").strip()
+        password = str(body.get("password") or "")
+        device_id = str(body.get("device_id") or "").strip()
+        if not kind or not identifier or not password or not device_id:
+            return JSONResponse({"code": "bad_request",
+                                 "message": "kind / identifier / password / device_id 均必填"},
+                                status_code=400)
+        try:
+            account = accounts.register(  # type: ignore[union-attr]
+                kind=kind, identifier=identifier, password=password,
+                nickname=(str(body["nickname"]) if "nickname" in body else None),
+                prefs=[str(x) for x in body.get("prefs", []) if str(x).strip()],
+            )
+        except accounts_mod.AccountError as exc:
+            status = 409 if exc.code == "identifier_taken" else 400
+            return JSONResponse({"code": exc.code, "message": exc.message}, status_code=status)
+        token = await issue_session(store=store, settings=settings,
+                                    user_id=account.user_id, device_id=device_id)
+        return JSONResponse({
+            "user_id": account.user_id,
+            "token": token.token,
+            "expires_in_seconds": settings.session_ttl_seconds,
+            "idle_timeout_seconds": settings.session_idle_timeout_seconds,
+            "profile": accounts.public_profile(account.user_id),  # type: ignore[union-attr]
+        }, status_code=201)
+
+    @app.post("/api/session/forgot")
+    async def session_forgot(request: Request) -> JSONResponse:
+        """申请重置（U68）。**无论账号是否存在，响应完全一致**。"""
+        unavailable = _accounts_or_503()
+        if unavailable:
+            return unavailable
+        body = await _read_json(request)
+        if body is None:
+            return JSONResponse({"code": "bad_request", "message": "请求体不是 JSON"},
+                                status_code=400)
+        kind = str(body.get("kind") or "").strip().lower()
+        identifier = str(body.get("identifier") or "").strip()
+        if not kind or not identifier:
+            return JSONResponse({"code": "bad_request", "message": "kind / identifier 必填"},
+                                status_code=400)
+        try:
+            token, masked = accounts.request_reset(  # type: ignore[union-attr]
+                kind=kind, identifier=identifier)
+        except accounts_mod.AccountError as exc:
+            return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
+        payload: dict[str, object] = {
+            "status": "accepted",
+            "message": f"如果 {masked} 已注册，重置方式已发送，请在 15 分钟内完成",
+        }
+        # 开发通道才回显令牌；生产通道拿不到（U68 的护栏在 build_channel 里）
+        if token and accounts._channel.dev_token_visible():  # type: ignore[union-attr]
+            payload["dev_token"] = token
+        return JSONResponse(payload)
+
+    @app.post("/api/session/reset")
+    async def session_reset(request: Request) -> JSONResponse:
+        """用令牌设置新密码（U68）。成功后**吊销该账号全部会话**。"""
+        unavailable = _accounts_or_503()
+        if unavailable:
+            return unavailable
+        body = await _read_json(request)
+        if body is None:
+            return JSONResponse({"code": "bad_request", "message": "请求体不是 JSON"},
+                                status_code=400)
+        token = str(body.get("token") or "")
+        new_password = str(body.get("new_password") or "")
+        if not token or not new_password:
+            return JSONResponse({"code": "bad_request",
+                                 "message": "token / new_password 必填"}, status_code=400)
+        try:
+            account = accounts.reset_password(  # type: ignore[union-attr]
+                token=token, new_password=new_password)
+        except accounts_mod.AccountError as exc:
+            return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
+        revoked = await force_logout(store=store, user_id=account.user_id)
+        return JSONResponse({"status": "ok", "user_id": account.user_id,
+                             "revoked_sessions": revoked})
+
+    @app.get("/api/accounts/me")
+    async def account_me(request: Request) -> JSONResponse:
+        unavailable = _accounts_or_503()
+        if unavailable:
+            return unavailable
+        uid, tier = _authed(request)
+        access.require(tier, access.Capability.PROFILE_EDIT)
+        try:
+            profile = accounts.public_profile(uid)  # type: ignore[union-attr]
+        except accounts_mod.AccountError as exc:
+            return JSONResponse({"code": exc.code, "message": exc.message}, status_code=404)
+        return JSONResponse(profile)
+
+    @app.post("/api/accounts/nickname")
+    async def account_set_nickname(request: Request) -> JSONResponse:
+        """自定义昵称（U69）。"""
+        unavailable = _accounts_or_503()
+        if unavailable:
+            return unavailable
+        uid, tier = _authed(request)
+        access.require(tier, access.Capability.PROFILE_EDIT)
+        body = await _read_json(request)
+        if body is None:
+            return JSONResponse({"code": "bad_request", "message": "请求体不是 JSON"},
+                                status_code=400)
+        try:
+            account = accounts.set_nickname(  # type: ignore[union-attr]
+                user_id=uid, nickname=str(body.get("nickname") or ""))
+        except accounts_mod.AccountError as exc:
+            return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
+        return JSONResponse({"nickname": account.nickname})
+
+    @app.post("/api/accounts/nickname/random")
+    async def account_random_nickname(request: Request) -> JSONResponse:
+        """随机刷新昵称（U69），带频控。"""
+        unavailable = _accounts_or_503()
+        if unavailable:
+            return unavailable
+        uid, tier = _authed(request)
+        access.require(tier, access.Capability.PROFILE_EDIT)
+        try:
+            account = accounts.refresh_nickname(user_id=uid)  # type: ignore[union-attr]
+        except accounts_mod.AccountError as exc:
+            status = 429 if exc.code == "too_many_requests" else 400
+            return JSONResponse({"code": exc.code, "message": exc.message}, status_code=status)
+        return JSONResponse({"nickname": account.nickname})
+
+    @app.post("/api/accounts/nickname/suggest")
+    async def account_nickname_suggest() -> JSONResponse:
+        """注册前随机取一个昵称建议。**公开接口**：无状态、不落库、不涉及隐私。
+
+        放在这里而不是端侧各写一份词表：词表只该有**一处**，
+        否则端侧词表迟早和服务端的规则（长度、禁用字符）不一致 ——
+        然后用户会遇到「界面上能填、提交却报非法」。
+        """
+        return JSONResponse({"nickname": accounts_mod.random_nickname()})
+
+    @app.post("/api/accounts/password")
+    async def account_change_password(request: Request) -> JSONResponse:
+        """改密码（需原密码）。成功后吊销全部会话，旧设备立刻失效。"""
+        unavailable = _accounts_or_503()
+        if unavailable:
+            return unavailable
+        uid, tier = _authed(request)
+        access.require(tier, access.Capability.PROFILE_EDIT)
+        body = await _read_json(request)
+        if body is None:
+            return JSONResponse({"code": "bad_request", "message": "请求体不是 JSON"},
+                                status_code=400)
+        try:
+            accounts.change_password(  # type: ignore[union-attr]
+                user_id=uid,
+                old_password=str(body.get("old_password") or ""),
+                new_password=str(body.get("new_password") or ""),
+            )
+        except accounts_mod.AccountError as exc:
+            return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
+        revoked = await force_logout(store=store, user_id=uid)
+        return JSONResponse({"status": "ok", "revoked_sessions": revoked})
+
+    # ================= 模型接入（U70）================= #
+    def _models_or_503() -> JSONResponse | None:
+        if model_access is None:
+            return JSONResponse(
+                {"code": "models_unavailable",
+                 "message": "模型接入不可用：" + (accounts_problem or "未初始化")},
+                status_code=503,
+            )
+        return None
+
+    @app.get("/api/models")
+    @app.post("/api/models/list")
+    async def models_list(request: Request) -> JSONResponse:
+        """可选模型 + 当前绑定 + 剩余额度。`api_key` 只以掩码出现。
+
+        同时挂 GET 与 POST：端侧的 `TransportPort` 只有 `post` / `stream`
+        （见 ports.dart，为的是让传输层保持最小面），所以给一个 POST 别名，
+        不必为了一个列表接口去扩传输层。GET 留着供 curl 排查。
+        """
+        unavailable = _models_or_503()
+        if unavailable:
+            return unavailable
+        uid, tier = _authed(request)
+        access.require(tier, access.Capability.PROFILE_EDIT)
+        binding = model_access.binding(uid)  # type: ignore[union-attr]
+        return JSONResponse({
+            "models": model_access.available_models(user_id=uid),  # type: ignore[union-attr]
+            "binding": binding.public_view() if binding else None,
+            "quota": {
+                "free_remaining": model_access.remaining(user_id=uid, tier=model_mod.FREE),  # type: ignore[union-attr]
+                "trial_remaining": model_access.remaining(user_id=uid, tier=model_mod.TRIAL),  # type: ignore[union-attr]
+            },
+        })
+
+    @app.post("/api/models/select")
+    async def models_select(request: Request) -> JSONResponse:
+        unavailable = _models_or_503()
+        if unavailable:
+            return unavailable
+        uid, tier = _authed(request)
+        access.require(tier, access.Capability.PROFILE_EDIT)
+        body = await _read_json(request)
+        if body is None:
+            return JSONResponse({"code": "bad_request", "message": "请求体不是 JSON"},
+                                status_code=400)
+        try:
+            binding = model_access.bind_catalog_model(  # type: ignore[union-attr]
+                user_id=uid, model_key=str(body.get("model_key") or ""))
+        except model_mod.ModelAccessError as exc:
+            return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
+        return JSONResponse({"binding": binding.public_view()})
+
+    @app.post("/api/models/byok")
+    async def models_byok(request: Request) -> JSONResponse:
+        """接入自带模型（U70）。key 加密落盘，**响应里只有掩码**。"""
+        unavailable = _models_or_503()
+        if unavailable:
+            return unavailable
+        uid, tier = _authed(request)
+        access.require(tier, access.Capability.PROFILE_EDIT)
+        body = await _read_json(request)
+        if body is None:
+            return JSONResponse({"code": "bad_request", "message": "请求体不是 JSON"},
+                                status_code=400)
+        try:
+            binding = model_access.bind_byok(  # type: ignore[union-attr]
+                user_id=uid,
+                base_url=str(body.get("base_url") or ""),
+                model=str(body.get("model") or ""),
+                api_key=str(body.get("api_key") or ""),
+                display_name=str(body.get("display_name") or ""),
+            )
+        except model_mod.ModelAccessError as exc:
+            return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
+        # 注意这里返回的是 public_view：**不含密文、不含明文**
+        return JSONResponse({"binding": binding.public_view()}, status_code=201)
+
+    @app.delete("/api/models")
+    @app.post("/api/models/remove")
+    async def models_unbind(request: Request) -> JSONResponse:
+        """解除绑定（顺带删掉 BYOK 的密文）。POST 别名同上。"""
+        unavailable = _models_or_503()
+        if unavailable:
+            return unavailable
+        uid, tier = _authed(request)
+        access.require(tier, access.Capability.PROFILE_EDIT)
+        removed = model_access.unbind(user_id=uid)  # type: ignore[union-attr]
+        return JSONResponse({"removed": removed})
+
+    # ================= 定位 / 推荐 / 导航（U71）================= #
+    @app.post("/api/location/recommend")
+    async def location_recommend(request: Request) -> JSONResponse:
+        """按所在地 + 喜好推荐。**坐标先粗化再参与计算**（U71 ①）。
+
+        没有地图 key，所以响应里**不含**任何底图或地址反查结果，
+        只给坐标、距离与理由，并由 `map_available=false` 明确告知。
+        """
+        uid, tier = _authed(request)
+        access.require(tier, access.Capability.LOCATION_SHARE)
+        body = await _read_json(request)
+        if body is None:
+            return JSONResponse({"code": "bad_request", "message": "请求体不是 JSON"},
+                                status_code=400)
+
+        located_at: tuple[float, float] | None = None
+        if body.get("lat") is not None and body.get("lon") is not None:
+            try:
+                located_at = geo_mod.privacy_grid(
+                    body["lat"], body["lon"], decimals=settings.geo_grid_decimals)
+            except geo_mod.GeoError as exc:
+                return JSONResponse({"code": exc.code, "message": exc.message},
+                                    status_code=400)
+
+        try:
+            places, source = load_places(accounts_root)
+        except geo_mod.GeoError as exc:
+            return JSONResponse({"code": exc.code, "message": exc.message}, status_code=503)
+
+        prefs = [str(x) for x in body.get("prefs", []) if str(x).strip()]
+        if not prefs and accounts is not None:
+            try:
+                prefs = list(accounts.get(uid).prefs) if accounts.get(uid) else []  # type: ignore[union-attr]
+            except accounts_mod.AccountError:
+                prefs = []
+        limit = int(body.get("limit") or settings.geo_recommend_limit)
+        items = geo_mod.recommend(places, prefs=prefs, located_at=located_at, limit=limit)
+        return JSONResponse({
+            "located": located_at is not None,
+            "located_at_grid": list(located_at) if located_at else None,
+            "grid_decimals": settings.geo_grid_decimals,
+            "prefs_used": prefs,
+            "data_source": source,
+            # 没有 key 就说没有 key：界面据此不画底图，而不是画一个假地图
+            "map_available": False,
+            "map_note": "未配置地图服务 key，仅显示坐标与距离，不提供底图与地址反查",
+            "items": [item.as_dict() for item in items],
+        })
+
+    @app.post("/api/location/navigation")
+    async def location_navigation(request: Request) -> JSONResponse:
+        """生成三大导航 App 的跳转链接（U71 ③）。本地拼 URL，不需要 key。"""
+        _uid, tier = _authed(request)
+        access.require(tier, access.Capability.LOCATION_SHARE)
+        body = await _read_json(request)
+        if body is None:
+            return JSONResponse({"code": "bad_request", "message": "请求体不是 JSON"},
+                                status_code=400)
+        try:
+            links = geo_mod.navigation_links(
+                dest_lat=body.get("dest_lat"),
+                dest_lon=body.get("dest_lon"),
+                dest_name=str(body.get("dest_name") or "目的地"),
+                origin_lat=body.get("origin_lat"),
+                origin_lon=body.get("origin_lon"),
+                source_coord=str(body.get("source_coord") or geo_mod.WGS84),
+            )
+        except geo_mod.GeoError as exc:
+            return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
+        return JSONResponse({
+            "links": [link.as_dict() for link in links],
+            # 起点默认交给导航 App 自己取，我方坐标不外传（U71 ③）
+            "origin_shared": body.get("origin_lat") is not None,
+        })
+
 
     # ---- 图文识别 / 图文输出（台账 U61/U62；计划书未定义，人工指令追加）----
     # 网关构造失败**不许连坐整个 App**：视觉不可用时其它业务照常跑，
@@ -522,6 +968,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
         gateway, search=search,
         top_k=settings.chat_top_k,
         model=settings.ollama_model or settings.ollama_vision_model or None,
+        model_access=model_access,
         verify_answer=settings.chat_verify_enable)
 
     @app.post("/api/chat/stream")
@@ -619,6 +1066,8 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
     app.state.file_store = files
     app.state.settings = settings
     app.state.users = users
+    app.state.accounts = accounts
+    app.state.model_access = model_access
     app.state.chat_orchestrator = orchestrator
     app.state.guest_budget = guest_budget
     return app

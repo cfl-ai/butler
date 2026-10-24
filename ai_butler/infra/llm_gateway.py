@@ -113,11 +113,20 @@ class Provider:
         self.settings = settings
 
     async def chat(self, messages: Sequence[ChatMessage], *, model: str | None,
-                   timeout: float, max_tokens: int | None) -> ChatResult:
+                   timeout: float, max_tokens: int | None,
+                   api_key: str | None = None,
+                   base_url: str | None = None) -> ChatResult:
+        """`api_key` / `base_url` 是**按调用传入**的覆盖值。
+
+        它们只允许来自 `core/model_access.ModelAccess.resolve()`（已做过归属校验、
+        且密钥已解密），**绝不能直接取自请求体** —— 否则用户能把任意 key 塞进网关。
+        """
         raise NotImplementedError
 
     async def stream(self, messages: Sequence[ChatMessage], *, model: str | None,
-                     timeout: float, max_tokens: int | None) -> AsyncIterator[str]:
+                     timeout: float, max_tokens: int | None,
+                     api_key: str | None = None,
+                     base_url: str | None = None) -> AsyncIterator[str]:
         raise NotImplementedError
         yield ""          # pragma: no cover
 
@@ -136,10 +145,11 @@ class OllamaProvider(Provider):
             **({"options": opts} if opts else {}),
         }
 
-    async def chat(self, messages, *, model=None, timeout, max_tokens=None) -> ChatResult:
+    async def chat(self, messages, *, model=None, timeout, max_tokens=None,
+                   api_key=None, base_url=None) -> ChatResult:
         t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=timeout) as client:
-            r = await client.post(f"{self.settings.ollama_base_url}/api/chat",
+            r = await client.post(f"{base_url or self.settings.ollama_base_url}/api/chat",
                                   json=self._payload(messages, model, max_tokens, False))
             r.raise_for_status()
             d = r.json()
@@ -151,9 +161,10 @@ class OllamaProvider(Provider):
                    "completion_tokens": d.get("eval_count", 0)},
         )
 
-    async def stream(self, messages, *, model=None, timeout, max_tokens=None) -> AsyncIterator[str]:
+    async def stream(self, messages, *, model=None, timeout, max_tokens=None,
+                     api_key=None, base_url=None) -> AsyncIterator[str]:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            async with client.stream("POST", f"{self.settings.ollama_base_url}/api/chat",
+            async with client.stream("POST", f"{base_url or self.settings.ollama_base_url}/api/chat",
                                      json=self._payload(messages, model, max_tokens, True)) as r:
                 r.raise_for_status()
                 async for line in r.aiter_lines():
@@ -172,8 +183,10 @@ class DeepSeekProvider(Provider):
 
     name = "deepseek"
 
-    async def chat(self, messages, *, model=None, timeout, max_tokens=None) -> ChatResult:
-        if not self.settings.deepseek_api_key:
+    async def chat(self, messages, *, model=None, timeout, max_tokens=None,
+                   api_key=None, base_url=None) -> ChatResult:
+        key = api_key or self.settings.deepseek_api_key
+        if not key:
             raise GatewayUnavailableError("DEEPSEEK_API_KEY 未配置")
         body: dict[str, Any] = {
             "model": model or self.settings.deepseek_model,
@@ -185,8 +198,8 @@ class DeepSeekProvider(Provider):
         t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(
-                f"{self.settings.deepseek_base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.settings.deepseek_api_key}"},
+                f"{base_url or self.settings.deepseek_base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {key}"},
                 json=body,
             )
             r.raise_for_status()
@@ -198,8 +211,10 @@ class DeepSeekProvider(Provider):
             usage=d.get("usage", {}),
         )
 
-    async def stream(self, messages, *, model=None, timeout, max_tokens=None) -> AsyncIterator[str]:
-        if not self.settings.deepseek_api_key:
+    async def stream(self, messages, *, model=None, timeout, max_tokens=None,
+                     api_key=None, base_url=None) -> AsyncIterator[str]:
+        key = api_key or self.settings.deepseek_api_key
+        if not key:
             raise GatewayUnavailableError("DEEPSEEK_API_KEY 未配置")
         body: dict[str, Any] = {
             "model": model or self.settings.deepseek_model,
@@ -210,9 +225,81 @@ class DeepSeekProvider(Provider):
             body["max_tokens"] = max_tokens
         async with httpx.AsyncClient(timeout=timeout) as client:
             async with client.stream(
-                "POST", f"{self.settings.deepseek_base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.settings.deepseek_api_key}"}, json=body,
+                "POST", f"{base_url or self.settings.deepseek_base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {key}"}, json=body,
             ) as r:
+                r.raise_for_status()
+                async for line in r.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        piece = json.loads(data)["choices"][0]["delta"].get("content")
+                    except (json.JSONDecodeError, KeyError, IndexError):
+                        continue
+                    if piece:
+                        yield piece
+
+
+class OpenAICompatProvider(Provider):
+    """用户自带的 OpenAI 兼容端点（U70 BYOK）。
+
+    与 `DeepSeekProvider` 的差别是**没有全局兜底**：`base_url` 与 `api_key`
+    必须按调用传入。这样它就不可能"不小心"用了平台凭据去跑别人的端点 ——
+    少一个默认值，就少一条越权路径。
+    """
+
+    name = "openai-compatible"
+
+    def _require(self, api_key: str | None, base_url: str | None) -> tuple[str, str]:
+        if not api_key or not base_url:
+            raise GatewayUnavailableError(
+                "openai-compatible 需要调用方提供 base_url 与 api_key（来自用户自有绑定）"
+            )
+        return api_key, base_url.rstrip("/")
+
+    async def chat(self, messages, *, model=None, timeout, max_tokens=None,
+                   api_key=None, base_url=None) -> ChatResult:
+        key, base = self._require(api_key, base_url)
+        if not model:
+            raise GatewayUnavailableError("openai-compatible 必须显式给出 model")
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "stream": False,
+        }
+        if max_tokens is not None:
+            body["max_tokens"] = max_tokens
+        t0 = time.perf_counter()
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            r = await client.post(f"{base}/chat/completions",
+                                  headers={"Authorization": f"Bearer {key}"}, json=body)
+            r.raise_for_status()
+            d = r.json()
+        return ChatResult(
+            text=d["choices"][0]["message"]["content"],
+            provider=self.name, model=d.get("model", model),
+            latency_ms=int((time.perf_counter() - t0) * 1000),
+            usage=d.get("usage", {}),
+        )
+
+    async def stream(self, messages, *, model=None, timeout, max_tokens=None,
+                     api_key=None, base_url=None) -> AsyncIterator[str]:
+        key, base = self._require(api_key, base_url)
+        if not model:
+            raise GatewayUnavailableError("openai-compatible 必须显式给出 model")
+        body: dict[str, Any] = {
+            "model": model,
+            "messages": [{"role": m.role, "content": m.content} for m in messages],
+            "stream": True,
+        }
+        if max_tokens is not None:
+            body["max_tokens"] = max_tokens
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            async with client.stream("POST", f"{base}/chat/completions",
+                                     headers={"Authorization": f"Bearer {key}"}, json=body) as r:
                 r.raise_for_status()
                 async for line in r.aiter_lines():
                     if not line.startswith("data:"):
@@ -231,7 +318,9 @@ class DeepSeekProvider(Provider):
 PROVIDERS: dict[str, type[Provider]] = {
     "ollama": OllamaProvider,
     "deepseek": DeepSeekProvider,
+    "openai-compatible": OpenAICompatProvider,
 }
+
 
 
 # --------------------------------------------------------------------------- #
@@ -281,20 +370,30 @@ class LLMGateway:
     async def chat(self, *, user_id: str, messages: Sequence[ChatMessage],
                    model: str | None = None, max_tokens: int | None = None,
                    rate_limit: int | None = None,
-                   rate_bucket: str = "llm") -> ChatResult:
+                   rate_bucket: str = "llm",
+                   provider: str | None = None,
+                   api_key: str | None = None,
+                   base_url: str | None = None) -> ChatResult:
+        """`provider` / `api_key` / `base_url` 来自 `ModelAccess.resolve()`。
+
+        三者一旦显式给出，就**只走这一个供应商、不做降级**：
+        用户选了"我的模型"，出故障时悄悄换到平台模型，费用与数据去向都变了 ——
+        那属于"未经允许"。宁可报错让用户自己换。
+        """
         uid = self._require_user(user_id)
         # bucket 可切换：计划书三、P3 要求「Jev 调用独立配额统计」，
         # 若与普通调用共用 llm 桶，Jev 的配额就会被业务话务挤占，等于没有独立配额。
         await self._check_rate(uid, bucket=rate_bucket,
                                limit=rate_limit or self.settings.llm_rate_limit_per_minute)
         errors: list[str] = []
-        for name in self._order():                      # 负载均衡 / 故障降级
-            provider = self._providers[name]
+        for name in self._targets(provider):            # 负载均衡 / 故障降级
+            provider_impl = self._provider(name)
 
-            async def _invoke(p=provider):
+            async def _invoke(p=provider_impl):
                 return await p.chat(messages, model=model,
                                     timeout=self.settings.llm_timeout_seconds,
-                                    max_tokens=max_tokens)
+                                    max_tokens=max_tokens,
+                                    api_key=api_key, base_url=base_url)
 
             for attempt in range(self.settings.llm_max_retries + 1):
                 try:
@@ -313,13 +412,16 @@ class LLMGateway:
     # ---- 流式转发 ----
     async def stream(self, *, user_id: str, messages: Sequence[ChatMessage],
                      model: str | None = None, max_tokens: int | None = None,
-                     rate_limit: int | None = None) -> AsyncIterator[str]:
+                     rate_limit: int | None = None,
+                     provider: str | None = None,
+                     api_key: str | None = None,
+                     base_url: str | None = None) -> AsyncIterator[str]:
         uid = self._require_user(user_id)
         await self._check_rate(uid, bucket="llm",
                                limit=rate_limit or self.settings.llm_rate_limit_per_minute)
         errors: list[str] = []
-        for name in self._order():
-            provider = self._providers[name]
+        for name in self._targets(provider):
+            provider_impl = self._provider(name)
             breaker = self.resilience.breaker(f"llm.{name}")
             try:
                 await breaker.allow()                   # 熔断
@@ -330,10 +432,11 @@ class LLMGateway:
                 # 流式响应不设总时长上限（计划书三、P0-7 要求逐字流式播报），
                 # 仅以并发闸防雪崩；整段流的成败回写给熔断器。
                 async with self.resilience.bulkhead(f"llm.{name}"):
-                    async for piece in provider.stream(
+                    async for piece in provider_impl.stream(
                             messages, model=model,
                             timeout=self.settings.llm_timeout_seconds,
-                            max_tokens=max_tokens):
+                            max_tokens=max_tokens,
+                            api_key=api_key, base_url=base_url):
                         yield piece
                 await breaker.record_success()
                 return
@@ -341,6 +444,30 @@ class LLMGateway:
                 await breaker.record_failure()
                 errors.append(f"{name}: {type(exc).__name__}: {exc}")
         raise GatewayUnavailableError("全部模型供应商流式不可用 → " + " | ".join(errors))
+
+    def _targets(self, provider: str | None) -> list[str]:
+        """显式指定供应商时只走它；否则按配置顺序降级。"""
+        if provider:
+            return [provider]
+        return self._order()
+
+    def _provider(self, name: str) -> Provider:
+        """按需构造供应商。
+
+        `openai-compatible`（用户自带端点）**不在** `settings.provider_order` 里，
+        所以不能只靠构造期的 `_providers` 字典 —— 取不到就现建一个。
+        缓存是安全的：Provider 实例只持有 `settings`，**用户凭据是按调用传参**的，
+        不驻留在实例上，因此不会把上一个用户的配置留给下一个用户。
+        """
+        existing = self._providers.get(name)
+        if existing is not None:
+            return existing
+        cls = PROVIDERS.get(name)
+        if cls is None:
+            raise GatewayUnavailableError(f"未知的模型供应商：{name!r}")
+        impl = cls(self.settings)
+        self._providers[name] = impl
+        return impl
 
 
 # --------------------------------------------------------------------------- #

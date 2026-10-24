@@ -17,3 +17,12 @@
 sentence-transformers>=3.0
 torch>=2.2
 transformers>=4.40
+
+# --- 语音原生推理（三、P7「语音交互移动端系统」，台账 U63~U66）---
+# sherpa-onnx：ASR / KWS / VAD 的**原生**推理后端，`ai_butler/infra/speech.py` 依赖它。
+# 为什么与 torch 同列（不进 requirements.txt）：
+#   轮子里带原生库、按平台分发，CI 的契约测试用的是替身
+#   （见 tests/test_speech_service.py），装了它也跑不出额外结论；
+#   端侧真机联调与 scripts/verify_voice_engine.py 才需要。
+# 装法：pip install sherpa-onnx（本机已验证 1.13.8，PyPI 有 cp312 轮子）
+sherpa-onnx>=1.10

@@ -77,10 +77,14 @@ class RecordedRequest {
 }
 
 class FakeTransport implements TransportPort {
-  FakeTransport({this.postResponse, this.streamChunks = const []});
+  FakeTransport({this.postResponse, this.streamChunks = const [], this.responses});
 
   TransportResponse? postResponse;
   List<Map<String, dynamic>> streamChunks;
+
+  /// 按路径返回不同响应。账号/模型/定位这些链路要好几个接口串起来，
+  /// 只用一个 `postResponse` 就得反复改写字段，既啰嗦又容易测错东西。
+  Map<String, TransportResponse>? responses;
 
   final List<RecordedRequest> posts = [];
   final List<RecordedRequest> streams = [];
@@ -89,9 +93,16 @@ class FakeTransport implements TransportPort {
   Future<TransportResponse> post(String path,
       {required Map<String, dynamic> body, String? token}) async {
     posts.add(RecordedRequest(path, body, token));
+    final byPath = responses?[path];
+    if (byPath != null) return byPath;
     return postResponse ??
         const TransportResponse(statusCode: 200, body: {'ok': true});
   }
+
+  /// 取某个路径最后一次请求（找不到就抛，免得断言静默通过）。
+  RecordedRequest lastPost(String path) =>
+      posts.lastWhere((r) => r.path == path,
+          orElse: () => throw StateError('没有向 $path 发过请求'));
 
   /// 设为 true 后，流由测试用 push/close 驱动——
   /// 打断这类**时序敏感**的用例必须能控制「什么时候来下一片」，

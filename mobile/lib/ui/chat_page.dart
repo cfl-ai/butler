@@ -24,6 +24,9 @@ class ChatPage extends StatefulWidget {
     this.guestRemaining,
     this.onLogin,
     this.onSignOut,
+    this.onOpenAccount,
+    this.onOpenLocation,
+    this.nickname,
   });
 
   final List<ChatMessage> messages;
@@ -54,6 +57,19 @@ class ChatPage extends StatefulWidget {
 
   /// 成员点「登出」；访客为 null。
   final Future<void> Function()? onSignOut;
+
+  /// 「账号与模型」入口（U67 / U69 / U70）。为 null 表示当前层级没有
+  /// `profile_edit` 能力 —— 同样不显示，不画一个点了没反应的图标。
+  final Future<void> Function()? onOpenAccount;
+
+  /// 「附近与推荐」入口（U71）。访客没有 `location_share`，为 null。
+  final Future<void> Function()? onOpenLocation;
+
+  /// 已登录用户的昵称（U69）。访客为 null。
+  ///
+  /// 昵称要么自己起、要么随机刷，用户改完得**在界面上看得到**，
+  /// 否则「改名成功」只是一个对话框里的字。
+  final String? nickname;
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -150,10 +166,26 @@ class _ChatPageState extends State<ChatPage> {
   @override
   Widget build(BuildContext context) {
     final guest = widget.tier == AccessTier.guest;
+    final nickname = widget.nickname;
+    final title = guest
+        ? 'AI 管家（访客）'
+        : (nickname == null || nickname.isEmpty ? 'AI 管家' : 'AI 管家 · $nickname');
     return Scaffold(
       appBar: AppBar(
-        title: Text(guest ? 'AI 管家（访客）' : 'AI 管家'),
+        title: Text(title),
         actions: [
+          if (widget.onOpenLocation != null)
+            IconButton(
+              onPressed: widget.onOpenLocation,
+              icon: const Icon(Icons.explore_outlined),
+              tooltip: '附近与推荐',
+            ),
+          if (widget.onOpenAccount != null)
+            IconButton(
+              onPressed: widget.onOpenAccount,
+              icon: const Icon(Icons.manage_accounts_outlined),
+              tooltip: '账号与模型',
+            ),
           if (widget.onLogin != null)
             TextButton.icon(
               onPressed: widget.onLogin,

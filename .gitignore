@@ -15,6 +15,7 @@ htmlcov/
 .idea/
 *.log
 .test-work/
+.test-tmp/
 .smoke-work/
 .pytest_tmp/
 .env

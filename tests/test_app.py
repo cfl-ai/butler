@@ -50,7 +50,14 @@ def test_health_is_public_and_business_paths_are_not(settings, redis_client):
     #                         拿到之后仍然过同一套中间件，能力表里只有 text_query
     # 这条断言的作用是**防止**有人图省事把业务接口加进白名单：一旦加了，下面
     # 的 401 断言会立刻红。
-    assert PUBLIC_PATHS == {"/health", "/api/session/login", "/api/session/guest"}
+    #   /api/session/{register,forgot,reset} —— U67/U68：这三件事必然发生在
+    #       登录之前，不放行就永远拿不到会话；放行的只是动作本身，
+    #       重置令牌仍由服务端签发且一次性。
+    assert PUBLIC_PATHS == {
+        "/health", "/api/session/login", "/api/session/guest",
+        "/api/session/register", "/api/session/forgot", "/api/session/reset",
+        "/api/accounts/nickname/suggest",
+    }
     # 未登录拒绝一切业务接口（计划书七、11）
     assert business.status_code == 401
     assert business.json()["code"] == SESSION_EXPIRED_CODE

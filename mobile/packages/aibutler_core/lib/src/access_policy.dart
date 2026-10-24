@@ -38,7 +38,9 @@ enum Capability {
   privateRetrieval('private_retrieval'),
   memoryWrite('memory_write'),
   deviceReport('device_report'),
-  sensitiveAction('sensitive_action');
+  sensitiveAction('sensitive_action'),
+  profileEdit('profile_edit'),
+  locationShare('location_share');
 
   const Capability(this.wire);
 
@@ -65,6 +67,8 @@ const Map<Capability, String> kUpgradeHint = {
   Capability.memoryWrite: '写入长期记忆需要登录',
   Capability.deviceReport: '设备上报需要登录',
   Capability.sensitiveAction: '该操作需要登录并通过声纹校验',
+  Capability.profileEdit: '改昵称、选模型需要登录后使用',
+  Capability.locationShare: '定位、推荐与导航需要登录后使用',
 };
 
 /// 某层级的能力集合。**与后端矩阵保持一致**，由 `test/access_policy_test.dart` 钉死。
@@ -81,6 +85,8 @@ const Map<AccessTier, Set<Capability>> kTierCapabilities = {
     Capability.memoryWrite,
     Capability.deviceReport,
     Capability.sensitiveAction,
+    Capability.profileEdit,
+    Capability.locationShare,
   },
 };
 
@@ -166,6 +172,8 @@ class AccessProfile {
   bool get canWake => allows(Capability.wakeWord);
   bool get canImage => allows(Capability.visionInput);
   bool get canSpeakerprint => allows(Capability.speakerprint);
+  bool get canEditProfile => allows(Capability.profileEdit);
+  bool get canLocate => allows(Capability.locationShare);
 
   /// 访客额度是否已用完（用完时提示登录，而不是让用户反复失败）。
   bool get quotaExhausted => textQueryRemaining != null && textQueryRemaining! <= 0;

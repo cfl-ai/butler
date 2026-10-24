@@ -32,6 +32,7 @@ from dataclasses import dataclass, field
 from typing import AsyncIterator, Callable, Protocol, Sequence
 
 from ai_butler.core import access
+from ai_butler.core.model_access import ModelAccess, ModelAccessError
 from ai_butler.infra.llm_gateway import ChatMessage, GatewayError, LLMGateway
 from ai_butler.material_center.verification import (
     EvidenceHit,
@@ -103,11 +104,14 @@ class ChatOrchestrator:
                  search: SearchFn | None = None,
                  top_k: int = 5,
                  model: str | None = None,
+                 model_access: "ModelAccess | None" = None,
                  verify_answer: bool = True) -> None:
         self.gateway = gateway
         self.search = search
         self.top_k = top_k
         self.model = model
+        #: U70：有它时**按用户**解析模型与凭据；没有时才退回静态 `model`。
+        self.model_access = model_access
         self.verify_answer = verify_answer
 
     # ---------------- 检索 ----------------
@@ -135,6 +139,21 @@ class ChatOrchestrator:
 
     def _can_speak(self, tier: access.AccessTier) -> bool:
         return access.authorize(tier, access.Capability.VOICE_OUTPUT).allowed
+
+    def _model_kwargs(self, user_id: str) -> dict[str, str]:
+        """按用户解析出本次调用要用的模型与凭据（U70）。
+
+        额度在这里扣：**扣不动就不发请求**，绝不"先用后报"。
+        """
+        if self.model_access is None:
+            return {"model": self.model} if self.model else {}
+        resolved = self.model_access.resolve(user_id=user_id)
+        kwargs = {"model": resolved.model, "provider": resolved.provider}
+        if resolved.api_key:
+            kwargs["api_key"] = resolved.api_key
+        if resolved.base_url:
+            kwargs["base_url"] = resolved.base_url
+        return kwargs
 
     async def stream(self, *, user_id: str, query: str,
                      tier: access.AccessTier | None = None,
@@ -190,10 +209,19 @@ class ChatOrchestrator:
         messages = [ChatMessage("system", _SYSTEM),
                     ChatMessage("user", self._render_prompt(query, hits))]
 
+        try:
+            model_kwargs = self._model_kwargs(user_id)
+        except ModelAccessError as exc:
+            # 额度用完 / 凭据缺失 / 归属不符，都在这里变成**可读的错误事件**。
+            # 不退化成"随便找个模型回答"：那等于替用户改了选择（U70）。
+            yield ChatEvent("error", text=exc.message,
+                            data={"code": exc.code})
+            return
+
         collected: list[str] = []
         try:
             async for piece in self.gateway.stream(user_id=user_id, messages=messages,
-                                                   model=self.model, max_tokens=512):
+                                                   max_tokens=512, **model_kwargs):
                 if not piece:
                     continue
                 collected.append(piece)

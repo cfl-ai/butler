@@ -22,8 +22,10 @@ class _FakeGateway:
         self.pieces = pieces
         self.calls: list[dict] = []
 
-    async def stream(self, *, user_id, messages, model=None, max_tokens=None):
-        self.calls.append({"user_id": user_id, "model": model})
+    async def stream(self, *, user_id, messages, model=None, max_tokens=None,
+                     provider=None, api_key=None, base_url=None):
+        self.calls.append({"user_id": user_id, "model": model,
+                           "provider": provider, "api_key": api_key})
         for piece in self.pieces:
             yield piece
 

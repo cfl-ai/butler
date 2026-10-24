@@ -173,6 +173,31 @@ class Settings(BaseSettings):
     chat_top_k: int = 5
     guest_public_scope: str = "public-workspace"  # 访客检索用的公共作用域标识
 
+    # ---- 账号体系（U67 / U68 / U69）----
+    # 账号文件放哪：空则跟 storage_root 走，独立配置是为了让隐私数据能单独挂卷
+    account_store_root: str = ""
+    # 重置令牌投递通道：dev（开发，响应回显）/ console（打日志）/ smtp（真投递）
+    # **production 环境只允许 smtp**，其余在启动时直接拒绝（U68 fail-closed）
+    reset_channel: str = "dev"
+
+    # ---- 重置令牌的邮件通道（U72）----
+    # 只对**邮箱注册**的账号可用；手机号账号没有收件地址，smtp 通道会如实记一条 skip。
+    # 缺 host/port/sender 时启动即报 channel_not_configured，不会带着半个配置上线。
+    smtp_host: str = ""
+    smtp_port: int = 465                          # 465=SSL，587=STARTTLS；用 SMTP_SSL 开关区分
+    smtp_sender: str = ""                         # 发件地址（多为与 SMTP_USER 同一个邮箱）
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_ssl: bool = True
+
+    # ---- 模型接入（U70）----
+    model_free_daily_calls: int = 50              # 免费档每账号每日上限
+    model_trial_daily_calls: int = 100            # 限免档每账号每日上限
+
+    # ---- 定位（U71）----
+    geo_grid_decimals: int = 3                    # 坐标粗化位数，3 ≈ 110m
+    geo_recommend_limit: int = 5                  # 推荐条数上限
+
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-chat"
     deepseek_base_url: str = "https://api.deepseek.com"

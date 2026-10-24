@@ -420,3 +420,170 @@ class GuestSession {
 
   bool isExpired(DateTime now) => !now.isBefore(expiresAt);
 }
+
+/// 账号资料（脱敏后的对外视图）。
+///
+/// **这里永远拿不到完整手机号/邮箱**：服务端只回 `identMasked`（如 `138****0007`）。
+/// 端侧也不做"本地补全" —— 没有的东西不要假装有。
+class AccountProfile {
+  const AccountProfile({
+    required this.userId,
+    required this.identKind,
+    required this.identMasked,
+    required this.nickname,
+    this.prefs = const [],
+  });
+
+  factory AccountProfile.fromJson(Map<String, dynamic> json) => AccountProfile(
+        userId: (json['user_id'] as String?) ?? '',
+        identKind: (json['ident_kind'] as String?) ?? '',
+        identMasked: (json['ident_masked'] as String?) ?? '',
+        nickname: (json['nickname'] as String?) ?? '',
+        prefs: ((json['prefs'] as List?) ?? const [])
+            .map((e) => e.toString())
+            .toList(growable: false),
+      );
+
+  final String userId;
+
+  /// `phone` / `email`
+  final String identKind;
+
+  /// 脱敏标识，界面直接展示这一串
+  final String identMasked;
+  final String nickname;
+  final List<String> prefs;
+
+  bool get isPhone => identKind == 'phone';
+}
+
+/// 账号相关错误。**把服务端的 code 带出来**，UI 才能给出不同的下一步。
+class AccountException implements Exception {
+  const AccountException(this.message, {this.code = 'unknown'});
+
+  final String message;
+  final String code;
+
+  bool get identifierTaken => code == 'identifier_taken';
+  bool get invalidCredentials => code == 'invalid_credentials';
+  bool get locked => code == 'account_locked';
+  bool get weakPassword => code == 'weak_password';
+  bool get tooManyRequests => code == 'too_many_requests';
+  bool get tokenInvalid => code == 'invalid_token' || code == 'expired_token';
+
+  @override
+  String toString() => 'AccountException($code): $message';
+}
+
+/// 一条推荐结果。`reason` 必有值 —— 排序必须说得出理由（U71 ④）。
+class RecommendItem {
+  const RecommendItem({
+    required this.placeId,
+    required this.name,
+    required this.reason,
+    this.tags = const [],
+    this.lat,
+    this.lon,
+    this.description = '',
+    this.distanceMeters,
+  });
+
+  factory RecommendItem.fromJson(Map<String, dynamic> json) => RecommendItem(
+        placeId: (json['place_id'] as String?) ?? '',
+        name: (json['name'] as String?) ?? '',
+        reason: (json['reason'] as String?) ?? '',
+        tags: ((json['tags'] as List?) ?? const [])
+            .map((e) => e.toString())
+            .toList(growable: false),
+        lat: (json['lat'] as num?)?.toDouble(),
+        lon: (json['lon'] as num?)?.toDouble(),
+        description: (json['description'] as String?) ?? '',
+        distanceMeters: (json['distance_m'] as num?)?.toDouble(),
+      );
+
+  final String placeId;
+  final String name;
+  final String reason;
+  final List<String> tags;
+  final double? lat;
+  final double? lon;
+  final String description;
+  final double? distanceMeters;
+
+  bool get hasCoordinate => lat != null && lon != null;
+}
+
+/// 推荐结果整体。**`mapAvailable` 为 false 就不要画地图**（U71 ②）。
+class RecommendResult {
+  const RecommendResult({
+    required this.located,
+    required this.mapAvailable,
+    required this.mapNote,
+    required this.dataSource,
+    this.items = const [],
+    this.locatedAtGrid,
+    this.prefsUsed = const [],
+  });
+
+  factory RecommendResult.fromJson(Map<String, dynamic> json) {
+    final grid = (json['located_at_grid'] as List?) ?? const [];
+    return RecommendResult(
+      located: json['located'] == true,
+      mapAvailable: json['map_available'] == true,
+      mapNote: (json['map_note'] as String?) ?? '',
+      dataSource: (json['data_source'] as String?) ?? '',
+      locatedAtGrid: grid.length == 2
+          ? (
+              latitude: (grid[0] as num).toDouble(),
+              longitude: (grid[1] as num).toDouble(),
+            )
+          : null,
+      prefsUsed: ((json['prefs_used'] as List?) ?? const [])
+          .map((e) => e.toString())
+          .toList(growable: false),
+      items: ((json['items'] as List?) ?? const [])
+          .whereType<Map>()
+          .map((e) => RecommendItem.fromJson(e.cast<String, dynamic>()))
+          .toList(growable: false),
+    );
+  }
+
+  final bool located;
+  final bool mapAvailable;
+  final String mapNote;
+
+  /// `seed-demo` 表示示例数据，`file` 表示部署方提供的真实数据
+  final String dataSource;
+  final ({double latitude, double longitude})? locatedAtGrid;
+  final List<String> prefsUsed;
+  final List<RecommendItem> items;
+
+  bool get isDemoData => dataSource == 'seed-demo';
+}
+
+/// 一条导航跳转链接（U71 ③）。
+class NavLink {
+  const NavLink({
+    required this.app,
+    required this.label,
+    required this.url,
+    required this.coordinateSystem,
+    this.note = '',
+  });
+
+  factory NavLink.fromJson(Map<String, dynamic> json) => NavLink(
+        app: (json['app'] as String?) ?? '',
+        label: (json['label'] as String?) ?? '',
+        url: (json['url'] as String?) ?? '',
+        coordinateSystem: (json['coordinate_system'] as String?) ?? '',
+        note: (json['note'] as String?) ?? '',
+      );
+
+  final String app;
+  final String label;
+  final String url;
+
+  /// 该链接期望的坐标系（`gcj02` / `bd09`）。服务端已转换好，端侧只负责打开。
+  final String coordinateSystem;
+  final String note;
+}

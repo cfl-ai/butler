@@ -82,6 +82,8 @@ class Capability(str, Enum):
     MEMORY_WRITE = "memory_write"            # 长期记忆写入
     DEVICE_REPORT = "device_report"          # 设备状态上报（三、P7 步骤7）
     SENSITIVE_ACTION = "sensitive_action"    # 支付 / 下单等副作用（P8）
+    PROFILE_EDIT = "profile_edit"            # 改昵称 / 偏好 / 选择模型（U67~U70）
+    LOCATION_SHARE = "location_share"        # 定位上报 / 推荐 / 导航（U71）
 
 
 #: 各层级允许的能力集合。**未登记的能力 = 谁都不许**（fail-closed）。

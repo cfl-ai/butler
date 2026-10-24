@@ -1262,6 +1262,78 @@ CI 只写在配置里、平时不跑，**新加的验证入口不会自动进去
 
 ---
 
+## E-74 计量只加在「显式选择」的路径上，默认路径漏了
+
+- 现象：`test_chat_consumes_the_users_model_quota` 红 —— 发一次对话，
+  免费额度没减。
+
+- 真因：`ModelAccess.resolve()` 有两条路。**已绑定**平台档那条在返回前
+  `consume()`；**未绑定**那条走 `_default_for()`，只挑模型、从不计量。
+  而新用户默认就是未绑定，所以「免费 50 次/天」对**最该被限流的账号群体**
+  是一句空话，免费额度同时还是防滥用与限免到期的唯一闸门。
+
+- 为什么会漏：写 `_default_for` 时脑子里的事是「挑哪个模型」，
+  「扣不扣额度」属于另一条路径的语境，就没被带过来。
+
+- 修法与教训：
+  1. 默认路径也 `consume()`，并用 `test_unbound_default_also_consumes_quota`
+     钉住 —— 只测已绑定路径永远发现不了；
+  2. 顺带把顺序改成**先确认凭据、再扣额度**：平台没配 `DEEPSEEK_API_KEY`
+     是运营侧问题，不该让用户当天少一次。两处口径必须一致，
+     否则「同一件事两个答案」比任何一边单独错都难解释。
+  3. **同一语义的多条分支，要逐条问"这条也做了吗"**，
+     而不是"主路径做了就算做了"。
+
+---
+
+## E-75 新包目录忘了登记中文名：守护早就红了，但没人跑全量
+
+- 现象：`test_module_naming.py::test_every_package_has_a_chinese_title`
+  报 `KeyError: 未登记的包目录 'retrieval'`。
+
+- 真因：`ai_butler/retrieval/` 是上一轮建的包，`core/naming.py` 的
+  `MODULE_TITLES` 没跟着登记。守护测试本身没问题，是**没人跑它**。
+
+- 为什么没跑到：日常只跑「本轮碰过的文件」（`pytest tests/test_accounts*.py`），
+  而命名守护不在其中。这类**全局登记表**的红，永远落在没被跑到的那个文件里。
+
+- 修法：`MODULE_TITLES["retrieval"] = "统一检索 API"`（三、P2 原句）。
+  **不塞 `PHASE_PACKAGES`** —— 那个包的语义是「P2 的统一检索 API」，
+  塞进阶段表会让这一层名字消失，且与 `material_center` 撞同一个 display。
+
+- 教训：改动涉及**注册表 / 台账 / 命名映射**这类"新增一项就得改一处"的结构时，
+  必须跑一次全量测试，而不是相关文件。
+
+---
+
+## E-76 依赖声明的两个方向：漏声明会炸 CI，多声明会误报已声明的
+
+- 现象（跑全量才露头）：`tests/test_dependency_declaration.py::test_every_third_party_import_is_declared`
+  同时报两条 ——
+  `PIL (发行包 pil) 被 ai_butler\infra\vision.py 导入`、
+  `sherpa_onnx (发行包 sherpa-onnx) 被 ai_butler\infra\speech.py 导入`。
+
+- 真因分两种，性质完全相反：
+  1. **`sherpa_onnx` 是真漏**：语音三件套（U63~U66）落地时往 `infra/speech.py` 加了原生推理后端，
+     `requirements.txt` / `requirements-ml.txt` 都没跟着声明。CI 一旦装到这一步就 ImportError。
+  2. **`PIL` 是守护自己的假阳性**：`Pillow>=10.0` 早就声明了，但守护把导入名小写成 `pil`，
+     永远匹配不上 PyPI 名 `pillow`。也就是说**被报未声明的那个包其实声明得好好的**。
+
+- 为什么两种都得修，且不能只修一种：只补 `requirements` 会把假阳性留在表里，
+  下一次真漏声明就淹在假阳性里；只补别名则 CI 明天就炸。
+  **守护报红时先分清「代码漏了」还是「守护错了」**，两类混在一起修，等于把守护的可信度一起修没。
+
+- 修法：
+  - `requirements-ml.txt` 增 `sherpa-onnx>=1.10`（带注释说明为何与 torch 同列：轮子带原生库、
+    CI 契约测试用替身，`scripts/verify_voice_engine.py` 与真机联调才需要）。
+  - `DISTRIBUTION_ALIASES` 增 `"PIL": "pillow"`，注释写明 `"PIL".lower() == "pil"` 这个死结。
+
+- 教训：`--basetemp` 传**相对路径**时，pytest 会先删掉它再 `mkdir(parents=False)`，
+  父目录不存在就直接 `FileNotFoundError` 打满整个文件（本次一次冒出 47 个 ERROR，
+  看起来像"测试全挂了"，其实是参数没给父目录）。先 `mkdir -p` 父目录再跑，或干脆不给 `--basetemp`。
+
+---
+
 ## 二、环境基线（复现上述解决方案所必需）
 
 - 操作系统：Windows AMD64，16 逻辑核，内存 11 GB，C 盘可用 36.5 GB / D 盘可用 106.7 GB

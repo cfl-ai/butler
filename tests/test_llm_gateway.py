@@ -25,12 +25,14 @@ class StubProvider(Provider):
         self._text = text
         self._fail = fail
 
-    async def chat(self, messages, *, model=None, timeout=0, max_tokens=None):
+    async def chat(self, messages, *, model=None, timeout=0, max_tokens=None,
+                   api_key=None, base_url=None):
         if self._fail:
             raise RuntimeError(f"{self.name} down")
         return ChatResult(text=self._text, provider=self.name, model="stub", latency_ms=1)
 
-    async def stream(self, messages, *, model=None, timeout=0, max_tokens=None):
+    async def stream(self, messages, *, model=None, timeout=0, max_tokens=None,
+                     api_key=None, base_url=None):
         if self._fail:
             raise RuntimeError(f"{self.name} down")
         for ch in ["流", "式", "转发"]:

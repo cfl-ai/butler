@@ -95,6 +95,10 @@ MODULE_TITLES: dict[str, str] = {
     "mobile": "语音交互移动端系统",
     #: 三、P0-1「Agent‑Wiki v2 运行时存储层」+ 配套规范《Agent‑Wiki 知识库开发规范》
     "agent_wiki": "Agent-Wiki 知识库",
+    #: 三、P2「统一检索 API」：混合检索、检索路由与对话编排都在这个包里。
+    #: 与 material_center（P2 的素材库本体）分开登记，是因为它被 P2/P3/P9
+    #: 共用，硬塞进 PHASE_PACKAGES 会让「统一检索 API」这一层名字消失。
+    "retrieval": "统一检索 API",
 }
 
 #: P4 子 Agent 的中文名。计划书原文（三、P4「包含子 Agent」）：

@@ -80,5 +80,23 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+
+        <!-- 导航跳转（台账 U71 ③）：targetSdk 36 下**必须**声明，否则被包可见性挡住。
+             现象很误导：链接本身是对的，`launchUrl` 却返回 false，界面上只会显示
+             「可能未安装」，用户会以为手机里没装高德 —— 其实是清单没写。
+             高德与腾讯走 https（适配器是 uri.amap.com / apis.map.qq.com），
+             百度走私有 scheme `baidumap`。 -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="baidumap"/>
+        </intent>
+        <!-- 只声明**真的会发出去**的两个：服务端生成的就是 https（高德/腾讯/网页兜底）
+             与 baidumap（百度）。高德/腾讯的私有 scheme（amapuri / qqmap）用不上 ——
+             它们的 https 链接本身就是通用链接，装了 App 会自己唤起；
+             多声明一条没人发的 scheme，只会让人以为代码走过那条路。 -->
     </queries>
 </manifest>
