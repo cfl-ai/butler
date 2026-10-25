@@ -219,6 +219,13 @@ class Settings(BaseSettings):
     geo_grid_decimals: int = 3                    # 坐标粗化位数，3 ≈ 110m
     geo_recommend_limit: int = 5                  # 推荐条数上限
 
+    # ---- 实时天气（U96/U97）----
+    weather_ttl_seconds: float = 600.0            # 缓存 TTL；超期即重新采集
+    #: 请求 Open-Meteo 用时区 UTC——`current.time` 原样成为 fetched_at，
+    #: 带时区偏移的本地时间会让「距现在多久」的算术差出整个偏移量
+    weather_timezone: str = "UTC"
+    weather_timeout: float = 10.0                 # 采集超时（秒）
+
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-chat"
     deepseek_base_url: str = "https://api.deepseek.com"

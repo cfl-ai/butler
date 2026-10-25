@@ -111,6 +111,9 @@ class FileCacheStore implements CacheStorePort {
 class GeolocatorLocation implements LocationPort {
   const GeolocatorLocation();
 
+  /// 权限**按需申请**：只在真的要用定位时才问（进定位页 / 点重新定位），
+  /// 不在启动或安装时预申请——那样用户在还没用到功能时就被问，一旦拒绝
+  /// 就再也弹不出来。
   @override
   Future<({double latitude, double longitude})?> current() async {
     if (!await Geolocator.isLocationServiceEnabled()) return null;
@@ -127,6 +130,28 @@ class GeolocatorLocation implements LocationPort {
     );
     return (latitude: position.latitude, longitude: position.longitude);
   }
+
+  @override
+  Future<LocationAccess> probe() async {
+    if (!await Geolocator.isLocationServiceEnabled()) {
+      return LocationAccess.serviceOff;
+    }
+    final permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.always ||
+        permission == LocationPermission.whileInUse) {
+      return LocationAccess.granted;
+    }
+    if (permission == LocationPermission.deniedForever) {
+      return LocationAccess.deniedForever;
+    }
+    if (permission == LocationPermission.denied) {
+      return LocationAccess.denied;
+    }
+    return LocationAccess.unavailable;
+  }
+
+  @override
+  Future<bool> openSystemSettings() => Geolocator.openAppSettings();
 }
 
 class BasicDeviceInfo implements DeviceInfoPort {

@@ -20,6 +20,8 @@ class LocationPage extends StatefulWidget {
     required this.onLocate,
     required this.onRecommend,
     required this.onNavigation,
+    this.onProbe,
+    this.onOpenSettings,
     this.initialPrefs = const [],
   });
 
@@ -28,6 +30,12 @@ class LocationPage extends StatefulWidget {
   final Future<RecommendResult> Function(
       double? lat, double? lon, List<String> prefs) onRecommend;
   final Future<List<NavLink>> Function(RecommendItem item) onNavigation;
+
+  /// 只查询权限状态，不弹授权框。用于决定给哪种引导（U107）。
+  final Future<LocationAccess> Function()? onProbe;
+
+  /// 打开系统设置页——`deniedForever` 时这是唯一出路。
+  final Future<bool> Function()? onOpenSettings;
 
   final List<String> initialPrefs;
 
@@ -41,6 +49,7 @@ class _LocationPageState extends State<LocationPage> {
   late List<String> _prefs = [...widget.initialPrefs];
   bool _busy = false;
   String? _error;
+  LocationAccess _access = LocationAccess.granted;
 
   static const _prefOptions = <String>[
     '安静', '咖啡', '书店', '看展', '散步', '户外', '吃饭', '夜宵', '学习', '宠物',
@@ -69,12 +78,29 @@ class _LocationPageState extends State<LocationPage> {
           withLocation ? position?.longitude : null,
           _prefs);
       if (!mounted) return;
+      // 取不到坐标时**查一下是哪种拒绝**：denied 还能再弹一次系统框，
+      // deniedForever 只能引导去设置。两种都显示同一句「没取到定位」
+      // 的话，用户点了「重新定位」毫无反应，看起来就像 App 坏了（U107）。
+      var access = LocationAccess.granted;
+      if (withLocation && position == null) {
+        access = await (widget.onProbe?.call() ??
+            Future.value(LocationAccess.unavailable));
+      }
+      if (!mounted) return;
       setState(() {
         _position = position;
         _result = result;
+        _access = access;
         if (withLocation && position == null) {
-          _error = '没有取到定位（可能未授权或系统定位已关闭）。'
-              '下面的推荐已降级为「只按喜好」。';
+          _error = switch (access) {
+            LocationAccess.serviceOff =>
+              '系统定位服务未开启，请在系统设置里打开定位。',
+            LocationAccess.deniedForever =>
+              '定位权限已被永久拒绝（勾选过「不再询问」），'
+                  '再次申请不会再弹框，需要到系统设置里手动开启。',
+            LocationAccess.denied => '还没获得定位权限，可再点一次「重新定位」申请。',
+            _ => '没有取到定位（可能未授权或系统定位已关闭）。',
+          };
         }
       });
     } catch (error) {
@@ -219,6 +245,47 @@ class _LocationPageState extends State<LocationPage> {
                 ),
               ),
             ),
+            if (_position == null &&
+                (_access == LocationAccess.deniedForever ||
+                    _access == LocationAccess.serviceOff)) ...[
+              const SizedBox(height: 8),
+              Card(
+                color: theme.colorScheme.errorContainer,
+                child: ListTile(
+                  leading: const Icon(Icons.settings_outlined),
+                  title: const Text('需要到系统设置里开启定位'),
+                  subtitle: const Text('App 内再次申请不会再弹框，'
+                      '这一步只能由你在系统设置里完成。'),
+                  trailing: FilledButton.tonal(
+                    onPressed: () async {
+                      final opened = await widget.onOpenSettings?.call() ?? false;
+                      if (!mounted) return;
+                      if (!opened) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('没能打开系统设置，请手动前往设置开启定位')),
+                        );
+                      }
+                    },
+                    child: const Text('去设置'),
+                  ),
+                ),
+              ),
+            ],
+            if (_position == null && _access == LocationAccess.denied) ...[
+              const SizedBox(height: 8),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.location_on_outlined),
+                  title: const Text('尚未获得定位权限'),
+                  subtitle: const Text('点「重新定位」会弹出系统授权框。'),
+                  trailing: FilledButton.tonal(
+                    onPressed: _busy ? null : () => _refresh(withLocation: true),
+                    child: const Text('申请授权'),
+                  ),
+                ),
+              ),
+            ],
             if (result?.isDemoData == true) ...[
               const SizedBox(height: 8),
               Card(

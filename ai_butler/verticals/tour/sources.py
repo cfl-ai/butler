@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol, Sequence
 
@@ -83,6 +84,30 @@ def collect_all(collector: CollectorPort, *, subject: str,
     for kind in kinds:
         try:
             fact = collector.fetch(kind, subject=subject)
+        except Exception as error:                      # 采集端异常 = 采集失败
+            result.failures.append(f"{kind}: {error}")
+            continue
+        if fact is None:
+            result.failures.append(f"{kind}: 数据源无返回")
+            continue
+        result.facts.append(fact)
+    return result
+
+
+async def collect_all_async(collector: CollectorPort, *, subject: str,
+                            kinds: Sequence[str] = SOURCE_KINDS) -> CollectResult:
+    """`collect_all` 的异步姊妹（U96）。
+
+    真实网络端口（httpx）天生异步，而测试替身是同步的——**两边都要能用**，
+    所以这里不挑食：`fetch` 返回 awaitable 就 await，不是就直接用。
+    失败纪律与 `collect_all` 逐字相同：记 failures，不静默跳过。
+    """
+    result = CollectResult()
+    for kind in kinds:
+        try:
+            fact = collector.fetch(kind, subject=subject)
+            if inspect.isawaitable(fact):
+                fact = await fact
         except Exception as error:                      # 采集端异常 = 采集失败
             result.failures.append(f"{kind}: {error}")
             continue

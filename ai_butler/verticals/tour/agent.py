@@ -27,18 +27,26 @@ from ai_butler.verticals.base import (
     parse_params,
 )
 from ai_butler.verticals.tour.models import (
+    DEFAULT_DEPART_MINUTE,
+    MINUTES_PER_DAY,
     TRIP_PARAM_SPECS,
     TripPlan,
     TripRequest,
     Stop,
+    clock_text,
 )
 from ai_butler.verticals.tour.orders import build_cost_items, build_payment_list
+from ai_butler.verticals.tour.live_routing import fetch_legs
 from ai_butler.verticals.tour.replan import ReplanSignals, evaluate_preconditions
-from ai_butler.verticals.tour.routing import ISSUE_KINDS, plan_route
+from ai_butler.verticals.tour.routing import (
+    ISSUE_KINDS,
+    build_timeline,
+    order_stops,
+)
 from ai_butler.verticals.tour.sources import (
     SOURCE_KINDS,
     CollectedFact,
-    collect_all,
+    collect_all_async,
     to_claim_fact,
     to_source_page,
 )
@@ -89,6 +97,8 @@ class TourAgent(VerticalAgent):
     collector: Any = None
     #: 路线优化器（U38；不注入则用内置贪心最近邻）
     optimizer: Any = None
+    #: 真实路由端口（U94；不注入则整条路线走 haversine 估计并如实标注）
+    routing: Any = None
 
     def _stops(self, state: Mapping[str, Any]) -> list[Stop]:
         out: list[Stop] = []
@@ -142,13 +152,15 @@ class TourAgent(VerticalAgent):
             budget=(float(params.values["budget"]) if params.values.get("budget") else None),
             transport=str(params.values.get("transport") or "transit"),
             preferences=tuple(params.values.get("preferences") or ()),
-            taboos=tuple(params.values.get("taboos") or ()))
+            taboos=tuple(params.values.get("taboos") or ()),
+            depart_minute=_as_minutes(params.values.get("depart_minute")))
 
         # ---- 步骤2：调用统一采集底座（失败即重试，**禁止回退**）----
         facts: list[CollectedFact] = []
         if self.collector is not None:
-            collected = collect_all(self.collector, subject=request.destination,
-                                    kinds=tuple(state.get("collect_kinds") or SOURCE_KINDS))
+            collected = await collect_all_async(
+                self.collector, subject=request.destination,
+                kinds=tuple(state.get("collect_kinds") or SOURCE_KINDS))
             if not collected.ok:
                 decision = decide_fallback(failure=FAILURE_COLLECT_FAILED)
                 return {"tour_result": {
@@ -167,8 +179,20 @@ class TourAgent(VerticalAgent):
                 "fallback": decision.as_dict(),
                 "note": "方案生成失败属本职范围内失败，降级提示而非回退（表 12）"}}
 
-        ordered, issues = plan_route(stops, optimizer=self.optimizer)
-        plan = TripPlan(request=request, stops=ordered, issues=issues)
+        # 顺序与时间轴拆开（U95）：中间插入「按最终顺序逐段取真实路线」。
+        # 真实路线只对相邻点有意义（n-1 次调用），对全矩阵是浪费免费 API 配额。
+        ordered = order_stops(stops, optimizer=self.optimizer)
+        leg_table = await fetch_legs(ordered, transport=request.transport,
+                                     routing=self.routing)
+        start_minute = (request.depart_minute if request.depart_minute is not None
+                        else DEFAULT_DEPART_MINUTE)
+        ordered, issues = build_timeline(ordered, legs=leg_table,
+                                         start_minute=start_minute)
+        plan = TripPlan(request=request, stops=ordered, issues=issues,
+                        route_basis=leg_table.basis(),
+                        degraded_from=leg_table.degraded_from,
+                        routing_failures=leg_table.failures,
+                        start_minute=start_minute)
 
         # ---- 步骤4：动态监测与重规划条件判定（U40）----
         signals = ReplanSignals(**dict(state.get("replan_signals") or {}))
@@ -193,7 +217,29 @@ class TourAgent(VerticalAgent):
         return {"tour_result": {
             "user_id": uid, "task_kind": task_kind, "handled": True,
             "plan": plan.as_summary(),
+            # 路线依据单独暴露（U94/U95）：「基于真实」必须可查验——
+            # route_basis=osrm:car 是真实路网，haversine 是几何估计，
+            # degraded_from=transit 表示公交降级成了驾车。
+            "route": {
+                "basis": plan.route_basis,
+                "estimate_only": plan.estimate_only,
+                "degraded_from": plan.degraded_from,
+                "failures": list(plan.routing_failures),
+                "legs": [{"from": previous.stop_id, "to": stop.stop_id,
+                          "minutes": stop.travel_minutes,
+                          "estimated": stop.travel_estimated}
+                         for previous, stop in zip(ordered, ordered[1:])],
+            },
             "issues": issues,
+            # 时间（U106）：出发/结束钟点 + 逐站钟点。depart_assumed=True
+            # 表示用户没给出发时刻、这个钟点是我们假定的——不标注就是
+            # 把「假定」冒充成「用户指定的」。
+            "time": {
+                "depart": clock_text(plan.start_minute),
+                "end": clock_text(plan.end_minute),
+                "depart_assumed": plan.depart_assumed,
+                "timeline": plan.timeline(),
+            },
             "low_confidence": [s.name for s in ordered if s.low_confidence],
             "replan": replan.as_dict(),
             "payment_list": payment_list,
@@ -204,3 +250,30 @@ class TourAgent(VerticalAgent):
                 "note": "行程方案写入**本人私有 Vault** 的 synthesis 综合摘要页面（表 11）"},
             "boundary": {"in_scope": list(IN_SCOPE), "out_of_scope": list(OUT_OF_SCOPE)},
         }}
+
+
+def _as_minutes(value: Any) -> int | None:
+    """把出发时刻参数归一成「当天 0 点起的分钟数」。
+
+    接受三种形态：整数分钟、``"09:30"``、以及空值（= 未指定）。
+    **解析不了的形态直接报错**，不悄悄当成未指定——把用户给的
+    "上午九点" 静默降级成「假定 09:00」会让行程整体平移而无人察觉。
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"出发时刻不是布尔值：{value!r}")
+    if isinstance(value, (int, float)):
+        minute = int(value)
+    else:
+        text = str(value).strip()
+        parts = text.split(":")
+        if len(parts) != 2:
+            raise ValueError(f"出发时刻格式应为 HH:MM 或分钟数：{value!r}")
+        try:
+            minute = int(parts[0]) * 60 + int(parts[1])
+        except ValueError as exc:
+            raise ValueError(f"出发时刻无法解析：{value!r}") from exc
+    if not 0 <= minute < MINUTES_PER_DAY:
+        raise ValueError(f"出发时刻超出一天范围：{value!r}")
+    return minute

@@ -67,6 +67,7 @@ _D8 = "2026-10-25"
 #: U92 生产装配点注入真 coder、U93 授权簿与 PatchGuard 两层独立
 #: （同日第五批：端到端接通——「继续入口往下推，以本地这台机器作为有权改源码」）
 _D9 = "2026-10-25"
+_D10 = "2026-10-26"
 
 DECISIONS: tuple[Decision, ...] = (
     Decision(
@@ -2181,6 +2182,407 @@ DECISIONS: tuple[Decision, ...] = (
             "那是评测中台与缺陷类别的事（U76）。"),
         references=(),
         license_note="文档推导（计划书 P10「质检风险校验」的分层），无外部代码复用",
+        code_reuse="n/a",
+    ),
+    # ---- U94：真实路线数据源——拒绝一个会静默冒充的服务器 ----
+    Decision(
+        key="U94",
+        phase="V1",
+        title="真实路线数据源：routing.openstreetmap.de 三 profile（实证拒绝 demo 服务器）",
+        plan_quote="「用户行程规划：根据时间、预算、出发地目的地、**出行方式**、偏好生成"
+                   "动态旅游路线」（五、第二阶段表 11）——**未指定路线数据来源**；"
+                   "U38 只裁了算法，未裁数据",
+        status=RESOLVED,
+        source="开源借鉴",
+        decided_at=_D10,
+        resolution=(
+            "**选型**：`routing.openstreetmap.de` 的 `routed-car` / `routed-foot` / "
+            "`routed-bike` 三个 OSRM 实例（OSM 数据，免费无 key，ODbL 需署名）。\n"
+            "**拒绝 `router.project-osrm.org`，理由是实测而非印象**：该演示服务器对 "
+            "`/route/v1/walking` 与 `/route/v1/driving` 返回**完全相同**的结果"
+            "（实测同一对坐标：3.2 min / 1.72 km，两种 profile 一字不差）——它静默用"
+            "驾车数据冒充步行路线。而 osm.de 的 foot 与 car 真实分化"
+            "（15.8 min / 1.18 km vs 3.2 min / 1.72 km，行人可穿小路）。"
+            "**要步行路线却拿到驾车路线，比没有路线更糟**——校验逻辑会认真对待这份"
+            "假数据，算出「时间冲突」或「距离不合理」的假结论。\n"
+            "**transit（公交）没有免费真实源**：OSRM 只有 car/foot/bike。"
+            "transit 模式降级为 car 结果，并在路线数据上**标注 `degraded_from=transit`**"
+            "（公交有专用道、时刻表与换乘，驾车时间对它是错的估计，不是事实）。\n"
+            "**每段路线带 `estimated` 标记**：真实 API 给出的 `duration` 本身也是"
+            "基于 OSM 限速与道路等级的估计，不是实时路况（实时路况属商业 API）。"
+            "拿估计当事实，就是拿「看起来精确」冒充「真实」。"),
+        references=("https://routing.openstreetmap.de/",
+                    "https://router.project-osrm.org/"),
+        license_note="OSRM 与底层 OSM 数据均为开放许可（BSD / ODbL，需署名）",
+        excluded_note="`router.project-osrm.org` 实测 walking 与 driving 返回完全一致"
+                      "（静默冒充），拒绝采用；高德/腾讯路径规划为商业授权且需 key，未纳入",
+        code_reuse="design_only",
+    ),
+    # ---- U95：交通方式真正参与计算，无真实数据时的降级口径 ----
+    Decision(
+        key="U95",
+        phase="V1",
+        title="交通方式分级参与路线计算；端口缺席时 haversine 降级且必标注估算",
+        plan_quote="「根据时间、预算、出发地目的地、**出行方式**、偏好生成动态旅游路线」"
+                   "（五、第二阶段表 11）——**未定义出行方式如何进入计算**",
+        status=RESOLVED,
+        source="文档推导",
+        decided_at=_D10,
+        resolution=(
+            "**缺口实证**：`TRANSPORT_MODES=(walk/transit/drive/bike)` 只是"
+            "`TripRequest` 的参数字段，`routing.py` 的 `_travel_minutes` **完全不读它**"
+            "——固定 25 km/h 一把尺子量所有模式。这是「计划书原文要求出行方式，"
+            "实现里它只是个摆设」的标准形态：参数收了、校验过了、计算时没它。\n"
+            "**推导依据**：计划书原文把「出行方式」与「时间、预算、出发地目的地」"
+            "并列为路线生成的输入——并列即同权，不同权的输入不配并列。\n"
+            "**分级**：`plan_route` 增加 `routing: RoutingPort | None` 形参。"
+            "端口在场 → 按 `request.transport` 映射 profile（walk→foot、bike→bike、"
+            "drive→car、transit→car+降级标注，U94）逐段取真实通行时间；"
+            "端口缺席或调用失败 → 回退 haversine，但**该段 `estimated=True`**，"
+            "且整条路线带 `estimate_only=True`。降级可以发生，冒充不行。\n"
+            "**`estimated` 一路带到输出**：`TripPlan.as_summary()` 与私有 Vault 的"
+            "synthesis 页面都要能看到这条路线是估计的——用户按估计时间赶火车，"
+            "误点的责任在没人告诉他这是估计。"),
+        references=(),
+        license_note="文档推导（计划书表 11「出行方式」输入权的落地），无外部代码复用",
+        code_reuse="n/a",
+    ),
+    # ---- U96：实时天气源——免费无 key 为主，商业 API 为注入增强 ----
+    Decision(
+        key="U96",
+        phase="V1",
+        title="实时天气源：Open-Meteo 为主（免费无 key），和风天气为可选注入增强",
+        plan_quote="「实时信息查询：景区开放状态、**天气**、交通、门票、排队情况、导航路线」"
+                   "「公共数据：**天气 API**、景区公开信息、交通实时状态」（五、第二阶段）"
+                   "——U37 已选和风天气，但**从未接真实调用**",
+        status=RESOLVED,
+        source="开源借鉴",
+        decided_at=_D10,
+        resolution=(
+            "**缺口实证**：`sources.py`（U37）写明「本模块不内置任何真实网络调用」，"
+            "配置里没有任何天气 key——「实时天气查询」这个计划书职责此前"
+            "**一次真实天气都没取到过**。机制（端口、source 页、claim 绑证据、"
+            "失败禁回退）全建好了，电没接。\n"
+            "**选型**：主源 **Open-Meteo**（`api.open-meteo.com`，免费、无 key、"
+            "CC BY 4.0；实测本机直连 200，返回北京当前 10.8 ℃ 与 WMO 天气码）。"
+            "理由：无凭据即可端到端跑通，「实时」不需要拿 key 抵押；"
+            "和风天气（U37 原选）保留为**可选增强**——key 经配置注入才启用，"
+            "没注入就明说没有，不拿主源冒充和风。\n"
+            "**WMO 天气码转中文**在采集层完成（`weather_code` → 「晴 / 多云 / 小雨」…），"
+            "source 页存原始码+译文两份——翻译可以查，原始码不会被译文污染。\n"
+            "**经纬度即 subject**：`CollectedFact.subject` 用 `lat,lon`（粗化前），"
+            "不反查地名（nominatim 本机实测连接重置，U71「不做地址反查」立场不变）。"),
+        references=("https://open-meteo.com/", "https://dev.qweather.com/"),
+        license_note="Open-Meteo CC BY 4.0（需署名）；和风天气为商业 API 服务条款",
+        code_reuse="design_only",
+    ),
+    # ---- U97：「实时」的语义定义与陈旧标注 ----
+    Decision(
+        key="U97",
+        phase="V1",
+        title="实时刷新语义：TTL 缓存 + 获取时间戳必显，陈旧数据不得冒充实时",
+        plan_quote="「**持续监听**天气、交通、景区状态变化」（五、第二阶段表 11）"
+                   "「行程动态更新：天气变化、交通延误、景区临时闭园」"
+                   "——**未定义「实时」的时间语义**",
+        status=RESOLVED,
+        source="文档推导",
+        decided_at=_D10,
+        resolution=(
+            "**「实时」必须被定义成可检验的语义，否则它是句客气话**：本项目定义为"
+            "「数据获取时间距当前 ≤ TTL（默认 10 分钟）」。超 TTL 的数据在输出里"
+            "**带 `stale=True` 与 `fetched_at`**，界面显示「X 分钟前获取」——"
+            " stale 可以展示，冒充实时不行。\n"
+            "**缓存与刷新分层**：服务端 `WeatherCache`（TTL + 单飞，同一坐标并发"
+            "只打一次源，防免费 API 限流）；端侧定时轮询（默认 5 分钟）+ 下拉手动刷新。"
+            "手动刷新绕过缓存直取源——用户下拉的动作语义就是「我要最新的」。\n"
+            "**缓存旧数据不得冒充新采集**：`CollectedFact` 增加 `fetched_at`；"
+            "走缓存与走源在 source 页上可区分（`from_cache` 字段）。"
+            "计划书要求「校验数据有效性」——过期就是无效的一种，静默返旧数据"
+            "恰好绕过了这道校验。\n"
+            "**重规划触发以 fetched_at 为准**（U40）：天气变化信号的时间戳若早于"
+            "上一版行程的生成时间，不构成「新变化」，不触发重算。"),
+        references=(),
+        license_note="文档推导（计划书表 11「持续监听」的时间语义），无外部代码复用",
+        code_reuse="n/a",
+    ),
+    # ---- U98：L4 垂类派发——协议躺了半年，本轮接上 ----
+    Decision(
+        key="U98",
+        phase="P3",
+        title="L4 垂类派发：实现 VerticalDecisionModel 把旅游任务送达 TourAgent",
+        plan_quote="五层路由第 4 层「垂类专用决策模型」（三、P3）；"
+                   "「用户唤醒、输入、设备变动、天气变动、支付完成统一调度流转」"
+                   "（二、第二阶段）——**未定义垂类任务的派发终点**",
+        status=RESOLVED,
+        source="文档推导",
+        decided_at=_D10,
+        resolution=(
+            "**缺口实证**：`scheduler/router.py` 只有 `VerticalDecisionModel` **协议**，"
+            "全项目零实现（U03 裁定形态为 RouteLLM 式小分类器 + 阈值路由，"
+            "从未落地）。后果：`TourAgent` 这个按表 11 建好的垂类"
+            "**没有任何链路能到达**——聊天里说「帮我规划周末行程」到不了它，"
+            "只能靠测试与独立入口触达。机制齐了，门没装。\n"
+            "**推导依据**：计划书原文「统一调度流转」要求各类事件有流转终点；"
+            "表 11 给旅游 Agent 定了六项 ✅ 职责，却没有一条路径把任务送到它面前——"
+            "职责清单不等于可达性。\n"
+            "**实现形态**：关键词 + 结构特征的轻量标定器（`scheduler/vertical.py`），"
+            "输出 `(vertical, score)`；score ≥ 阈值（默认 0.6，U03 标定值）才派发。"
+            "**标定先行**：阈值不是拍脑袋——用一组带标注的样本（旅游/非旅游意图）"
+            "跑出分数分布，取两类分布间的最低点，写入 `tests/` 守护。\n"
+            "**派发不越权**：TourAgent 的职责边界（表 11 ❌ 清单）由它自己 Declare，"
+            "L4 只回答「这像不像旅游任务」，不回答「该不该它做」。"),
+        references=(),
+        license_note="文档推导（计划书五层路由第 4 层的落地），无外部代码复用",
+        code_reuse="n/a",
+    ),
+    # ---- U99：移动端地图底图——免费瓦片 + 无 key 时的诚实降级 ----
+    Decision(
+        key="U99",
+        phase="P7",
+        title="移动端地图底图：Carto 免费瓦片；Overpass/Nominatim 本机不通故 POI 仍走文件接入点",
+        plan_quote="三、P7「设备采集（定位、状态）」；"
+                   "「行程资料汇总：**路线、地点**、注意事项归档」（五、第二阶段表 11）"
+                   "——**未定义地图底图来源**",
+        status=RESOLVED,
+        source="开源借鉴",
+        decided_at=_D10,
+        resolution=(
+            "**选型**：`basemaps.cartocdn.com` 的 light_all 瓦片（免费、无 key、"
+            "CC BY 3.0 + ODbL 需署名；实测本机 200）。Flutter 侧用 MapLibre GL "
+            "（BSD）渲染，**瓦片地址与样式走服务端配置**——换源不改端侧代码。\n"
+            "**实测不通的源不硬接**：`tile.openstreetmap.org` 超时、"
+            "`nominatim.openstreetmap.org` 连接重置、`overpass-api.de` 被网络中间件"
+            "502 拦截（返回体还是钓鱼式重定向到某 GitHub README——**这种响应连错误"
+            "都不算，是链路被劫**，更不能用它的数据）。因此 POI 检索维持 "
+            "`places.json` 文件接入点（U71），示例数据角标保留。\n"
+            "**U71 立场只松一半**：有瓦片才画底图；瓦片不可用时退回「坐标 + 精度 + 时间」"
+            "的诚实显示，**不画假底图、不拿坐标格冒充地图**。\n"
+            "**隐私不让步**：底图加载不传用户坐标给瓦片服务商——瓦片按视野范围"
+            "拉取，与「我在哪」无关；定位仍只出服务端粗化后的 grid（U71）。"),
+        references=("https://carto.com/basemaps/", "https://maplibre.org/"),
+        license_note="Carto basemaps CC BY 3.0；CARTO 数据 ODbL；MapLibre GL BSD-3",
+        excluded_note="tile.openstreetmap.org 实测超时；nominatim 连接重置；"
+                      "overpass-api.de 被中间件 502 拦截——三者均不采用",
+        code_reuse="design_only",
+    ),
+    # ---- U100：界面图标标记规范 ----
+    Decision(
+        key="U100",
+        phase="P7",
+        title="界面图标标记：按类别映射图标与配色，示例数据与实时性各有角标",
+        plan_quote="「低置信信息做提示标注」（五、第二阶段表 11 步骤3）；"
+                   "「行程资料汇总：路线、地点、注意事项归档」（表 11）"
+                   "——**未定义界面标记形态**",
+        status=RESOLVED,
+        source="文档推导",
+        decided_at=_D10,
+        resolution=(
+            "**推导依据**：计划书两处原文共同要求「标注」——低置信信息要标注、"
+            "归档的路线地点要能被看见。标记是标注的界面形态：**没有标记，"
+            "「已标注」就只是服务端 JSON 里的一个字段**。\n"
+            "**标记三要素**：①类别图标（书店/咖啡/公园/展馆/餐饮/学习…，"
+            "`places.py` 的 tag 体系映射）；②来源角标（`seed-demo` 挂「示例数据」，"
+            "`file` 不挂——把示例当真实推荐展示比没有推荐更糟，U71 原话）；"
+            "③实时角标（`stale` 时显示「X 分钟前」，U97）。\n"
+            "**点击标记 → 导航链接**：复用 `geo.navigation_links`（U71，三家 URI "
+            "scheme + web 兜底，坐标系已转好）。端侧只负责 `url_launcher` 打开，"
+            "**不在端侧拼链接**——拼错坐标系的导航比没有导航更糟（U71 已实证）。\n"
+            "**图标不用位图资源**：端侧不打包图标文件，用类别名映射到矢量图标"
+            "（Icons 集）+ 主题色派生配色。少一类资源，就少一处「图标缺了"
+            " silently 显示成默认图」的坑。"),
+        references=(),
+        license_note="文档推导（计划书表 11「提示标注」的界面形态），无外部代码复用",
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U101",
+        phase="V1",
+        title="高德接入：官方 key 优先，无 key 时走拟人化旁路并如实标注非官方",
+        plan_quote="「实时信息查询：景区开放状态、天气、交通、门票、排队、导航路线」"
+                   "（五、第二阶段表 11）——**未定义国内地图数据源**",
+        status=RESOLVED,
+        source="人工授权",
+        decided_at=_D10,
+        resolution=(
+            "**用户于 2026-10-26 明确授权**：「国内以高德地图（真实、具体）为基础，"
+            "api 由你以管理员身份获取，若受限则先尝试拟人化处理，不行就人工确认」。\n"
+            "**实测裁定**：官方 Web 服务 `restapi.amap.com` 每一项都要 key，本机"
+            "返回 `INVALID_USER_KEY`；注册需手机号 + 短信 + 实名，非本机可自行完成。"
+            "故按授权走**拟人化旁路**——用 `www.amap.com` 自身在用的接口"
+            "（逆地理 / 天气已实测可用；POI 检索撞上阿里风控页，**明确不可得**）。\n"
+            "**三条硬纪律**（写进 `verticals/tour/amap.py` 的产出物字段）："
+            "①`official=False` 随每条数据交出，不得自称官方；"
+            "②失败照实上报，**绝不静默回退**到另一个源冒充「还是拿到了」；"
+            "③`key` 一旦注入立刻改走官方端点且 `official` 转 True——"
+            "旁路只是过渡，不是常态。\n"
+            "**真实产出**（本机实测）：坐标 → `中国/北京市/北京市/东城区` + "
+            "adcode 110101 + 最近道路「南池子大街 44m」+ 自然语言位置描述；"
+            "adcode → 实时天气「阴 9℃（观测 2026-10-26 00:55:00）」+ 逐时段预报。"
+            "**镇/乡一级该接口不返回**，如实置 None 并注明需官方 key（U104）。\n"
+            "**合规口径**：旁路仅用于个人自研项目、低频率、不做批量抓取，"
+            "商业用途必须申请官方 key。"),
+        references=(),
+        license_note="人工授权（用户 2026-10-26 指令）；高德服务条款仍适用，商业用途须申请官方 key",
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U102",
+        phase="P7",
+        title="世界底图双源：国内高德瓦片（GCJ-02），境外 CARTO/OSM（WGS-84）",
+        plan_quote="「根据时间、预算、出发地目的地、出行方式、偏好生成动态旅游路线」"
+                   "（五、第二阶段表 11）——**未定义底图来源与覆盖范围**",
+        status=RESOLVED,
+        source="开源借鉴",
+        decided_at=_D10,
+        resolution=(
+            "**实测事实**：高德瓦片只覆盖中国大陆——北京 z12 返回 8568 字节"
+            "（真实路网），纽约与伦敦同参数各返回 179 字节（**空白底图**）。"
+            "「完整世界地图」要成立，境外必须有第二个源。\n"
+            "**裁定**：按位置切源，不是选一个凑合全部。落在覆盖矩形内 → 高德"
+            "（矢量 / 含路名 / 卫星三套）；其外 → CARTO/OSM（浅色 / 深色）。\n"
+            "**两条必须随结果交出**：①`datum`（GCJ-02 或 WGS-84）——混用会让"
+            "点位偏数百米且**看起来正常**（本机实测北京偏移 555m）；"
+            "②`attribution` 版权署名，OSM/CARTO 与高德均要求署名，"
+            "不署即侵权——不是可选项。\n"
+            "**覆盖判定是矩形近似不是国界**：矩形内的邻国小块会拿到空白瓦片。"
+            "代价对照明写：空白是**可见的**会被修，把境外错当境内画出一张"
+            "错图是**不可见的**。精确判定要官方 API（需 key）。\n"
+            "**实测环境坑**：`a.basemaps.cartocdn.com` 这类带子域主机名本机"
+            "解析不了，**不带子域的 `basemaps.cartocdn.com` 才通**。"),
+        references=("https://operations.osmfoundation.org/policies/tiles/",),
+        license_note="开源借鉴：OSM/CARTO 瓦片（ODbL，需署名）；高德瓦片另受其服务条款约束",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U103",
+        phase="V1",
+        title="坐标基准转换：设备 GPS（WGS-84）与高德（GCJ-02）必须显式互转",
+        plan_quote="「根据……出发地目的地……生成动态旅游路线」（五、第二阶段表 11）"
+                   "——**未定义坐标系**",
+        status=RESOLVED,
+        source="实现参数",
+        decided_at=_D10,
+        resolution=(
+            "**为什么单列**：设备 GPS 给 WGS-84，高德底图与逆地理用 GCJ-02，"
+            "两者在中国境内相差**数百米**（本机实测北京 555m、保定徐水 571m）。"
+            "不转换就把 GPS 点画到高德底图上，点会落在隔壁街区，"
+            "而且**看起来完全正常**——这是「错得很像对的」的教科书形态。\n"
+            "**实现**（`verticals/tour/datum.py`）：正向用公开加偏算法"
+            "（克拉索夫斯基椭球参数）；逆向用**迭代逼近**而非网上常见的"
+            "「减一次偏移」近似式——后者把加偏当常数，实际它随位置变化，"
+            "在北京留数米残差；迭代三轮收敛到 1e-7 度（约 1cm）。\n"
+            "**境外恒等**：GCJ 适用矩形外两边都不加偏，转换是恒等的——"
+            "这是刻意行为，不是漏判（高德自身对境外也不做偏移）。\n"
+            "**BD-09（百度）不在范围**：计划书与 U71 只涉及三大导航 URI 跳转，"
+            "不落地百度坐标。"),
+        references=(),
+        license_note="实现参数：GCJ-02 加偏/纠偏算法为公开知识，本项目自行实现，未复制任何项目代码",
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U104",
+        phase="V1",
+        title="镇/乡行政层级：拟人化接口不返回，如实标注缺口而非用区名补位",
+        plan_quote="「实时信息查询：景区开放状态、天气、交通……」（五、第二阶段表 11）"
+                   "——**未定义行政层级粒度**",
+        status=RESOLVED,
+        source="文档推导",
+        decided_at=_D10,
+        resolution=(
+            "**事实**：用户要求「真实地图细化到市、区镇、乡」。本机实测——"
+            "省/市/区三级可稳定获得（含 adcode），镇/乡**拟人化接口不返回**，"
+            "只有官方 Web 服务 key 的 `extensions=all` 才给 `township`。\n"
+            "**裁定**：`AmapPlace.township` 恒为 None，并在 `as_payload()` 里"
+            "带 `township_note` 说明原因；`hierarchy()` **只列真正拿到的层级**——"
+            "不拿城市名或区名补位。补位会让调用方以为拿到了乡镇，"
+            "那是把「不知道」伪装成「知道」（铁律：声明 ≠ 能力）。\n"
+            "**官方 key 到位后**：`AmapSource(key=...)` 自动解析 "
+            "`addressComponent.township`，层级补齐，无需改调用方。\n"
+            "**计划书推导依据**：表 11 要求「实时信息查询」与「低置信信息做提示标注」，"
+            "层级的缺口同属「必须标注的不确定性」。"),
+        references=(),
+        license_note="文档推导（计划书表 11「实时信息查询」的粒度要求），无外部代码复用",
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U105",
+        phase="V1",
+        title="电脑端定位：IP 归属地，城市级精度，恒标粗定位且无源时报错",
+        plan_quote="「根据时间、预算、**出发地**目的地、出行方式、偏好生成动态旅游路线」"
+                   "（五、第二阶段表 11）——**未定义无 GPS 设备如何取出发地**",
+        status=RESOLVED,
+        source="开源借鉴",
+        decided_at=_D10,
+        resolution=(
+            "**用户要求**（2026-10-26）：「电脑端测则用电脑测定位进行规划」。"
+            "电脑没有 GPS，能给的是 **IP 归属地的城市级位置**——本机实测 "
+            "`ipwho.is` 返回成都（30.67/104.07）；高德 ip 端点 404、"
+            "`restapi.amap.com/v3/ip` 要 key、`ipapi.co` 撞 Cloudflare，均不可用。\n"
+            "**三条纪律**（`verticals/tour/pc_location.py`）："
+            "①`coarse=True` 恒定——IP 定位到不了米级，把它当 GPS 用是这类"
+            "系统的经典事故；②用它做**出发地**合理（城市级出发地本就是城市），"
+            "用它答「我现在站在哪条路上」**不行**，那必须走手机 GPS；"
+            "③无来源时**抛错，不猜默认城市**——建立在假位置上的规划"
+            "比没有规划更糟。\n"
+            "**优先级**：显式坐标 override → IP 端口 → 报错。"
+            "override 即便由用户手填也仍标 coarse：它是「这台电脑在哪」的"
+            "城市级事实，不是 GPS 观测。"),
+        references=("https://ipwho.is/",),
+        license_note="开源借鉴：ipwho.is 免费 IP 地理定位服务（无需 key），仅取其返回的坐标与城市名",
+        code_reuse="design_only",
+    ),
+    Decision(
+        key="U106",
+        phase="V1",
+        title="规划含时间：逐站抵达/离开钟点，未给出发时刻须标注为假定",
+        plan_quote="「根据**时间**、预算、出发地目的地、出行方式、偏好生成动态旅游路线」"
+                   "（五、第二阶段表 11）——**未定义时间形态**",
+        status=RESOLVED,
+        source="文档推导",
+        decided_at=_D10,
+        resolution=(
+            "**缺口**：时间轴只算出了每段**耗时**，没落到**钟点**。用户要"
+            "「包括时间」，拿到「第一站耗时 23 分钟」还得自己从出发时间一路加。\n"
+            "**裁定**：`Stop` 增加 `arrive_minute` / `leave_minute`，"
+            "`TripPlan` 增加 `start_minute` 与 `timeline()`，输出带 "
+            "`depart` / `end` / 逐站钟点；跨日用 `+1d HH:MM` 如实表达，"
+            "**不静默取模**（取模后 25:30 变成 01:30，看起来是个正常时间）。\n"
+            "**假定必须可见**：用户没给出发时刻时按 09:00 假定，并输出 "
+            "`depart_assumed=True`。不标注就是把「我们假定的」冒充成"
+            "「用户指定的」，行程整体平移而无人察觉。\n"
+            "**参数归一**：`_as_minutes` 接受分钟数或 HH:MM；解析不了的形态"
+            "**直接报错**，不悄悄降级成「未指定」。\n"
+            "**计划书推导依据**：表 11 把「时间」列为动态路线生成的第一个"
+            "输入，且要求「校验时间冲突」——钟点是冲突校验的落点。"),
+        references=(),
+        license_note="文档推导（计划书表 11「根据时间……生成动态旅游路线」），无外部代码复用",
+        code_reuse="n/a",
+    ),
+    Decision(
+        key="U107",
+        phase="P7",
+        title="移动端真实定位：运行时申请权限，粗定位与精确定位分别标注",
+        plan_quote="「语音交互移动端系统」（三、阶段 P7）；"
+                   "「定位隐私粗化」（U71）——**未定义端侧定位权限申请时机**",
+        status=RESOLVED,
+        source="文档推导",
+        decided_at=_D10,
+        resolution=(
+            "**用户要求**（2026-10-26）：「接入手机移动端真实，在手机上使用时"
+            "可申请自动接入权限」。\n"
+            "**裁定**：权限在**进入定位页时按需申请**，不在安装/启动时预申请——"
+            "后者会让用户在还没用到功能时就被问权限，且一旦拒绝就再也不会"
+            "被问到（Android 的「不再询问」）。流程：检查服务是否开启 → "
+            "检查权限 → 按需申请 → 被永久拒绝则**引导去设置页**并说明用途，"
+            "不做「假装成功」。\n"
+            "**权限拒绝不构成功能伪造**：拿不到定位就显示「未获得定位权限」+"
+            "去设置入口，**不拿 IP 粗定位冒充手机位置**（U105 的 coarse 会"
+            "被如实透传，端侧照样显示「粗定位」角标）。\n"
+            "**计划书推导依据**：P7 要求端侧真实交互；U71 已确立「定位隐私"
+            "粗化」，端侧同样必须先取到真定位再做粗化——顺序反了就是在"
+            "粗化一个假坐标。"),
+        references=(),
+        license_note="文档推导（计划书 P7 与 U71 的组合要求），无外部代码复用",
         code_reuse="n/a",
     ),
 )

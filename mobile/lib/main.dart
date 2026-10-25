@@ -539,6 +539,8 @@ class _AiButlerAppState extends State<AiButlerApp> {
     await Navigator.of(context).push<void>(MaterialPageRoute(
       builder: (_) => LocationPage(
         onLocate: _location.current,
+        onProbe: _location.probe,
+        onOpenSettings: _location.openSystemSettings,
         onRecommend: (lat, lon, prefs) =>
             _api.recommend(latitude: lat, longitude: lon, prefs: prefs),
         onNavigation: (item) => _api.navigationLinks(

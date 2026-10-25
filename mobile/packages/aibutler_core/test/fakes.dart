@@ -50,14 +50,36 @@ class FakeCacheStore implements CacheStorePort {
 }
 
 class FakeLocation implements LocationPort {
-  FakeLocation({this.fix = const (latitude: 30.25, longitude: 120.15)});
+  FakeLocation({
+    this.fix = const (latitude: 30.25, longitude: 120.15),
+    this.access = LocationAccess.granted,
+    this.settingsOpened = false,
+  });
+
   final ({double latitude, double longitude})? fix;
+
+  /// `fix` 为 null 时（模拟未授权）由它决定 UI 显示哪种引导文案。
+  final LocationAccess access;
+  final bool settingsOpened;
   int calls = 0;
+  int settingsCalls = 0;
 
   @override
   Future<({double latitude, double longitude})?> current() async {
     calls++;
+    // 未授权状态下即使配了 fix 也取不到——伪造「有坐标但没权限」比
+    // 「没坐标」更能骗过 UI，测试里不许出现这种组合。
+    if (access != LocationAccess.granted) return null;
     return fix;
+  }
+
+  @override
+  Future<LocationAccess> probe() async => access;
+
+  @override
+  Future<bool> openSystemSettings() async {
+    settingsCalls++;
+    return settingsOpened;
   }
 }
 

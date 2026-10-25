@@ -128,7 +128,11 @@ class FakeCollector:
 # ============================== 台账 ============================== #
 def test_phase_two_decisions_are_registered_and_resolved():
     keys = {d.key for d in decisions.DECISIONS if d.phase == "V1"}
-    assert keys == {"U37", "U38", "U39", "U40"}
+    # U94–U97 = 2026-10-26 真实数据接入批次（路线源/交通方式分级/weather源/实时语义）；
+    # U101/U103/U104 = 高德接入方式、坐标基准转换、镇乡层级缺口；
+    # U105/U106 = 电脑端定位、规划含时间
+    assert keys == {"U37", "U38", "U39", "U40", "U94", "U95", "U96", "U97",
+                    "U101", "U103", "U104", "U105", "U106"}
     for key in keys:
         assert decisions.get(key).status == decisions.RESOLVED
 

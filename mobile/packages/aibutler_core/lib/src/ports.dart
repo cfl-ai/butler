@@ -28,9 +28,37 @@ abstract class CacheStorePort {
   Future<List<String>> accounts();
 }
 
+/// 定位权限的当前状态（U107）。
+///
+/// 区分 `denied` 与 `deniedForever` 是这一版的重点：前者还能再弹一次系统
+/// 授权框，后者（用户勾了「不再询问」）**再问也没用**，只能引导去系统
+/// 设置页。不区分的话，用户点了「重新定位」毫无反应，看起来像 App 坏了。
+enum LocationAccess {
+  /// 已授权
+  granted,
+
+  /// 系统定位服务未开启
+  serviceOff,
+
+  /// 被拒绝但**仍可再申请**（下次会弹系统授权框）
+  denied,
+
+  /// 被永久拒绝（勾了「不再询问」）——只能引导去系统设置
+  deniedForever,
+
+  /// 取不到状态（真机以外的环境）
+  unavailable,
+}
+
 /// 定位端口（三、P7 步骤7 GPS 上报）。
 abstract class LocationPort {
   Future<({double latitude, double longitude})?> current();
+
+  /// 只**查询**权限状态，不触发申请框。用于决定要不要显示「去设置」入口。
+  Future<LocationAccess> probe() async => LocationAccess.unavailable;
+
+  /// 打开系统设置页（deniedForever 时唯一的出路）。返回是否真的打开了。
+  Future<bool> openSystemSettings() async => false;
 }
 
 /// 设备信息端口（电量、网络类型等）。
