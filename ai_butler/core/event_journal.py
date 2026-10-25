@@ -31,11 +31,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Mapping, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol
 
 from ai_butler.evaluation.redaction import Redactor
 
@@ -124,10 +125,23 @@ class MemoryJournalStore:
 
 
 class FileJournalStore:
-    """jsonl 落盘实现：一行一事件，fsync 后返回。
+    """jsonl 落盘实现：一行一事件，**fsync 后才返回**。
 
     位置由调用方给（`path` 是文件）；不自行决定目录，避免与 vault 用户隔离域
     （core/storage.py）的职责纠缠。测试用 tmp_path，不碰真实目录。
+
+    为什么要每行 fsync（U87）：`flush()` 只把 Python 缓冲推给操作系统，
+    没到磁盘。断电时尾部丢整行尚可接受（seq 与 hash 链仍然连续，恢复得到的是
+    一个更早的状态）；真正致命的是扇区只落一半——半行会让 `load()` 按
+    「坏行不跳过」拒载**整个会话账本**，而里面是这次运行的完整因果链。
+    为省一次 fsync 丢掉整条链，不划算。事件账本是「一个动作一行」的频率，
+    这个代价换得起。
+
+    **不加文件锁，这是有意的**：`journal_id` 就是会话标识，一个会话一个进程写。
+    多进程写同一会话不是「需要保护的并发」，而是调用方搞错了归属——加一把锁
+    只会把这个错误变得看起来合法。需要跨进程共享的账本在
+    `harness/revision.py`（版本账）与 `harness/trail.py`（溯源账），
+    那两处才有锁，见 `core/filelock.py`。
     """
 
     def __init__(self, path: str | Path) -> None:
@@ -159,6 +173,7 @@ class FileJournalStore:
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(line)
             fh.flush()
+            os.fsync(fh.fileno())
 
 
 @dataclass

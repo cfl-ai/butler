@@ -41,10 +41,13 @@ State 是**当前值**，不是历史。第二轮会覆盖第一轮的 `p10_harn
 from __future__ import annotations
 
 import json
+import os
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+from ai_butler.core.filelock import FileLock, null_lock
 from ai_butler.evaluation.redaction import Redactor
 
 __all__ = ["DefectTrace", "RepairTrail", "RoundRecord", "TrailError"]
@@ -204,16 +207,48 @@ class DefectTrace:
 # --------------------------------------------------------------------------- #
 @dataclass
 class RepairTrail:
-    """轮次账。**只追加**，可落 JSONL，可跨进程回读。"""
+    """轮次账。**只追加**，可落 JSONL，可跨进程回读。
+
+    `lock` 是写互斥（U86）。为 None 时按 `path` 自动造一把
+    （`<path>.lock`），没有 `path` 就是空实现——只活在内存的账本
+    没有第二个写者，加锁只是形式。
+    """
 
     #: 落盘路径。不给就只留内存（测试与一次性运行）。
     path: str | Path | None = None
     redactor: Redactor = field(default_factory=Redactor)
+    lock: AbstractContextManager[Any] | None = None
     _records: list[RoundRecord] = field(default_factory=list, init=False)
 
     def __post_init__(self) -> None:
         if self.path is not None:
             self.path = Path(self.path)
+
+    # ---------------- 互斥 ---------------- #
+    def _guard(self) -> AbstractContextManager[Any]:
+        if self.lock is not None:
+            return self.lock
+        if self.path is not None:
+            return FileLock(f"{self.path}.lock", purpose="溯源账")
+        return null_lock()
+
+    def _sync(self) -> None:
+        """锁内**强制**从磁盘重读，以磁盘为准。
+
+        与 `load()` 的区别是这里不看内存：`load()` 的「已有记录优先」
+        是为「反复访问不要重复载入」设计的，用在写之前恰好是错的——
+        另一个进程刚追加的那一轮就在文件里，而内存里没有。
+        """
+        if self.path is None or not self.path.exists():
+            return
+        loaded: list[RoundRecord] = []
+        with self.path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                loaded.append(RoundRecord.from_dict(json.loads(line)))
+        self._records = loaded
 
     # ---------------- 写 ---------------- #
     def append(self, record: RoundRecord) -> RoundRecord:
@@ -221,25 +256,37 @@ class RepairTrail:
 
         断言放在落盘**之前**：先落盘再断言，一旦断言失败，
         带明文的那一行已经在磁盘上了，删掉也只是「我们从没写过」的假象。
+
+        **查重在锁内、且查之前先重读**（U86）。两个进程各自从磁盘读到
+        同一份历史、各自认为本轮号可用、各自追加一行同号记录——字节没交错，
+        账本里却多了个影子（`get()` 只见第一条）。不重读的查重只在本进程内有效。
+
+        落盘在入内存**之前**：反过来的话写失败时内存里已有记录，
+        下一次 `_sync()` 会把它抹掉，而调用方以为记下了。
         """
         # 一轮只能有一条记录。同一个 `round_id` 记两次的后果不是「多一行」：
         # `get()` 只返回第一条，第二条成了**文件里有、谁读都读不到**的影子账，
         # 而同名的两条内容往往不一样（一次改坏了、一次在撤销后重跑）——
         # 于是「问题出在哪一轮」正好在这一刻失去唯一答案。
         # 需要第二次运行时，轮次号必须续接（`RepairLoop._next_round_no`）。
-        if any(r.round_id == record.round_id for r in self._records):
-            raise TrailError(
-                f"{record.round_id} 已有记录，不能重复登记：同一轮两次运行必须"
-                f"续接轮次号，否则溯源账里会有两条不同的 {record.round_id}")
-        safe = self.redactor.redact_deep(record.as_dict())
-        self.redactor.assert_deep_clean(safe, where=f"溯源账 {record.round_id}")
-        clean = RoundRecord.from_dict(safe)
-        self._records.append(clean)
-        if self.path is not None:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            with self.path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(clean.as_dict(), ensure_ascii=False) + "\n")
-        return clean
+        with self._guard():
+            self._sync()
+            if any(r.round_id == record.round_id for r in self._records):
+                raise TrailError(
+                    f"{record.round_id} 已有记录，不能重复登记：同一轮两次运行必须"
+                    f"续接轮次号，否则溯源账里会有两条不同的 {record.round_id}")
+            safe = self.redactor.redact_deep(record.as_dict())
+            self.redactor.assert_deep_clean(safe, where=f"溯源账 {record.round_id}")
+            clean = RoundRecord.from_dict(safe)
+            if self.path is not None:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                # fsync：账本是崩溃后唯一的「当时到底改了什么」（U87）。
+                with self.path.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(clean.as_dict(), ensure_ascii=False) + "\n")
+                    fh.flush()
+                    os.fsync(fh.fileno())
+            self._records.append(clean)
+            return clean
 
     def load(self) -> tuple[RoundRecord, ...]:
         """从落盘文件回读。**已有内存记录优先**（同一次运行里不重复载入）。"""

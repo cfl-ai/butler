@@ -56,14 +56,19 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Protocol, Sequence
 
+from ai_butler.core.filelock import FileLock, LedgerLockTimeout, null_lock
+
 __all__ = [
     "CommittedPatch",
     "FileLedgerStore",
+    "LedgerLockTimeout",
     "LedgerStore",
     "MemoryLedgerStore",
     "RevisionError",
@@ -308,14 +313,34 @@ class FileLedgerStore:
     那一轮的补丁其实已经改过文件，账本却以为没改，于是后续每一轮的
     边界判断都会把「别人改的」当成「我改的」——反向的错更难查。
 
-    未做文件锁（同一账本被两个进程同时追加）。理由：离线链路是
-    「7×24 后台单实例」，多实例并发需要的是分布式锁，不是文件锁；
-    在这里加一把进程内锁只会给人「已解决」的错觉。
+    **每行 fsync 后才返回**（U87）。`flush()` 只把 Python 缓冲推给操作系统，
+    没到磁盘；断电时尾部可能丢整行（链仍连续，可接受），更坏的是扇区只落一半——
+    半行会让 `load()` 按「坏行不跳过」拒载**整本账**，而账里记着哪些文件被改过、
+    哪轮撤过。为省一次 fsync 让整本账不可读，不划算。账本是「一轮一行」的频率，
+    这个代价换得起。
+
+    **锁不在这里**（U86）。store 只知道「追加一行」，不知道「要先查重再写」；
+    把锁塞进 `append()` 只能挡住字节交错，挡不住「两个进程各自基于旧快照
+    都认为可以写」。互斥范围由账本层决定，这里只负责把锁**造出来**——
+    因为只有它知道自己落在哪个文件。
     """
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+
+    def lock(self) -> FileLock:
+        """同一份账本文件的跨进程互斥。
+
+        旁挂 `<账本>.lock` 而不是锁数据文件本身：数据文件以追加模式打开，
+        「当前写位置」与锁区间的耦合各平台不一致；旁挂文件的语义只有
+        「谁在里面」，与账本内容无关。
+
+        适用范围见 `core/filelock.py`：同机 + 本地文件系统成立，
+        多机共用一份账本需要分布式锁，不是这个。
+        """
+        return FileLock(self.path.with_name(f"{self.path.name}.lock"),
+                        purpose="版本账")
 
     def load(self, ledger_id: str) -> list[dict[str, Any]]:
         if not self.path.exists():
@@ -344,6 +369,7 @@ class FileLedgerStore:
         with self.path.open("a", encoding="utf-8") as fh:
             fh.write(line)
             fh.flush()
+            os.fsync(fh.fileno())
 
 
 # --------------------------------------------------------------------------- #
@@ -361,11 +387,20 @@ class RevisionLedger:
     给了 store 则构造时**自动回读**，于是「哪些轮改过什么」「哪轮撤过」
     「编号该从几开始」这三件事跨进程成立。回读是 fail-closed 的：
     账本不可信就拒绝开工，而不是带着半份历史去改代码。
+
+    `lock` 是写互斥（U86）。为 None 时向 store 要（文件存储自带一把），
+    再没有就是空实现。**空实现不是遗漏，是如实表示「没有互斥」**：
+    单实例部署本来就不需要，而假锁比没锁更危险（见 `core/filelock.py`）。
+
+    互斥覆盖的是**读-判-写整段**，不是只包住 append：
+    `record()` 与 `undo()` 都在锁内 `_sync()` 重读后再判断。
+    只包住 append 的锁挡不住「两个进程各自基于旧快照都认为可以写」。
     """
 
     root: Path | None = None
     store: LedgerStore | None = None
     ledger_id: str = "p10-revision"
+    lock: AbstractContextManager[Any] | None = None
     _records: list[CommittedPatch] = field(default_factory=list, init=False)
     _undone: dict[str, UndoRecord] = field(default_factory=dict, init=False)
 
@@ -374,6 +409,35 @@ class RevisionLedger:
             self.root = Path(self.root).resolve()
         if not str(self.ledger_id).strip():
             raise RevisionError("ledger_id 不得为空（同一存储里可能有多本账）")
+        # 构造期读快照**不持锁**：读不改任何东西，而此处若去抢锁，
+        # 「另一个进程正在写」会让仅仅想看一眼历史的调用方卡住甚至抛超时。
+        self._sync()
+
+    # ---------------- 互斥 ---------------- #
+    def _guard(self) -> AbstractContextManager[Any]:
+        """本账的写互斥。显式传入的 > store 自带的 > 空实现。"""
+        if self.lock is not None:
+            return self.lock
+        factory = getattr(self.store, "lock", None)
+        if callable(factory):
+            return factory()
+        return null_lock()
+
+    def _sync(self) -> None:
+        """从 store **整份重读**，以磁盘为准。
+
+        只在持锁期间调用：不重读就查重，等于拿一份可能过期的内存状态
+        判断「这一轮能不能写」——另一个进程刚写的那一行看不见，
+        自己的判断就不成立（两个进程会各自写下同一个轮次）。
+
+        清空而非增量合并是刻意的：磁盘是唯一真相源。增量合并会让
+        「磁盘上已经不存在的那些行」永远留在内存里，而那种不一致
+        比直接失败难查得多。
+        """
+        if self.store is None:
+            return
+        self._records.clear()
+        self._undone.clear()
         self._restore()
 
     # ---------------- 回读 ---------------- #
@@ -419,27 +483,34 @@ class RevisionLedger:
 
         落盘在入内存**之前**：反过来的话，存储写失败时内存里已经有这条记录，
         本进程以为改过、重启后账本又查不到，两边对不上比直接失败更难查。
+
+        **查重在锁内、且查之前先重读**（U86）。这三步的顺序不能换：
+        先重读才能看见别的进程刚写的那一行，先查重再重读等于用过期状态
+        做判断。锁的粒度是「重读 → 查重 → 落盘」，不是只有落盘那一行。
         """
-        if any(r.round_id == patch.round_id for r in self._records):
-            raise RevisionError(
-                f"{patch.round_id} 已登记过，一轮只能提交一次补丁"
-                f"（多份补丁请拆成多轮，否则「撤销这一轮」有歧义）")
-        if self.root is not None:
-            patch = _with_digests(patch, self.root)
-        if self.store is not None:
-            try:
-                self.store.append(self.ledger_id, {
-                    "kind": "commit", "at": _now_iso(), "patch": patch.to_record()})
-            except RevisionError:
-                raise
-            except Exception as exc:      # noqa: BLE001 —— 任何写失败都要转成可读错误
+        with self._guard():
+            self._sync()
+            if any(r.round_id == patch.round_id for r in self._records):
                 raise RevisionError(
-                    f"{patch.round_id} 的记账未能落盘（{exc}）。补丁**已经写进文件**，"
-                    f"但账本没记住它——重启后这一轮会变成「没改过」，"
-                    f"它的文件锁也随之丢失。此时应停下人工核对，"
-                    f"而不是继续下一轮") from exc
-        self._records.append(patch)
-        return patch
+                    f"{patch.round_id} 已登记过，一轮只能提交一次补丁"
+                    f"（多份补丁请拆成多轮，否则「撤销这一轮」有歧义）")
+            if self.root is not None:
+                patch = _with_digests(patch, self.root)
+            if self.store is not None:
+                try:
+                    self.store.append(self.ledger_id, {
+                        "kind": "commit", "at": _now_iso(),
+                        "patch": patch.to_record()})
+                except RevisionError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 —— 写失败要转成可读错误
+                    raise RevisionError(
+                        f"{patch.round_id} 的记账未能落盘（{exc}）。补丁**已经写进文件**，"
+                        f"但账本没记住它——重启后这一轮会变成「没改过」，"
+                        f"它的文件锁也随之丢失。此时应停下人工核对，"
+                        f"而不是继续下一轮") from exc
+            self._records.append(patch)
+            return patch
 
     # ---------------- 查询 ---------------- #
     def rounds(self) -> tuple[CommittedPatch, ...]:
@@ -488,69 +559,81 @@ class RevisionLedger:
         检查顺序是刻意排的：先便宜的后验的，且**所有检查都在写盘之前**。
         「验了一半就写」会产生半个撤销——那时仓库既不是补丁后、
         也不是基线，是第三种没人定义过的状态。
+
+        **整段在锁内、且先重读**（U86）。检查与写盘之间不能留窗口：
+        两个进程同时撤同一轮时，都能通过「未撤过」检查，第二个会用一份
+        过期快照覆盖第一个刚写回的基线。票是一次性的、能挡住重复消费，
+        但挡住重复**写盘**的必须是「重读 → 检查 → 写盘」在同一个临界区里。
+
+        注：这一步的锁被外部占着时会**抛 `LedgerLockTimeout` 而不是排队等**，
+        因为撤销是人工发起的高危动作——让人盯着一个不动的界面等 30 秒，
+        比直接说「账本正被另一个进程写」更糟。
         """
-        record = self.get(round_id)
-        if record is None:
-            raise RevisionError(f"没有 {round_id} 的提交记录，无从撤销")
-        if round_id in self._undone:
-            done = self._undone[round_id]
-            raise RevisionError(
-                f"{round_id} 已于 {done.undone_at} 由 {done.decided_by} 撤销过，"
-                f"不得二次撤销（幂等不等于放任：基线已经不是原来的样子）")
-        if self.root is None:
-            raise RevisionError("账本没有工作根（root），无法执行撤销")
-        if service is None:
-            # 「没接审批」不等于「不用审批」。缺服务就停，绝不放行。
-            raise RevisionError(
-                "未接入审批服务，撤销被拒：撤销已提交补丁是人工确认动作，"
-                "不接受无票执行")
-
-        # ① 验票（一次性、签名绑定本轮、主体绑定）
-        service.consume(approval_id, tool=UNDO_TOOL,
-                        signature=undo_signature([round_id]),
-                        agent=requester, role=role)
-        ticket = service.get(approval_id)
-
-        # ② 漂移检查：**在写之前全量检查**，不做「边查边写」
-        drift = [p for p in record.paths
-                 if self._current_digest(p) != record.after_digest.get(p, "")]
-
-        if drift:
-            raise RevisionError(
-                f"{round_id} 涉及的文件在提交后又被改动过，拒绝撤销：{drift}。"
-                f"盲写回 before 会把这些改动一起冲掉——请人工确认当前内容后再处理")
-
-        # ③ 写回（写一半失败则把已写的恢复成「撤销前」，保证失败=原状）
-        restored: list[str] = []
-        try:
-            for path in record.paths:
-                self._write(path, record.before.get(path))
-                restored.append(path)
-        except OSError as exc:
-            for path in restored:
-                self._restore_to_committed(record, path)
-            raise RevisionError(f"{round_id} 撤销写盘失败，已恢复到撤销前：{exc}") from exc
-
-        undo = UndoRecord(
-            round_id=round_id, approval_id=approval_id,
-            decided_by=str(getattr(ticket, "decided_by", "") or ""),
-            requester=requester, reason=reason, restored=tuple(restored),
-            undone_at=_now_iso())
-        # 到这里文件已经回到基线，撤销**已经是事实**。所以先进内存（否则
-        # 本进程还能再撤一遍），再尝试落账；落账失败要如实说清两件事：
-        # 文件已经恢复、账本没记住——后者才是重启后的风险。
-        self._undone[round_id] = undo
-        if self.store is not None:
-            try:
-                self.store.append(self.ledger_id, {
-                    "kind": "undo", "at": _now_iso(), "undo": undo.as_dict()})
-            except Exception as exc:      # noqa: BLE001 —— 任何写失败都要转成可读错误
+        with self._guard():
+            self._sync()
+            record = self.get(round_id)
+            if record is None:
+                raise RevisionError(f"没有 {round_id} 的提交记录，无从撤销")
+            if round_id in self._undone:
+                done = self._undone[round_id]
                 raise RevisionError(
-                    f"{round_id} 的文件已恢复到基线，但撤销**未能入账**（{exc}）。"
-                    f"本进程内不会重复撤销；重启后账本会以为它还没撤过。"
-                    f"届时应重跑闭环而不是手工改账——提交时的 after_digest "
-                    f"对不上当前内容，漂移检查会拦住重复撤销") from exc
-        return undo
+                    f"{round_id} 已于 {done.undone_at} 由 {done.decided_by} 撤销过，"
+                    f"不得二次撤销（幂等不等于放任：基线已经不是原来的样子）")
+            if self.root is None:
+                raise RevisionError("账本没有工作根（root），无法执行撤销")
+            if service is None:
+                # 「没接审批」不等于「不用审批」。缺服务就停，绝不放行。
+                raise RevisionError(
+                    "未接入审批服务，撤销被拒：撤销已提交补丁是人工确认动作，"
+                    "不接受无票执行")
+
+            # ① 验票（一次性、签名绑定本轮、主体绑定）
+            service.consume(approval_id, tool=UNDO_TOOL,
+                            signature=undo_signature([round_id]),
+                            agent=requester, role=role)
+            ticket = service.get(approval_id)
+
+            # ② 漂移检查：**在写之前全量检查**，不做「边查边写」
+            drift = [p for p in record.paths
+                     if self._current_digest(p) != record.after_digest.get(p, "")]
+
+            if drift:
+                raise RevisionError(
+                    f"{round_id} 涉及的文件在提交后又被改动过，拒绝撤销：{drift}。"
+                    f"盲写回 before 会把这些改动一起冲掉——请人工确认当前内容后再处理")
+
+            # ③ 写回（写一半失败则把已写的恢复成「撤销前」，保证失败=原状）
+            restored: list[str] = []
+            try:
+                for path in record.paths:
+                    self._write(path, record.before.get(path))
+                    restored.append(path)
+            except OSError as exc:
+                for path in restored:
+                    self._restore_to_committed(record, path)
+                raise RevisionError(
+                    f"{round_id} 撤销写盘失败，已恢复到撤销前：{exc}") from exc
+
+            undo = UndoRecord(
+                round_id=round_id, approval_id=approval_id,
+                decided_by=str(getattr(ticket, "decided_by", "") or ""),
+                requester=requester, reason=reason, restored=tuple(restored),
+                undone_at=_now_iso())
+            # 到这里文件已经回到基线，撤销**已经是事实**。所以先进内存（否则
+            # 本进程还能再撤一遍），再尝试落账；落账失败要如实说清两件事：
+            # 文件已经恢复、账本没记住——后者才是重启后的风险。
+            self._undone[round_id] = undo
+            if self.store is not None:
+                try:
+                    self.store.append(self.ledger_id, {
+                        "kind": "undo", "at": _now_iso(), "undo": undo.as_dict()})
+                except Exception as exc:  # noqa: BLE001 —— 写失败要转成可读错误
+                    raise RevisionError(
+                        f"{round_id} 的文件已恢复到基线，但撤销**未能入账**（{exc}）。"
+                        f"本进程内不会重复撤销；重启后账本会以为它还没撤过。"
+                        f"届时应重跑闭环而不是手工改账——提交时的 after_digest "
+                        f"对不上当前内容，漂移检查会拦住重复撤销") from exc
+            return undo
 
     # ---------------- 内部 ---------------- #
     def _resolve(self, rel: str) -> Path:

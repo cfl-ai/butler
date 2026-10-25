@@ -112,8 +112,10 @@ def test_p10_decisions_are_registered_and_resolved():
     #       repair_loop 的 _next_round_no）
     # U83 = 已提交补丁账本的持久化（2026-10-25 补，见 harness/revision.py 的 LedgerStore）
     # U85 = 离线闭环的排程单元（2026-10-25 补，见 agents/repair_job.py）
+    # U86 = 账本写互斥（2026-10-25 补，见 core/filelock.py）
+    # U87 = 账本落盘每行 fsync（2026-10-25 补，见三处 append）
     assert keys == {"U08", "U32", "U33", "U34", "U35", "U36", "U49", "U58",
-                    "U77", "U78", "U80", "U81", "U82", "U83", "U85"}
+                    "U77", "U78", "U80", "U81", "U82", "U83", "U85", "U86", "U87"}
     for key in keys:
         assert decisions.get(key).status == decisions.RESOLVED
 
