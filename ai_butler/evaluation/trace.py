@@ -240,6 +240,55 @@ def _as_tuple_of_str(value: Any, *, where: str) -> tuple[str, ...]:
     return tuple(out)
 
 
+def trace_to_dict(trace: AgentTrace) -> dict[str, Any]:
+    """`AgentTrace` → dict（State 形态）。**与 `trace_from_dict` 严格对称。**
+
+    这个方向此前是缺的：只有反序列化，没有序列化。后果不是「少一个工具函数」，
+    而是任何一个真实生产端（`StreamTraceProducer` / `JournalTraceSource`）
+    产出的 `AgentTrace` **进不了 State**——首轮痕迹只能由调用方手工拼 dict，
+    于是「痕迹有生产者」和「评测读得到痕迹」两句话同时成立却接不上。
+
+    对称性由 `test_trace_dict_roundtrip` 守着：字段改名时两边一起红。
+    """
+    if not isinstance(trace, AgentTrace):
+        raise TraceError(f"trace_to_dict 只接 AgentTrace，实际 {type(trace).__name__}")
+    return {
+        "trace_id": trace.trace_id,
+        "question": trace.question,
+        "answer": trace.answer,
+        "retrieval": (None if trace.retrieval is None else {
+            "query": trace.retrieval.query,
+            "retrieved_ids": list(trace.retrieval.retrieved_ids),
+            "scores": list(trace.retrieval.scores)}),
+        "tool_calls": [{
+            "name": call.name, "ok": bool(call.ok),
+            "executed": bool(call.executed), "error_code": call.error_code,
+            "latency_ms": float(call.latency_ms), "arguments": dict(call.arguments),
+            "required": int(getattr(call.required, "value", call.required)),
+        } for call in trace.tool_calls],
+        "llm_calls": [{
+            "model": call.model, "prompt_tokens": int(call.prompt_tokens),
+            "completion_tokens": int(call.completion_tokens),
+            "latency_ms": float(call.latency_ms),
+        } for call in trace.llm_calls],
+        "exceptions": [{
+            "stage": broken.stage, "error_code": broken.error_code,
+            "message": broken.message, "timeout_ms": broken.timeout_ms,
+        } for broken in trace.exceptions],
+        "claimed_outcomes": [{
+            "claim": claim.claim, "depends_on": list(claim.depends_on),
+        } for claim in trace.claimed_outcomes],
+        "security": (None if trace.security is None else {
+            "agent_key": trace.security.agent_key,
+            "agent_level": int(getattr(trace.security.agent_level, "value",
+                                       trace.security.agent_level)),
+            "role": int(getattr(trace.security.role, "value",
+                                trace.security.role)),
+        }),
+        "completed": bool(trace.completed),
+    }
+
+
 def trace_from_dict(payload: Mapping[str, Any]) -> AgentTrace:
     """dict → AgentTrace。缺 trace_id/question 直接拒收。"""
     if not isinstance(payload, Mapping):

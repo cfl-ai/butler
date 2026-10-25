@@ -32,11 +32,16 @@ U78/U79 之后，`EvaluationPlatformAgent`、`HarnessAgent`、`StreamTraceProduc
    harness 没产出可用补丁（没改就没有「改动效果」可评）。
    硬走下去的后果是一样的：把「没改」评成「白改」，或者把「没测」评成「通过」。
 
-本模块**不实现**的两件事（如实登记，不在这里假装）
---------------------------------------------------
-- **首轮痕迹的来源**：调用方给（线上日志 / U57 事件账本回放）。本模块不生产
-  第一轮的痕迹，只负责「修完再产一次」。
-- **自动挂到定时任务**：本模块只提供装配点与驱动；排程属运行时集成。
+曾经登记为「不实现」、现已补上的两件事
+--------------------------------------
+- **首轮痕迹的来源**（U84）：`evaluation/journal_source.py` 从会话事件账本
+  回放出 `AgentTrace`，与 `StreamTraceProducer` 同端口。`run(traces=...)`
+  因此可以省略——首轮读的是**已经发生过的会话**，这正是「离线运行」的意思。
+  如果来源给了却一条都取不到，闭环停在 `no_traces`：**没有痕迹就不改代码**，
+  否则「查不到证据」会被当成缺陷送去改代码。
+- **排程**（U85）：`agents/repair_job.py` 只提供调度单元（`due` / `run` /
+  状态），不起线程、不发明调度语义。计划书只写到「7×24 后台离线自动运行」，
+  定时器的形态属运行时集成，由宿主的调度器决定。
 
 跨轮重试（U81）
 ---------------
@@ -82,14 +87,17 @@ from ai_butler.agents.state import new_state
 from ai_butler.core.approval import ApprovalError, ApprovalService
 from ai_butler.evaluation.defects import DefectBatch, batch_from_dict, defects_from_reports
 from ai_butler.evaluation.fingerprint import DefectFingerprint, fingerprint_of
-from ai_butler.evaluation.platform import PlatformReport
+from ai_butler.evaluation.journal_source import JournalTraceSource
+from ai_butler.evaluation.platform import EvaluationCase, PlatformReport
 from ai_butler.evaluation.producer import COLLECTOR_USER_ID, StreamTraceProducer
 from ai_butler.evaluation.recheck import RecheckVerdict
+from ai_butler.evaluation.trace import trace_to_dict
 from ai_butler.harness.patch import ALLOWED_SCOPE_BY_KIND, FORBIDDEN_PATHS
 from ai_butler.harness.intake import files_from_hint
 from ai_butler.harness.revision import (
     UNDO_TOOL,
     CommittedPatch,
+    FileLedgerStore,
     RevisionError,
     RevisionLedger,
     undo_signature,
@@ -369,8 +377,11 @@ def build_repair_loop(*, builder: Callable[[], Any] | None = None,
                       producer: Any = None,
                       max_rounds: int = DEFAULT_MAX_ROUNDS,
                       ledger: RevisionLedger | None = None,
+                      ledger_path: str | None = None,
                       trail: RepairTrail | None = None,
+                      trail_path: str | None = None,
                       approvals: ApprovalService | None = None,
+                      journal: Any = None,
                       user_id: str = REPAIR_USER_ID) -> RepairLoop:
     """装配「评测中台 → harness → 复评」这条闭环。**唯一装配点。**
 
@@ -388,6 +399,15 @@ def build_repair_loop(*, builder: Callable[[], Any] | None = None,
     - `trail` 缺省只留内存（不给路径就不落盘，测试与一次性运行不该留垃圾）；
     - `approvals` 缺省为 None。此时若有冲突文件需要撤销，闭环**停**并说明
       「需要人工确认但没有审批服务」——不给捷径。
+
+    持久化（U83）由两个路径参数控制，**建议一起给**：
+
+    - `ledger_path`：版本账落盘。跨进程撤销必需（`before` 正文跟着落盘）；
+    - `trail_path`：溯源账落盘。跨进程的轮次编号必需。
+      只给前者会让编号从 R1 重来，而账本里 R1 已存在——第二次运行提交不了补丁。
+
+    首轮痕迹（U84）由 `journal` 控制：给了会话账本就装配
+    `JournalTraceSource`，`run(traces=...)` 可以省略。
     """
     if producer is not None and builder is not None:
         # 两个都给：不安静地挑一个。挑哪个都可能是错的，而错的方式是
@@ -403,13 +423,26 @@ def build_repair_loop(*, builder: Callable[[], Any] | None = None,
     harness = HarnessAgent(
         tools=grant(HarnessAgent, {}), sandbox=sandbox, coder=coder,
         patch_root=patch_root)
-    if ledger is None and patch_root:
+    if ledger is None and (patch_root or ledger_path):
         # 有工作根才建带 root 的账本：账本的价值一半是「知道改过什么」，
         # 另一半是「能撤回去」。没有 root 的那一半如实缺席，不假装。
-        ledger = RevisionLedger(root=Path(patch_root))
+        # 给了 `ledger_path` 才落盘——不给就只活在内存里（U83：跨进程撤销
+        # 需要 before 正文一起落盘，见 harness/revision.py 的持久化一节）。
+        ledger = RevisionLedger(
+            root=Path(patch_root) if patch_root else None,
+            store=FileLedgerStore(ledger_path) if ledger_path else None)
+    if trail is None and trail_path:
+        # 溯源账落盘才有「跨轮的轮次号」。两者要一起给：只持久化版本账
+        # 会让编号在重启后从 R1 重来，而版本账里 R1 已存在——第二次运行
+        # 提交不了补丁（U82 的真机症状，只是换了个触发场景）。
+        trail = RepairTrail(path=trail_path)
     return RepairLoop(evaluator=evaluator, harness=harness, user_id=user_id,
                       max_rounds=max_rounds, ledger=ledger, trail=trail,
-                      approvals=approvals)
+                      approvals=approvals,
+                      # 首轮痕迹的来源（U84）：给了会话账本，`run(traces=...)`
+                      # 就可以不传——首轮读的是**已经发生过的会话**。
+                      source=(JournalTraceSource(journal) if journal is not None
+                              else None))
 
 
 # --------------------------------------------------------------------------- #
@@ -437,6 +470,11 @@ class RepairLoop:
     ledger: RevisionLedger | None = None
     #: 轮次溯源账。为 None 时按需建一个内存账本（`explain` 仍然可用）。
     trail: RepairTrail | None = None
+    #: 首轮痕迹的来源（U84）。`run(traces=...)` 为空时用它产出。
+    #: 与 `producer`（复评现跑）是两件事：首轮读**已经发生过的会话**，
+    #: 复评读**刚刚改完之后重跑的会话**。混成一个参数会让「评的是哪一版代码」
+    #: 在跨轮里变得说不清。
+    source: Any = None
     #: 人工审批服务。撤销已提交补丁**必须**经它签票（U59/U81）。
     approvals: ApprovalService | None = None
     #: 撤销票的申请主体（票与 agent/role 绑定，U51 不可传递）
@@ -457,7 +495,34 @@ class RepairLoop:
     def _trail(self) -> RepairTrail:
         if self.trail is None:
             self.trail = RepairTrail()
+        # 每个读口都先回读一次：给了 `path` 的溯源账在**跨进程**时才有历史，
+        # 而编号续接（`_next_round_no`）正是靠这份历史。`load()` 是幂等的
+        # （内存里已有记录就直接返回），所以放在这里不会重复载入。
+        self.trail.load()
         return self.trail
+
+    async def _traces_from_source(
+            self, cases: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        """首轮痕迹：从来源取，转成 State 形态。**同一个 trace 只收一次。**
+
+        按用例取而不是按 question 去重，是因为来源的端口就是 `produce(case)`；
+        多个用例问同一个问题时，同一个 trace 会被取到多次——按 `trace_id`
+        去重，否则稳定性维度的分母会被凭空放大：看起来「跑了两次」，
+        其实只有一次，判出来的「稳定」是假的。
+        """
+        seen: set[str] = set()
+        out: list[dict[str, Any]] = []
+        for case in cases:
+            produced = await self.source.produce(
+                EvaluationCase.from_dict(dict(case)))
+            for trace in produced:
+                if trace.trace_id in seen:
+                    continue
+                seen.add(trace.trace_id)
+                # 出口走 `trace_to_dict` 而不是自己拼：State 的字段名与
+                # `trace_from_dict` 是一对，两处各拼一次必然分叉（E-44）。
+                out.append(trace_to_dict(trace))
+        return out
 
     def _next_round_no(self) -> int:
         """本次运行从第几轮开始编号：接在账本里已有轮次之后。
@@ -474,13 +539,14 @@ class RepairLoop:
 
     # ------------------------------------------------------------------ #
     async def run(self, *, cases: Sequence[Mapping[str, Any]],
-                  traces: Sequence[Mapping[str, Any]],
+                  traces: Sequence[Mapping[str, Any]] = (),
                   extra: Mapping[str, Any] | None = None,
                   undo_approval: str = "",
                   undo_rounds: Sequence[str] = ()) -> RepairOutcome:
         """跑闭环。每一轮都完整走「评 → 修 → 复评」，最多 `max_rounds` 轮。
 
         `cases` / `traces` 是 State 形态的 dict（可 JSON 化）。
+        `traces` 可以不给：那时由 `source`（首轮痕迹来源，U84）从会话账本取。
 
         `undo_approval` / `undo_rounds` 是**人工已批准**的撤销：只有
         「本轮要改的文件被前几轮锁住」或「上一轮改坏了要回到基线」时才用得上。
@@ -488,15 +554,6 @@ class RepairLoop:
         """
         case_list = [dict(c) for c in cases]
         trace_list = [dict(t) for t in traces]
-
-        state: dict[str, Any] = new_state(user_id=self.user_id,
-                                          session_id="repair-loop")
-        # State 只放可 JSON 化的东西：评测中台自己 `from_dict` 回来，
-        # 形态不对就在那里报错（半套痕迹评出来的结论比没有结论更危险）。
-        state["eval_cases"] = case_list
-        state["agent_traces"] = trace_list
-        state.update(dict(extra or {}))
-
         stages: list[RepairStage] = []
         rounds: list[Mapping[str, Any]] = []
         undone: list[Mapping[str, Any]] = []
@@ -507,6 +564,35 @@ class RepairLoop:
         # 撞号的后果两处都是硬的——溯源账里两条不同的 R1（`get()` 只看得见第一条），
         # 版本账那边更直接：`record()` 拒绝同一轮二次提交，第二次根本提交不了补丁。
         base = self._next_round_no()
+
+        if not trace_list and self.source is not None:
+            trace_list = await self._traces_from_source(case_list)
+            if not trace_list:
+                # 来源给了、一条都取不到：**不往下走**。
+                # 继续走的后果是评测把每条用例判成「没采集到」，那会被当成
+                # 缺陷送进 harness 去改代码——「查不到证据」驱动改代码，
+                # 是这条链路上最坏的一种自动化。
+                empty = DefectBatch()
+                rounds.append(self._close_round(
+                    round_id=f"R{base}", started_at=_now_iso(),
+                    batch=empty, fp=fingerprint_of(()), scope=None, patch={},
+                    rationale="", verification=(), stopped="no_traces",
+                    handoff="会话账本里没有可回放的痕迹，未进入修复"))
+                return self._finish(
+                    stages, rounds=rounds, case_count=len(case_list),
+                    defect_count=0, rounds_run=1,
+                    requires_manual=True,
+                    reason=("没有痕迹就没有可核实的证据：会话账本里没有"
+                            "任何一次运行，改代码无从验证。请先确认埋点已接通"
+                            "（evaluation/journal_source.write_trace）"))
+
+        state: dict[str, Any] = new_state(user_id=self.user_id,
+                                          session_id="repair-loop")
+        # State 只放可 JSON 化的东西：评测中台自己 `from_dict` 回来，
+        # 形态不对就在那里报错（半套痕迹评出来的结论比没有结论更危险）。
+        state["eval_cases"] = case_list
+        state["agent_traces"] = trace_list
+        state.update(dict(extra or {}))
 
         for round_no in range(1, total_rounds + 1):
             tag = f"R{base + round_no - 1}"

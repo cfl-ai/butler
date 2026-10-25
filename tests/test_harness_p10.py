@@ -110,8 +110,10 @@ def test_p10_decisions_are_registered_and_resolved():
     #       evaluation/fingerprint.py）
     # U82 = 跨次运行的轮次编号与账本唯一性（2026-10-25 补，见 trail.py 的 TrailError、
     #       repair_loop 的 _next_round_no）
+    # U83 = 已提交补丁账本的持久化（2026-10-25 补，见 harness/revision.py 的 LedgerStore）
+    # U85 = 离线闭环的排程单元（2026-10-25 补，见 agents/repair_job.py）
     assert keys == {"U08", "U32", "U33", "U34", "U35", "U36", "U49", "U58",
-                    "U77", "U78", "U80", "U81", "U82"}
+                    "U77", "U78", "U80", "U81", "U82", "U83", "U85"}
     for key in keys:
         assert decisions.get(key).status == decisions.RESOLVED
 
