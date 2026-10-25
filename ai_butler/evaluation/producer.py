@@ -21,17 +21,34 @@
 retrieval 会把「评测」和「被测系统」焊在一起，之后换管道就得改评测代码。
 这里改成接收 `stream_factory`——鸭子类型的事件流，谁产出都行。
 
+两句「接上真实管道才知道」的话
+------------------------------
+**一、`revise` 是替换，不是续写。** 真实管道在复检推翻初稿时会发一条
+`revise`（`retrieval/chat.py` 的弃答分支），那条事件带的是**用户真正
+看到的那一版**。早先这里只认 `chunk`，一旦接上真实管道，痕迹里的
+`answer` 会变成「初稿 + 弃答」拼起来的、谁也没说过的一段话——
+用它去算输出质量与证据忠实度，两边都是错的。
+
+**二、补丁落盘后必须重建管道。** 见 `TraceProducer` 的契约（E-83）：
+模块对象是进程内缓存。`before_run` 就是这件事的落点，
+由装配层提供（`agents/repair_loop.py` 的 `PipelineHolder` 会重载被测模块
+并重建 orchestrator）。它挂在 `produce()` 开头而不是 `_one()` 里：
+**一个用例的重跑组只该重建一次**——每跑一次就 reload 一遍模块，
+既慢又会让 reload 的副作用次数取决于 `runs`（不可解释）。
+
 未实现（如实登记）
 ------------------
 事件流只提供「计划要调哪些工具」（`plan` 事件的 tools），**不提供实际的
 工具调用记录**。所以本模块构造的痕迹里 `tool_calls` 恒为空，
 工具调用真实性维度会判「无从判定」而不是「通过」。
 不伪造 tool_calls —— 伪造出来的「工具都调了」会让复评放过真正的工具缺失。
+
+同理 `llm_calls` 也为空：事件流不吐 token 与耗时，成本维度只能「无从判定」。
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Callable, Sequence
 
 from ai_butler.evaluation.platform import EvaluationCase
@@ -62,12 +79,23 @@ class StreamTraceProducer:
 
     stream_factory: StreamFactory
     runs: int = 2
+    #: 每次 `produce()` 开头调用一次：**重载被测模块 / 重建管道**的落点（E-83）。
+    #: 不提供就沿用当前进程里的模块——补丁刚落盘时那评的是旧代码。
+    #: 抛异常是允许的：复评会把该用例记为 errored 并因此判 UNVERIFIED，
+    #: 这比交出一份基于旧代码的「没修好」诚实得多。
+    before_run: Callable[[], None] | None = None
+    #: 实际重建了几次（观测用）。`0` 表示整轮都没重建过——
+    #: 看到 `rejected_no_effect` 时先看这个数，别急着怀疑补丁。
+    refreshes: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         if self.runs < 1:
             raise ValueError("runs 至少为 1")
 
     async def produce(self, case: EvaluationCase) -> Sequence[AgentTrace]:
+        if self.before_run is not None:
+            self.before_run()
+            self.refreshes += 1
         out: list[AgentTrace] = []
         for index in range(1, self.runs + 1):
             out.append(await self._one(case, index))
@@ -76,6 +104,7 @@ class StreamTraceProducer:
     # ------------------------------------------------------------------ #
     async def _one(self, case: EvaluationCase, index: int) -> AgentTrace:
         chunks: list[str] = []
+        revised: str | None = None
         retrieved: tuple[str, ...] = ()
         exceptions: list[ExceptionRecord] = []
         completed = False
@@ -89,6 +118,9 @@ class StreamTraceProducer:
 
             if kind == "chunk":
                 chunks.append(text)
+            elif kind == "revise":
+                # 复检推翻了初稿：这是**替换**。见模块顶部「一」。
+                revised = text
             elif kind == "error":
                 exceptions.append(ExceptionRecord(
                     stage="execution",
@@ -101,7 +133,7 @@ class StreamTraceProducer:
         return AgentTrace(
             trace_id=f"{case.case_id}#run{index}",
             question=case.question,
-            answer="".join(chunks).strip(),
+            answer=(revised if revised is not None else "".join(chunks)).strip(),
             retrieval=RetrievalRecord(query=case.question, retrieved_ids=retrieved),
             # 见模块顶部「未实现」：事件流不提供实际工具调用，这里不伪造
             tool_calls=(),

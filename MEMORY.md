@@ -1603,6 +1603,59 @@ CI 只写在配置里、平时不跑，**新加的验证入口不会自动进去
 
 ---
 
+## E-85 「reload 被改的那个模块」不够：import 期绑定与重载顺序
+
+- **现象**（2026-10-25，接真实对话管道时）：把 U79 的复评生产端从「包装 `classify`
+  的替身」换成真实 `ChatOrchestrator`，为防止 E-83 在 produce 前就 reload 了
+  `ai_butler.retrieval.planner`。**补丁改的正是 planner**，reload 也做了，
+  复评仍报「没效果」。
+- **根因**：`chat.py` 写的是 `from ai_butler.retrieval.planner import plan as plan_query`
+  —— 名字在 **import 期**就绑进了 chat 自己的模块全局。reload planner 只换了
+  `sys.modules["...planner"]` 里的对象，chat 里的 `plan_query` 仍指向旧函数。
+  必须**再 reload chat** 它才会重新 import。更深一层：补丁若改在管道的**依赖**上
+  （`scheduler/router.py`），依赖还要排在管道**之前** reload，否则管道重新 import
+  到的还是旧符号。
+- **代价**：与 E-83 同形——稳定的错误结论，且排查方向完全错误（会去怀疑补丁）。
+  区别是 E-83 是「一次都没 reload」，这一种是「reload 了但没用」，更难发现，
+  因为日志里明明有 reload 这行。
+- **修法**：
+  - `PipelineHolder.refresh()` 的重载清单 = 本次 diff 触碰的模块 ∪ 管道链，
+    按「被依赖者在前」排序（`reload_targets()` 从 diff 里解析出触碰的模块）；
+  - 装配的 `builder` 必须是**延迟导入**（在函数体内 import）。顶部 import 好再传进来
+    就白 reload 了——那个名字指向旧类，重建出来的还是旧实例；
+  - `importlib.reload` 对「从任意路径加载的模块」会 `ModuleNotFoundError`
+    （测试里的管道替身），退回 `spec.loader.exec_module()`；注意失败的那次
+    reload 会把 `module.__spec__` 置成 `None`，`spec` 必须**在 reload 之前**取。
+- **教训**：**「重载」是一个依赖图上的操作，不是一个文件上的操作。**
+  问「要不要 reload」之前先问「谁在 import 期把这个名字拷走了」。
+  子进程能跑通（pytest 沙箱、重启服务）会系统性地掩盖这类问题——见 E-83 同一条。
+
+---
+
+## E-86 三件套各有实现、各有测试，却全项目零装配（E-77 第四形态复发）
+
+- **现象**（2026-10-25）：`EvaluationPlatformAgent`（评测中台）全项目**零实例化**；
+  `StreamTraceProducer`（复评的痕迹生产端）从未被构造过。两者的测试都绿，
+  §54.16 也写着「闭环已跑通」——那个「跑通」发生在一次性脚本里。
+- **根因**：`ButlerAgent.enroll()` 只收带 `phase_code` 的阶段 Agent
+  （命名必须与计划书真值源一致），评测中台是**横切 Agent**，没有 `phase_code`，
+  被 `enroll` 直接拒收。于是它天然无处安放——不是谁忘了写装配，
+  而是**现有的装配机制里没有它的位置**。
+- **代价**：声明 ≠ 能力的最完整形态。三件套的测试证明了「类可用」，
+  读者会合理地以为「链路在用」。这与 E-77 前几形态的区别在于：
+  代码、测试、文档三样都齐，只有**构造点**是空的。
+- **修法**：`agents/repair_loop.py` 的 `build_repair_loop()` 作唯一装配点 +
+  `RepairLoop.run()` 作唯一驱动入口，顺序（评→修→复评）写死在驱动里；
+  守护测试断言「给了 builder 就必须装上生产端」「五个停站一个都不能并成失败」。
+  端到端还配了**对照组**：同一补丁、同一用例，重建管道 → `accepted`，
+  不重建 → `rejected_no_effect`。没有对照组，那个 `accepted` 可能只是标准太松。
+- **教训**：**「有测试」不能推出「有装配」。** 守 E-77 的判据要写成可执行的三问：
+  *有没有实现 / 有没有人构造 / **有没有人往里写**（E-81）*。
+  第三问尤其容易漏：构造点未必在计划书的阶段表里，
+  横切设施、横切 Agent 都要单独给位置，否则它们只会留在测试里。
+
+---
+
 ## 二、环境基线（复现上述解决方案所必需）
 
 - 操作系统：Windows AMD64，16 逻辑核，内存 11 GB，C 盘可用 36.5 GB / D 盘可用 106.7 GB
