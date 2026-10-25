@@ -23,6 +23,8 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+import pytest
+
 from ai_butler.agents.capabilities import grant
 from ai_butler.agents.eval_platform import EvaluationPlatformAgent
 from ai_butler.agents.p10_harness import HarnessAgent
@@ -43,7 +45,7 @@ from ai_butler.harness.revision import (
     undo_signature,
 )
 from ai_butler.harness.sandbox import SandboxResult
-from ai_butler.harness.trail import RepairTrail
+from ai_butler.harness.trail import RepairTrail, RoundRecord, TrailError
 
 #: 只让「检索召回」一个维度失败的报告 —— 只产一条 AUTO 类缺陷。
 #: 用 `synthetic_report` 不行：它七个维度全 fail，会带出 security_violation，
@@ -739,6 +741,47 @@ def test_explain_reads_like_a_story():
         assert keyword in text, f"缺少「{keyword}」这一段：{text}"
 
 
+def test_round_summary_names_the_files_the_patch_wrote():
+    """「改了什么」必须答得出文件名，而不是 0 个文件。
+
+    真机路径上这两个键曾经是缺的：补丁段只有逐份明细（`results`）与撤销
+    凭据（`committed`），而溯源账读的是**汇总** `paths` / `touched`。于是
+    账上写「改动：True []（0 行）」，实际改了一个文件——账报错数，人就
+    会照着错的数决定撤哪一轮，这比缺字段更难发现。
+    """
+    bad = _report(evidence="检索召回 1/3")
+    evaluator = ScriptedEvaluator([{
+        "evaluate": [bad],
+        "recheck": _recheck(RecheckVerdict.ACCEPTED.value,
+                            reports=[_report(fail=False)],
+                            reason="修好了", fixed=["c1"])}])
+    loop = RepairLoop(evaluator=evaluator, harness=StubHarness(), max_rounds=1)
+    out = _run(loop)
+    record = loop.trail.get("R1")
+    # 替身只给了 `committed`，汇总由 `_patch_view` 补齐（唯一一处补齐）
+    assert record.patch["paths"] == [_PLANNER]
+    assert out.rounds[0]["patch_paths"] == [_PLANNER]
+    assert out.repair["paths"] == [_PLANNER]
+    # 人读的说明里也得看得见这个文件
+    assert _PLANNER in loop.explain("R1")
+
+
+def test_no_written_files_means_empty_not_guessed():
+    """没改动就写空。编一份文件清单比缺字段更难排查——账本宁可少写。"""
+    evaluator = ScriptedEvaluator([{
+        "evaluate": [_report()],
+        "recheck": _recheck(RecheckVerdict.REJECTED_NO_EFFECT.value,
+                            reason="没改")}])
+    loop = RepairLoop(evaluator=evaluator, harness=StubHarness(applied=False,
+                                                              diff=""),
+                      max_rounds=1)
+    out = _run(loop)
+    record = loop.trail.get("R1")
+    assert record is not None
+    assert not (record.patch or {}).get("paths")
+    assert out.rounds[0]["patch_paths"] == []
+
+
 def test_trail_persists_and_reloads(tmp_path):
     """落盘可回读：溯源不能只在内存里成立。"""
     path = tmp_path / "trail.jsonl"
@@ -779,7 +822,84 @@ def test_trail_redacts_before_writing(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# 六、harness 跨轮不串味
+# 六、账本编号：同一次会话里的第二轮不能又叫 R1
+# --------------------------------------------------------------------------- #
+def test_trail_refuses_two_records_for_one_round():
+    """一轮两条记录 = 影子账：`get()` 只返回第一条，第二条谁也读不到。"""
+    trail = RepairTrail()
+    trail.append(RoundRecord(round_id="R1", started_at="t1"))
+    with pytest.raises(TrailError):
+        trail.append(RoundRecord(round_id="R1", started_at="t2"))
+    assert [r.started_at for r in trail.rounds()] == ["t1"]
+
+
+def test_second_run_can_commit_again_without_round_collision(tmp_path):
+    """同一实例跑第二次必须还能提交补丁。
+
+    轮次号不续接时，第二次运行的第一轮又叫 R1，`RevisionLedger.record()`
+    拒绝二次提交——于是「跑第二次」这件事本身抛错，而不是「跑出结果」。
+    """
+    root = _repo(tmp_path)
+    ledger = RevisionLedger(root=root)
+    bad = _report(evidence="检索召回 1/3")
+    evaluator = ScriptedEvaluator([
+        {"evaluate": [bad],
+         "recheck": _recheck(RecheckVerdict.REJECTED_NO_EFFECT.value,
+                             reports=[bad], reason="没修好")},
+        {"evaluate": [bad],
+         "recheck": _recheck(RecheckVerdict.ACCEPTED.value,
+                             reports=[_report(fail=False)],
+                             reason="修好了", fixed=["c1"])},
+    ])
+    loop = RepairLoop(evaluator=evaluator, harness=StubHarness(), max_rounds=1,
+                      ledger=ledger)
+    first = _run(loop)
+    second = _run(loop)
+    assert first.rounds[0]["round_id"] == "R1"
+    assert second.rounds[0]["round_id"] == "R2"
+    assert [r.round_id for r in loop.trail.rounds()] == ["R1", "R2"]
+    assert [r.round_id for r in ledger.rounds()] == ["R1", "R2"]
+
+
+def test_undo_credential_survives_a_later_early_stop(tmp_path):
+    """撤销生效后紧接着「没补丁」早退，凭证不能跟着一起消失。
+
+    早退分支只带 `reason` 不带 `undone` 时，人会看到文件已经变了、
+    却没有一条记录说明是谁撤的——这比「没撤」更难查。
+    """
+    root = _repo(tmp_path)
+    ledger = RevisionLedger(root=root)
+    trail = RepairTrail()
+    service = ApprovalService(ttl_seconds=600)
+    bad = _report(evidence="检索召回 1/3")
+    first = RepairLoop(
+        evaluator=ScriptedEvaluator([
+            {"evaluate": [bad],
+             "recheck": _recheck(RecheckVerdict.REJECTED_NO_EFFECT.value,
+                                 reports=[bad], reason="没修好")}]),
+        harness=StubHarness(), max_rounds=1, ledger=ledger, trail=trail,
+        approvals=service)
+    _run(first)
+    assert ledger.locked_paths() == (_PLANNER,)
+
+    # 第二次运行：批准撤销 R1，随后 harness 明确「本轮不该改」
+    again = RepairLoop(
+        evaluator=ScriptedEvaluator([{"evaluate": [bad], "recheck": {}}]),
+        harness=StubHarness(applied=False, diff=""), max_rounds=1,
+        ledger=ledger, trail=trail, approvals=service)
+    out = _run(again, undo_approval=_approved(service, ["R1"]),
+               undo_rounds=["R1"])
+    assert [u["round_id"] for u in out.undone] == ["R1"]
+    assert out.undone[0]["decided_by"] == "reviewer"
+    # 撤销后锁定解除，文件回到补丁之前的原文
+    assert ledger.locked_paths() == ()
+    assert (root / _PLANNER).read_text(encoding="utf-8") == "old\n"
+    # 第二次运行的那一轮续接为 R2，没有和 R1 撞号
+    assert [r.round_id for r in trail.rounds()] == ["R1", "R2"]
+
+
+# --------------------------------------------------------------------------- #
+# 七、harness 跨轮不串味
 # --------------------------------------------------------------------------- #
 class _Sandbox:
     def __init__(self) -> None:
@@ -834,6 +954,9 @@ def test_second_run_does_not_inherit_first_run_diff(tmp_path):
     first = asyncio.run(agent.run(state))["p10_harness"]
     assert first["patch"]["applied"] is True
     assert first["patch"]["diff"] == _DIFF
+    # 改动面（U81）：生产端必须在补丁段给汇总，否则溯源账只能报「0 个文件」
+    assert first["patch"]["paths"] == [_PLANNER]
+    assert first["patch"]["touched"] >= 1
 
     second = asyncio.run(agent.run(_harness_state()))["p10_harness"]
     assert second["patch"]["applied"] is False
@@ -842,6 +965,9 @@ def test_second_run_does_not_inherit_first_run_diff(tmp_path):
     assert "补丁未保留" not in second["patch_not_applied"]["reason"]
     assert second["patch"]["diff"] == ""
     assert len(second["patch"]["code"]) == 1        # 只有本轮那一条
+    # 没写的文件不许残留上一轮的清单
+    assert second["patch"]["paths"] == []
+    assert second["patch"]["touched"] == 0
 
 
 def test_locked_files_are_removed_from_coder_context(tmp_path):
@@ -888,6 +1014,24 @@ def test_patch_touching_unlocked_files_still_passes(tmp_path):
     payload = asyncio.run(agent.run(state))["p10_harness"]
     assert writer.calls == 1
     assert payload["patch"]["applied"] is True
+
+
+def test_written_paths_count_only_applied_patches():
+    """`ok=False` 的那份已经回滚，不能算进「改了什么」。
+
+    把它算进去的账报的改动面比实际大：人照着账去撤，撤不到东西，
+    还会以为「撤过了却没变化」是撤销实现坏了。
+    """
+    from types import SimpleNamespace
+
+    from ai_butler.harness.patch import PatchResult
+
+    result = SimpleNamespace(patch_results=[
+        PatchResult(ok=True, paths=(_PLANNER,), touched=3),
+        PatchResult(ok=False, paths=(_CHAT,), touched=9, rolled_back=True),
+        PatchResult(ok=True, paths=(_PLANNER,), touched=2),   # 同一文件叠两次
+    ])
+    assert HarnessAgent._written(result) == {"paths": [_PLANNER], "touched": 5}
 
 
 def _batch_of(defects: Sequence[Mapping[str, Any]]):

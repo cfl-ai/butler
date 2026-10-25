@@ -459,6 +459,19 @@ class RepairLoop:
             self.trail = RepairTrail()
         return self.trail
 
+    def _next_round_no(self) -> int:
+        """本次运行从第几轮开始编号：接在账本里已有轮次之后。
+
+        只看 `R<n>` 形态并取最大者 + 1：账本里可能有别人写进来的其它前缀，
+        那些不该影响编号；而缺口（R1、R3）不影响——重号才是问题，跳号不是。
+        """
+        highest = 0
+        for record in self._trail().rounds():
+            suffix = record.round_id[1:]
+            if record.round_id.startswith("R") and suffix.isdigit():
+                highest = max(highest, int(suffix))
+        return highest + 1
+
     # ------------------------------------------------------------------ #
     async def run(self, *, cases: Sequence[Mapping[str, Any]],
                   traces: Sequence[Mapping[str, Any]],
@@ -490,9 +503,13 @@ class RepairLoop:
         prev_fp: DefectFingerprint | None = None
         carried: tuple[PlatformReport, ...] = ()
         total_rounds = max(1, int(self.max_rounds))
+        # 轮次号**跨次运行续接**：同一个闭环实例第二次 `run()` 不能又从 R1 开始。
+        # 撞号的后果两处都是硬的——溯源账里两条不同的 R1（`get()` 只看得见第一条），
+        # 版本账那边更直接：`record()` 拒绝同一轮二次提交，第二次根本提交不了补丁。
+        base = self._next_round_no()
 
         for round_no in range(1, total_rounds + 1):
-            tag = f"R{round_no}"
+            tag = f"R{base + round_no - 1}"
             started_at = _now_iso()
 
             # ---------------- 第一段：评（或晋升上一轮的复评报告） ----------------
@@ -618,9 +635,7 @@ class RepairLoop:
             if not rationale and code:
                 rationale = str((code[-1] or {}).get("error") or "")
             repair = {"applied": applied, "diff_chars": len(diff),
-                      "paths": list((patch or {}).get("paths")
-                                    or ((patch or {}).get("committed") or {}).get("paths")
-                                    or ()),
+                      "paths": list(_patch_view(patch).get("paths") or ()),
                       "coder_wired": bool((patch or {}).get("coder_wired")),
                       "converged": bool(harness_section.get("converged"))}
 
@@ -633,7 +648,8 @@ class RepairLoop:
                     scope=scope, patch={}, rationale="", verification=(),
                     stopped="harness_not_run", handoff=why))
                 return self._finish(
-                    stages, rounds=rounds, case_count=case_count,
+                    stages, rounds=rounds, undone=tuple(undone),
+                    case_count=case_count,
                     defect_count=defect_count, repair=repair,
                     rounds_run=round_no, requires_manual=True,
                     reason=f"harness 未运行：{why}")
@@ -655,8 +671,9 @@ class RepairLoop:
                     # 这是「撤销需人工确认」唯一真正需要发生的场合：
                     # 只要本轮还有别的板块可改，就不该来打扰人。
                     return self._ask_undo(
-                        stages, rounds, scope, round_no, case_count,
+                        stages, rounds, scope, tag, round_no, case_count,
                         defect_count, started_at, batch, fp,
+                        undone=undone,
                         patch=patch, rationale=rationale,
                         verification=verification, why=why)
                 rounds.append(self._close_round(
@@ -666,7 +683,8 @@ class RepairLoop:
                     verification=verification, stopped="no_patch",
                     handoff=why or "harness 未产出可用补丁"))
                 return self._finish(
-                    stages, rounds=rounds, case_count=case_count,
+                    stages, rounds=rounds, undone=tuple(undone),
+                    case_count=case_count,
                     defect_count=defect_count, repair=repair,
                     rounds_run=round_no, requires_manual=True,
                     reason=(f"harness 未产出可用补丁，没有改动就没有「改动效果」可评：{why}"
@@ -778,7 +796,7 @@ class RepairLoop:
         # 「改坏了 / 乱改」的下一步是撤销本轮：**申请票**，让人批。
         request: dict[str, Any] = {}
         if code in ("rejected_regression", "rejected_audit"):
-            request = self._request_undo([tag], reason=f"R{round_no} {code}：{why}")
+            request = self._request_undo([tag], reason=f"{tag} {code}：{why}")
         return self._finish(
             stages, rounds=rounds, undone=tuple(undone),
             case_count=case_count, defect_count=defect_count,
@@ -792,9 +810,11 @@ class RepairLoop:
     # ------------------------------------------------------------------ #
     def _ask_undo(self, stages: list[RepairStage],
                   rounds: list[Mapping[str, Any]], scope: RoundScope,
-                  round_no: int, case_count: int, defect_count: int,
+                  tag: str, round_no: int, case_count: int,
+                  defect_count: int,
                   started_at: str, batch: DefectBatch,
                   fp: DefectFingerprint, *,
+                  undone: Sequence[Mapping[str, Any]] = (),
                   patch: Mapping[str, Any] | None = None,
                   rationale: str = "", verification: Sequence[str] = (),
                   why: str = "") -> RepairOutcome:
@@ -803,8 +823,12 @@ class RepairLoop:
         **只有到这一步才打扰人**：只要本轮别的板块还能改，就不该来要审批。
         这也是「边界」与「撤销审批」两件事的分界——前者是自动化自己能守的，
         后者必须有人签字。
+
+        `undone` 是**本次运行前面几轮已经撤掉的**：从这里提前返回时也要带上，
+        否则「撤销生效了」这件事会随早退一起消失，人只能看到文件变了却查不到
+        是谁撤的。`tag` 与 `round_no` 分开收：前者是账本上的唯一编号（跨次
+        运行续接），后者是本次运行跑了几轮。
         """
-        tag = f"R{round_no}"
         request = self._request_undo(list(scope.undo_rounds),
                                      reason=(f"{list(scope.conflicts)} 已被 "
                                              f"{list(scope.undo_rounds)} 改动过，"
@@ -822,7 +846,8 @@ class RepairLoop:
                 verification=verification, stopped="undo_needs_approval",
                 handoff="撤销已提交补丁需要人工确认，但未接入审批服务"))
             return self._finish(
-                stages, rounds=rounds, case_count=case_count,
+                stages, rounds=rounds, undone=tuple(undone),
+                case_count=case_count,
                 defect_count=defect_count, rounds_run=round_no,
                 requires_manual=True,
                 reason=(f"[undo_needs_approval] {detail}。撤销已提交补丁是"
@@ -838,7 +863,8 @@ class RepairLoop:
             verification=verification, stopped="undo_needs_approval",
             handoff=f"等待审批票 {request.get('approval_id')}"))
         return self._finish(
-            stages, rounds=rounds, case_count=case_count,
+            stages, rounds=rounds, undone=tuple(undone),
+            case_count=case_count,
             defect_count=defect_count, rounds_run=round_no,
             requires_manual=True, requires_approval=True,
             approval_request=request,
@@ -1017,11 +1043,21 @@ def _patch_view(patch: Mapping[str, Any] | None) -> dict[str, Any]:
     `before` 只在撤销时需要，由版本账（`harness/revision.py`）单独持有。
     溯源账是给人反复读的，塞进整份源码只会让人找不到重点，
     而且它会把账本体积放大到无法按轮翻阅。
+
+    同时把 `paths` / `touched` 补齐：账要回答「改了哪些文件、改了几行」，
+    这两个键必须有唯一来源。生产端（`agents/p10_harness.py`）给的是**成功
+    应用结果的并集**；只给 `committed` 的替身在这里补齐，免得每个读账的
+    地方各自兜底一次（E-44 的老毛病）。两处都缺就留空——没有凭据时
+    **不猜文件名**，账宁可少写，不能编。
     """
     view = dict(patch or {})
     committed = view.get("committed")
     if isinstance(committed, Mapping):
         view["committed"] = {k: v for k, v in committed.items() if k != "before"}
+        if not view.get("paths"):
+            view["paths"] = list(committed.get("paths") or ())
+        if not view.get("touched"):
+            view["touched"] = int(committed.get("touched") or 0)
     return view
 
 

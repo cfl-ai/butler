@@ -108,8 +108,10 @@ def test_p10_decisions_are_registered_and_resolved():
     # U80 = 两个 Agent 的配合要有装配点与固定顺序（2026-10-25 补，见 agents/repair_loop.py）
     # U81 = 跨轮重试的四道约束（2026-10-25 补，见 harness/revision.py、trail.py、
     #       evaluation/fingerprint.py）
+    # U82 = 跨次运行的轮次编号与账本唯一性（2026-10-25 补，见 trail.py 的 TrailError、
+    #       repair_loop 的 _next_round_no）
     assert keys == {"U08", "U32", "U33", "U34", "U35", "U36", "U49", "U58",
-                    "U77", "U78", "U80", "U81"}
+                    "U77", "U78", "U80", "U81", "U82"}
     for key in keys:
         assert decisions.get(key).status == decisions.RESOLVED
 

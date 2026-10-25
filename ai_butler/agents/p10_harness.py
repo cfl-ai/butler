@@ -392,6 +392,26 @@ class HarnessAgent(PhaseAgent):
                 return f"补丁未能应用：{outcome.reason[:300]}"
         return "补丁未保留：验证未通过已回滚，或被 Hook 拦截"
 
+    @staticmethod
+    def _written(result: LoopResult) -> dict[str, Any]:
+        """本轮**实际写入**的文件与行数：只算 `ok=True` 的那几份补丁结果。
+
+        `ok=False` 的那份已经回滚，仓库没被它改动；把它算进「改了什么」，
+        等于让溯源账谎报改动面——而人正是照着这份账去判断「该撤哪一轮」。
+
+        汇总在这里算一次，是因为 `results` 是逐份明细，谁都能从里面推，
+        谁推都会推得不一样（E-44）。空列表就是空列表：没改动就不编文件名。
+        """
+        paths: dict[str, None] = {}
+        touched = 0
+        for outcome in result.patch_results:
+            if not getattr(outcome, "ok", False):
+                continue
+            touched += int(getattr(outcome, "touched", 0) or 0)
+            for path in getattr(outcome, "paths", ()) or ():
+                paths.setdefault(str(path), None)
+        return {"paths": list(paths), "touched": touched}
+
     def _committed_patch(self, result: LoopResult) -> dict[str, Any] | None:
         """本轮**成功提交**的那份补丁的撤销凭据（U81）。
 
@@ -511,6 +531,8 @@ class HarnessAgent(PhaseAgent):
         # 「本轮真的改动了代码吗」只算一次，供下面两个字段共用
         patch_applied = any(bool(getattr(r, "ok", False))
                             for r in result.patch_results)
+        # 改动面的汇总（文件/行数）也只算一次：溯源账、`explain()`、审计都读它
+        written = self._written(result)
 
         return {"p10_harness": {
             "user_id": uid, "phase": self.phase_code, "ran": True,
@@ -527,6 +549,12 @@ class HarnessAgent(PhaseAgent):
             # 为什么没改（没 coder / 模型没产出 / 补丁越界 / 应用失败）。
             "patch": {
                 "applied": patch_applied,
+                # ---- 改动面（U81）：溯源账要回答「改了哪些文件、改了几行」 ----
+                # 明细在 `results` 里也有，但汇总只在这里算一次：读账的地方
+                # 各自从明细推导，迟早推出不同的数（E-44）。缺了这两个键，
+                # 账上会写「改了 0 个文件」，而实际上改了不止一个。
+                "paths": written["paths"],
+                "touched": written["touched"],
                 "root": root,
                 "results": [r.as_dict() for r in result.patch_results],
                 # 复评要用它做改动审计。**即使是应用失败的 diff 也要给**：

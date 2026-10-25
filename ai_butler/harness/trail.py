@@ -47,7 +47,14 @@ from typing import Any, Mapping
 
 from ai_butler.evaluation.redaction import Redactor
 
-__all__ = ["DefectTrace", "RepairTrail", "RoundRecord"]
+__all__ = ["DefectTrace", "RepairTrail", "RoundRecord", "TrailError"]
+
+
+class TrailError(RuntimeError):
+    """溯源账记不下去了（结构错误，不是「没找到」）。
+
+    与「查不到这一轮」分开：查不到是数据还没来，记不下去是账要坏了。
+    """
 
 
 def _as_tuple(value: Any) -> tuple[Any, ...]:
@@ -215,6 +222,15 @@ class RepairTrail:
         断言放在落盘**之前**：先落盘再断言，一旦断言失败，
         带明文的那一行已经在磁盘上了，删掉也只是「我们从没写过」的假象。
         """
+        # 一轮只能有一条记录。同一个 `round_id` 记两次的后果不是「多一行」：
+        # `get()` 只返回第一条，第二条成了**文件里有、谁读都读不到**的影子账，
+        # 而同名的两条内容往往不一样（一次改坏了、一次在撤销后重跑）——
+        # 于是「问题出在哪一轮」正好在这一刻失去唯一答案。
+        # 需要第二次运行时，轮次号必须续接（`RepairLoop._next_round_no`）。
+        if any(r.round_id == record.round_id for r in self._records):
+            raise TrailError(
+                f"{record.round_id} 已有记录，不能重复登记：同一轮两次运行必须"
+                f"续接轮次号，否则溯源账里会有两条不同的 {record.round_id}")
         safe = self.redactor.redact_deep(record.as_dict())
         self.redactor.assert_deep_clean(safe, where=f"溯源账 {record.round_id}")
         clean = RoundRecord.from_dict(safe)
