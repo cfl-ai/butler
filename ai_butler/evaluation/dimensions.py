@@ -219,7 +219,8 @@ def retrieval_recall(traces: Sequence[AgentTrace], *, relevant_ids: Sequence[str
     if not golden:
         return _result(RETRIEVAL_RECALL, 0.0, False,
                        "采集了检索痕迹但未提供检索金标准（relevant_ids）——"
-                       "无法判定召回是否完整，无从判定即不通过")
+                       "无法判定召回是否完整，无从判定即不通过",
+                       inconclusive="missing_relevant_ids")
 
     per_run: list[tuple[AgentTrace, float, list[str]]] = []
     no_trace = 0
@@ -275,7 +276,8 @@ def evidence_faithfulness(traces: Sequence[AgentTrace], *,
         return _not_applicable(EVIDENCE_FAITHFULNESS, "本用例不涉及证据核查（无证据文本也无检索痕迹）")
     if not evidence_texts:
         return _result(EVIDENCE_FAITHFULNESS, 0.0, False,
-                       "采集了检索痕迹但未提供证据文本（evidence_texts）——无从判定即不通过")
+                       "采集了检索痕迹但未提供证据文本（evidence_texts）——无从判定即不通过",
+                       inconclusive="missing_evidence_texts")
 
     judge_kind = "llm" if judge is not None else "heuristic"
     unsupported: list[str] = []
@@ -418,7 +420,7 @@ def stability_and_exceptions(traces: Sequence[AgentTrace], *,
     if len(traces) < 2:
         return _result(STABILITY_AND_EXCEPTIONS, 0.0, False,
                        f"只有 {len(traces)} 次运行——稳定性无从验证（至少需要 2 次）",
-                       runs=len(traces))
+                       runs=len(traces), inconclusive="insufficient_runs")
 
     answers = [_normalize(t.answer) for t in traces]
     baseline = answers[0]
@@ -606,7 +608,8 @@ def output_quality(traces: Sequence[AgentTrace], *, expected_answer: str = "",
     if not expected_answer.strip() and not expected_points:
         return _result(OUTPUT_QUALITY, 0.0, False,
                        "本用例既无期望答案也无必备要点——无从判定即不通过"
-                       "（每个评测用例都必须有结果侧预期）")
+                       "（每个评测用例都必须有结果侧预期）",
+                       inconclusive="missing_expected")
 
     per_run: list[tuple[AgentTrace, float, float, list[str]]] = []
     for trace in traces:

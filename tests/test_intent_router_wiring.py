@@ -190,7 +190,7 @@ def test_hard_rule_priority_follows_signal_table_order():
     rules = wiring.build_hard_rules()
     prios = [r.priority for r in rules]
     assert prios == sorted(prios, reverse=True), "优先级必须严格递减"
-    # 表首是 personal_recall（第一人称指代），所以它的优先级最高
+    # 表首是 personal_recall（回忆性指代），所以它的优先级最高
     assert rules[0].label == QueryCategory.PERSONAL_RECALL.value
     assert {r.label for r in rules} <= set(wiring.INTENT_LABELS)
 
@@ -420,7 +420,11 @@ def test_jev_calls_are_deterministic(settings):
 # 六、路由结论必须被 planner 消费（且只补空缺）
 # --------------------------------------------------------------------------- #
 def test_router_label_fills_the_gap_left_by_rules():
-    category, why, _ = classify("有没有便宜点的", intent_layer=LAYER_VECTOR,
+    # 这句是刻意选的：L1 对它**没有**确定信号（「预算内挑一个」不含表里任何词），
+    # 所以路由标签才有存在的必要。早先这里用的是「有没有便宜点的」，
+    # L1 补上「便宜点」这个推荐信号之后它就不再是空缺了——
+    # 用例得跟着判据走，不能反过来让判据迁就用例。
+    category, why, _ = classify("预算内挑一个", intent_layer=LAYER_VECTOR,
                                 intent_label="recommendation")
     assert category is QueryCategory.RECOMMENDATION
     assert "五层意图路由" in why and LAYER_VECTOR in why

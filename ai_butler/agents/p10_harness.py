@@ -27,9 +27,11 @@ from typing import Any, ClassVar, Mapping, Sequence
 
 from ai_butler.agents.capabilities import CAP_RETRIEVAL, CAP_WIKI_READ
 from ai_butler.agents.phase import PhaseAgent
+from ai_butler.evaluation.defects import batch_from_dict
 from ai_butler.evaluation.redaction import Redactor
 from ai_butler.harness.context import ContextItem
 from ai_butler.harness.hooks import HookChain
+from ai_butler.harness.intake import IntakeResult, RepairIntake, qa_verdict_from_batch
 from ai_butler.harness.loop import AgenticLoop, LoopResult, Proposal
 from ai_butler.harness.memory import ENTRY_PREFIX, MemoryEntry, from_qa_report
 from ai_butler.harness.risk import Change
@@ -57,6 +59,12 @@ class HarnessAgent(PhaseAgent):
     max_iterations: int = 8
     no_progress_limit: int = 2
 
+    #: 本轮缺陷受理结果（U76）。**不是状态缓存，是本轮的可审计产物**：
+    #: 为什么某条缺陷没被受理，必须在这一轮里说清楚（拒收原因在 rejected 里）
+    intake_result: IntakeResult | None = field(init=False, default=None)
+    intake_error: str = field(init=False, default="")
+    defect_batch: Any = field(init=False, default=None)
+
     def _context_items(self, state: Mapping[str, Any]) -> list[ContextItem]:
         out: list[ContextItem] = []
         for row in (state.get("harness_context") or []):
@@ -71,12 +79,15 @@ class HarnessAgent(PhaseAgent):
         return out
 
     def _proposals(self, state: Mapping[str, Any]) -> list[Proposal]:
-        """把外部（LLM 决策层）给出的提案转成内部结构。
+        """提案来源有二，**优先级明确**：
 
-        这里**不内置任何模型调用**：决策层是端口，由运行时注入。
-        没有提案就等于没有决策，循环直接以「未收敛」收尾，而不是自己编一个。
+        1. `harness_proposals`（显式给定）——外部决策层直接下发的提案，最高优先。
+        2. `eval_platform["defects"]`（U76）——评测中台产出的缺陷单，
+           经 `RepairIntake` 受理成提案。**只有在没有显式提案时才用**：
+           显式提案代表有人/有模型已经做了判断，缺陷单只是「发现」，
+           拿「发现」去覆盖「判断」等于把决定权从决策层夺走。
         """
-        out: list[Proposal] = []
+        explicit: list[Proposal] = []
         for row in (state.get("harness_proposals") or []):
             row = row or {}
             change = None
@@ -92,11 +103,48 @@ class HarnessAgent(PhaseAgent):
                     modifies_jev_template=bool(
                         raw_change.get("modifies_jev_template")),
                     wiki_pages_written=int(raw_change.get("wiki_pages_written") or 0))
-            out.append(Proposal(
+            explicit.append(Proposal(
                 summary=str(row.get("summary") or ""), change=change,
                 commands=tuple(row.get("commands") or ()),
                 done=bool(row.get("done"))))
-        return out
+        if explicit:
+            return explicit
+
+        # 兜底：从评测缺陷单生成提案（不编提案，没有缺陷就没有提案）
+        self.intake_result = self._intake_from_defects(state)
+        return list(self.intake_result.proposals()) if self.intake_result else []
+
+    def _intake_from_defects(self, state: Mapping[str, Any]) -> IntakeResult | None:
+        """把 `eval_platform["defects"]` 受理成工单。**无缺陷单就返回 None**。
+
+        全过（或根本没评）时返回 None，循环随后以「没有新提案」收尾并如实标注
+        转人工——不因为「没缺陷」就报「已达标」。
+        """
+        raw = (state.get("eval_platform") or {}).get("defects")
+        if not isinstance(raw, Mapping) or not raw.get("defects"):
+            return None
+        try:
+            batch = batch_from_dict(raw)
+        except Exception as error:                       # noqa: BLE001
+            # 缺陷单形态不对：不猜、不跳过，让整轮以失败收尾并说明原因
+            self.intake_error = f"{type(error).__name__}: {error}"
+            return None
+        self.defect_batch = batch
+        return RepairIntake(max_tickets=int(state.get("max_tickets") or 8)).intake(batch)
+
+    def _qa_verdict(self, state: Mapping[str, Any]) -> Mapping[str, Any] | None:
+        """质检结论：显式 `qa_verdict` 优先，否则由缺陷单推导（三、P10 步骤3）。
+
+        没有这一步，`HookChain` 的 `qa_link` 会因为「未收到质检结论」
+        把每一张缺陷工单都判成 needs_approval，闭环第一步就走不动。
+        评测中台本身就是质检方，它的缺陷单即结论，不另算一份。
+        """
+        explicit = state.get("qa_verdict")
+        if isinstance(explicit, Mapping):
+            return explicit
+        if self.defect_batch is not None:
+            return qa_verdict_from_batch(self.defect_batch)
+        return None
 
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
         uid = self.require_user_id(state)
@@ -121,7 +169,9 @@ class HarnessAgent(PhaseAgent):
 
         loop = AgenticLoop(
             decide=_decide,
-            hooks=HookChain.default(qa_verdict=state.get("qa_verdict")),
+            # 质检结论在上一步 `_proposals` 里已确定（缺陷单即结论），
+            # 必须**在这里**取，不能等循环里再取——Hook 是在执行前判的
+            hooks=HookChain.default(qa_verdict=self._qa_verdict(state)),
             sandbox=self.sandbox,
             max_iterations=self.max_iterations,
             no_progress_limit=self.no_progress_limit,
@@ -147,6 +197,17 @@ class HarnessAgent(PhaseAgent):
             "result": result.as_dict(),
             "converged": result.converged,
             "requires_approval": result.pending_approval is not None,
+            # ---- 缺陷受理（U76）：从评测中台拿问题 → 受理成工单 ----
+            "intake": (self.intake_result.as_dict(redactor)
+                       if self.intake_result is not None else None),
+            "intake_error": self.intake_error,
+            # **未实现项如实登记**：本轮只到「变更单」，没有补丁应用器。
+            # 声称能自动改源码而实际没有，比不做更坏（声明≠能力）。
+            "patch_not_applied": {
+                "applied": False,
+                "reason": "本轮未实现补丁应用器：缺陷单的 diff 为空并标注 "
+                          "diff_pending，落地需人工或 LLM 决策层注入补丁后重跑",
+            },
             # ---- 计划书步骤10：评测与版本管理 ----
             "change_note": {
                 "generated_at": now.isoformat(),

@@ -30,6 +30,10 @@
 5. **未接线项（如实登记）**：痕迹的**生产端**（各阶段 Agent 运行时埋点、
    把 ToolDispatcher 的调用写进 State）尚未接线。本 Agent 当前消费调用方
    显式提供的 traces；生产端接线属独立工作项，不在本模块假装已完成。
+6. **缺陷单（U76）**：除报告外还产出 `evaluation.defects.DefectBatch`，
+   写进 `eval_platform["defects"]` 供 P10 Harness 受理（`harness/intake.py`）。
+   这条缝此前是断的——评测能判「不行」，但 harness 的 `harness_proposals`
+   全项目零生产者，只能等外部 JSON 喂。
 """
 
 from __future__ import annotations
@@ -48,6 +52,7 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
 from ai_butler.agents.base import SubAgent
+from ai_butler.evaluation.defects import defects_from_reports
 from ai_butler.evaluation.platform import EvaluationCase, EvaluationPlatform
 from ai_butler.evaluation.redaction import Redactor
 from ai_butler.evaluation.trace import traces_from_dicts
@@ -112,6 +117,9 @@ class EvaluationPlatformAgent(SubAgent):
         passed = [r for r in reports if r.passed]
         vetoed = [r for r in reports if r.vetoed]
         failed = [r for r in reports if not r.passed]
+        # 缺陷单（U76）：报告说「不行」，缺陷单说「哪一类、谁处理、从哪改、怎么复现」。
+        # 没有这一步，P10 的 harness 拿不到任何可执行输入（harness_proposals 零生产者）。
+        batch = defects_from_reports(reports, redactor=self.redactor)
         return {"eval_platform": {
             "user_id": uid,
             "case_count": len(cases),
@@ -124,8 +132,15 @@ class EvaluationPlatformAgent(SubAgent):
                                if reports else 0.0),
                 "failed_case_ids": [r.case_id for r in failed],
                 "vetoed_case_ids": [r.case_id for r in vetoed],
+                # 缺陷计数与「不通过用例数」不是一回事：一个用例可以出多条缺陷
+                # （每个失败维度一条），也可以一条都不出（维度不适用）。
+                "defect_count": len(batch.defects),
+                "blocked_by_security": batch.blocked_by_security,
             },
             "reports": [r.as_dict(self.redactor) for r in reports],
+            #: 供 P10 Harness 消费的修复输入（U76）。**这是两个 Agent 之间的接口**，
+            #: 字段形态变更视为破坏性变更，守护测试钉住。
+            "defects": batch.as_dict(self.redactor),
             # 两层都**从 redactor 推导**，不写死（与 P9 看板同一立场）
             "redaction": {"regex_layer": self.redactor.regex_layer_active,
                           "model_layer": self.redactor.model_layer_active},
