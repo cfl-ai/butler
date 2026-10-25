@@ -53,17 +53,23 @@ from typing import Any, Mapping, Sequence
 
 from ai_butler.agents.base import SubAgent
 from ai_butler.evaluation.defects import defects_from_reports
-from ai_butler.evaluation.platform import EvaluationCase, EvaluationPlatform
+from ai_butler.evaluation.platform import (
+    EvaluationCase,
+    EvaluationPlatform,
+    PlatformReport,
+)
+from ai_butler.evaluation.recheck import Rechecker
 from ai_butler.evaluation.redaction import Redactor
 from ai_butler.evaluation.trace import traces_from_dicts
 
 
 @dataclass
 class EvaluationPlatformAgent(SubAgent):
-    """评测中台：吃过程痕迹，吐七维度报告。"""
+    """评测中台：吃过程痕迹，吐七维度报告，并复核 harness 的改动。"""
 
     name = "eval_platform_agent"
-    writes = ("eval_platform",)
+    #: 两轮评测写**不同字段**：第一轮报告是复评的基线，覆盖掉它就没得比了
+    writes = ("eval_platform", "eval_platform_recheck")
     #: 本 Agent 是纯计算：读 State 里的痕迹与金标准，不触达任何外部能力。
     #: 不虚声明能力——未声明的能力根本不会发到手上（计划书三、P4）。
     capabilities = ()
@@ -76,6 +82,11 @@ class EvaluationPlatformAgent(SubAgent):
     judge: Any = None
     #: 脱敏模型层分析器（如 Presidio 适配器），与 P9 同一端口；未注入即只用正则兜底
     analyzer: Any = None
+    #: 复评用的痕迹再生产者（U79）。**未注入则复评只能给 UNVERIFIED**——
+    #: 拿「补丁已应用」推断「修好了」是本项目反复避免的假成功。
+    producer: Any = None
+    #: 可注入的复评器替身（测试用）；缺省按 producer 现建
+    rechecker: Any = None
     redactor: Redactor = field(init=False)
     platform: EvaluationPlatform = field(init=False)
 
@@ -145,6 +156,79 @@ class EvaluationPlatformAgent(SubAgent):
             "redaction": {"regex_layer": self.redactor.regex_layer_active,
                           "model_layer": self.redactor.model_layer_active},
         }}
+
+    # ------------------------------------------------------------------ #
+    # 第二轮评测（U79）
+    # ------------------------------------------------------------------ #
+    async def recheck(self, state: dict[str, Any]) -> dict[str, Any]:
+        """复核 harness 改完之后：**修好了没** + **有没有乱改**。
+
+        两件事分开判，因为混成一个总分两头都测不准：
+
+        - **没乱改**：`recheck.audit`。结构判据，只看 diff，不跑代码。
+          改测试、删断言、改评测判据、越界改别的子系统，全部在这里拦下。
+        - **修好了**：同一批用例重跑，看目标缺陷是否消失、有没有新缺陷。
+          效果判据，必须真跑——没有 `producer` 时只能给 `UNVERIFIED`。
+
+        只从 harness 段取一样东西：**它想改的 diff**（作为审计对象）。
+        `converged` / `done` / `patch_applied` 一律不采信——那是「它认为」，
+        不是「实际」。被评的一方不能给自己发结论。
+        """
+        uid = self.require_user_id(state)
+        cases = self._cases(state)
+
+        previous = state.get("eval_platform")
+        raw_reports: Sequence[Any] = ()
+        if isinstance(previous, Mapping):
+            raw_reports = previous.get("reports") or ()
+        if not raw_reports:
+            raw_reports = state.get("before_reports") or ()
+        before = [PlatformReport.from_dict(dict(r)) for r in raw_reports
+                  if isinstance(r, Mapping)]
+
+        harness = state.get("p10_harness")
+        harness = harness if isinstance(harness, Mapping) else {}
+        patch = harness.get("patch") if isinstance(harness.get("patch"), Mapping) else {}
+        diff = str((patch or {}).get("diff") or "")
+        kind = _defect_kind_from_harness(harness)
+
+        rechecker = self.rechecker or Rechecker(
+            platform=self.platform, producer=self.producer)
+        result = await rechecker.recheck(
+            cases=cases, before_reports=before, diff=diff, kind=kind)
+
+        return {"eval_platform_recheck": {
+            "user_id": uid,
+            **result.as_dict(self.redactor),
+            # 「第二轮的输入从哪来」必须可见：没有 diff 说明 harness 没改代码，
+            # 那这轮复评判的只是「现状有没有问题」，不是「改动有没有效」。
+            "inputs": {
+                "case_count": len(cases),
+                "before_reports": len(before),
+                "diff_chars": len(diff),
+                "defect_kind": kind,
+                "producer_wired": self.producer is not None,
+            },
+            "redaction": {"regex_layer": self.redactor.regex_layer_active,
+                          "model_layer": self.redactor.model_layer_active},
+        }}
+
+
+def _defect_kind_from_harness(harness: Mapping[str, Any]) -> str:
+    """从 harness 的受理结果里取本次修复针对的缺陷类别。
+
+    多张工单时取第一张：复评时审计的是这一份 diff，取它对应的类别才自洽。
+    """
+    intake = harness.get("intake")
+    if not isinstance(intake, Mapping):
+        return ""
+    for ticket in (intake.get("tickets") or ()):
+        if not isinstance(ticket, Mapping):
+            continue
+        defect = ticket.get("defect")
+        if isinstance(defect, Mapping) and defect.get("kind"):
+            return str(defect["kind"])
+    return ""
 
 
 if __name__ == "__main__":  # 直接运行本文件：打印本 Agent 档案（不带参数不碰外部依赖）

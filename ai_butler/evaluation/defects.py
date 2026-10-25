@@ -85,36 +85,46 @@ class Disposition(str, Enum):
 #:
 #: 这张表是本模块的**唯一真值源**：不在这里登记的维度不会被产出缺陷，
 #: 而不是散在 if 里——否则加一个维度就有地方忘记处置规则。
+#:
+#: `target_hint` 一律写**仓库相对的全路径**（`ai_butler/xxx/yyy.py`）。
+#: 早先写成「retrieval/（候选数、阈值…）」这类模糊描述，人读得懂，
+#: 但下游要拿它去读源码片段时一个字也提取不出来——
+#: 代码创作层给模型的上下文会是空的，然后模型只能凭空编。
 _DIMENSION_RULES: Mapping[str, tuple[DefectKind, DefectSeverity, Disposition,
                                     str, str]] = {
     SECURITY_PERMISSIONS: (
         DefectKind.SECURITY_VIOLATION, DefectSeverity.BLOCKER, Disposition.MANUAL,
-        "core/permissions.py、agents/（越权路径的调用点）",
+        "ai_butler/core/permissions.py、ai_butler/agents/（越权路径的调用点）",
         "自动修改权限与鉴权代码，正是表 10 第一条红线的反面：被评的缺陷会去改判据，"
         "改完测试是绿的、漏洞还在。安全缺陷只能人工处置"),
     RETRIEVAL_RECALL: (
         DefectKind.RECALL_GAP, DefectSeverity.MAJOR, Disposition.AUTO,
-        "retrieval/（候选数、阈值、索引与素材侧）",
+        "ai_butler/retrieval/chat.py、ai_butler/retrieval/planner.py"
+        "（候选数 top_k、检索阈值与素材侧过滤）",
         ""),
     EVIDENCE_FAITHFULNESS: (
         DefectKind.MISSING_EVIDENCE, DefectSeverity.MAJOR, Disposition.AUTO,
-        "retrieval/verification.py、回答组装段的证据引用",
+        "ai_butler/retrieval/verification.py、ai_butler/retrieval/chat.py"
+        "（回答组装段的证据引用与复检）",
         ""),
     TOOL_CALL_AUTHENTICITY: (
         DefectKind.FALSE_TOOL_CALL, DefectSeverity.MAJOR, Disposition.AUTO,
-        "retrieval/planner.py 的 CATEGORY_TOOLS 与调度侧工具注册",
+        "ai_butler/retrieval/planner.py（CATEGORY_TOOLS 与工具注册）",
         ""),
     STABILITY_AND_EXCEPTIONS: (
         DefectKind.UNSTABLE, DefectSeverity.MAJOR, Disposition.AUTO,
-        "调度与工具超时、重试与降级路径",
+        "ai_butler/scheduler/tools.py、ai_butler/scheduler/router.py"
+        "（超时、重试与降级路径）",
         ""),
     COST_EFFICIENCY: (
         DefectKind.COST_REGRESSION, DefectSeverity.MINOR, Disposition.AUTO,
-        "检索候选数与提示词长度、模型路由",
+        "ai_butler/retrieval/chat.py（top_k 与提示词长度）、"
+        "ai_butler/harness/context.py",
         ""),
     OUTPUT_QUALITY: (
         DefectKind.QUALITY_GAP, DefectSeverity.MINOR, Disposition.AUTO,
-        "回答组装与提示词，必要时是检索召回的上游问题",
+        "ai_butler/retrieval/chat.py（回答组装与提示词），"
+        "必要时是检索召回的上游问题",
         ""),
 }
 

@@ -494,6 +494,11 @@ class ChatOrchestrator:
             "decided_by": retrieval_plan.decided_by,
             "tools": list(retrieval_plan.tools),
             "hits": len(hits),
+            # 素材 id 必须吐出来：评测的召回率维度要的是「召回了哪些」，
+            # 不是「召回了几个」。只给数量时，复评无法判断漏掉的是哪条，
+            # 缺陷只能写成「召回不足」而说不出该补什么。
+            "retrieved_ids": [str(eid) for hit in hits
+                              for eid in (hit.get("evidence_ids") or ())],
             "verified": verification.grounded if verification else None,
             "notes": notes,
             "history": bool(history.strip()),

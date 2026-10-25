@@ -36,8 +36,20 @@ from ai_butler.agents.p9_evaluation import EvaluationAgent
 from ai_butler.agents.p10_harness import HarnessAgent
 
 
-def implemented_phase_agents(settings: Any = None) -> list[Any]:
-    """当前已落地的阶段 Agent 实例。每落地一个阶段就加到这里。"""
+def implemented_phase_agents(settings: Any = None, *,
+                             harness_sandbox: Any = None,
+                             harness_coder: Any = None,
+                             harness_patch_root: str | None = None) -> list[Any]:
+    """当前已落地的阶段 Agent 实例。每落地一个阶段就加到这里。
+
+    P10 的三件套**必须由运行时注入**，不能在这里 new：
+
+    - `harness_sandbox`：沙箱是 AI Infra 的能力（U34），本机只提供进程级适配器；
+    - `harness_coder`：代码创作端口（U78）。**不给就不改代码**——这是刻意的默认，
+      「自动改源码」是整条链路里风险最高的动作，不该因为装配顺手就默认打开；
+    - `harness_patch_root`：补丁落盘根目录，须与沙箱 root 一致，否则
+      「改的地方」和「测的地方」不是一个目录。
+    """
     return [
         InfraAgent(settings=settings),
         DevkitAgent(settings=settings),
@@ -49,7 +61,8 @@ def implemented_phase_agents(settings: Any = None) -> list[Any]:
         ContentQaAgent(settings=settings),
         PaymentAgent(settings=settings),
         EvaluationAgent(settings=settings),
-        HarnessAgent(settings=settings),
+        HarnessAgent(settings=settings, sandbox=harness_sandbox,
+                     coder=harness_coder, patch_root=harness_patch_root),
     ]
 
 
@@ -57,7 +70,10 @@ def build_butler(*, settings: Any = None, data_sdk: Any = None,
                  search_service: Any = None, wiki_store: Any = None,
                  llm_gateway: Any = None, jev_client: Any = None,
                  payment_gateway: Any = None,
-                 scheduler: Any = None) -> ButlerAgent:
+                 scheduler: Any = None,
+                 harness_sandbox: Any = None,
+                 harness_coder: Any = None,
+                 harness_patch_root: str | None = None) -> ButlerAgent:
     """按当前已落地的阶段装配管家 Agent。缺失的能力不装——阶段 Agent 取用时才会报错，
     这样「能力没接」不会被误当成「阶段没做」。"""
     butler = ButlerAgent(settings=settings)
@@ -70,7 +86,9 @@ def build_butler(*, settings: Any = None, data_sdk: Any = None,
                              (CAP_PAYMENT, payment_gateway)):
         if impl is not None:
             butler.provide(capability, impl)
-    butler.enroll_all(implemented_phase_agents(settings))
+    butler.enroll_all(implemented_phase_agents(
+        settings, harness_sandbox=harness_sandbox,
+        harness_coder=harness_coder, harness_patch_root=harness_patch_root))
     if scheduler is not None:
         butler.attach_scheduler(scheduler)
     return butler

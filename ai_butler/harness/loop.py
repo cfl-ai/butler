@@ -70,10 +70,15 @@ class StageRecord:
     stage: str
     detail: str
     outcome: str = ""
+    #: 结构化附注（U78）。`detail` 给人读，`meta` 给代码判。
+    #: 让下游去 `startswith("应用补丁")` 匹配中文，就是 E-44 那类漂移隐患；
+    #: 判据必须是字段，不是句子。
+    meta: Mapping[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {"iteration": self.iteration, "stage": self.stage,
-                "detail": self.detail, "outcome": self.outcome}
+                "detail": self.detail, "outcome": self.outcome,
+                "meta": dict(self.meta)}
 
 
 @dataclass
@@ -89,6 +94,8 @@ class LoopResult:
     pending_approval: HookVerdict | None = None
     memory_entries: list[MemoryEntry] = field(default_factory=list)
     context: CompressedContext | None = None
+    #: 补丁应用结果（U78）。空表示本轮从未动过代码。
+    patch_results: list[Any] = field(default_factory=list)
 
     @property
     def blocked(self) -> bool:
@@ -98,6 +105,7 @@ class LoopResult:
         return {"converged": self.converged, "iterations": self.iterations,
                 "reason": self.reason, "stages": [r.as_dict() for r in self.records],
                 "sandbox": [r.as_dict() for r in self.sandbox_results],
+                "patches": [p.as_dict() for p in self.patch_results],
                 "blocked": self.blocked,
                 "verdict": self.verdict.as_dict() if self.verdict else None,
                 "pending_approval": (self.pending_approval.as_dict()
@@ -111,11 +119,21 @@ Decider = Callable[[CompressedContext, Sequence[StageRecord]], Awaitable[Proposa
 
 @dataclass
 class AgenticLoop:
-    """四阶 Agentic Loop。"""
+    """四阶 Agentic Loop。
+
+    `patcher`（U78）是**补丁落盘端口**，可缺省。它的位置被刻意定死在
+    「Hook 之后、命令之前」：
+
+        Hook 判风险（不看代码就跑） → 应用补丁 → 跑验证命令 → 绿了保留 / 红了回滚
+
+    顺序不能调换。先应用再判 Hook，等于让高危变更先落地再被拦；
+    先跑命令再应用，则命令验证的是**没改过的代码**，全部作废。
+    """
 
     decide: Decider
     hooks: HookChain
     sandbox: SandboxPort
+    patcher: Any = None          # PatchPort（harness.patch.PatchApplier）
     max_iterations: int = MAX_ITERATIONS
     no_progress_limit: int = NO_PROGRESS_LIMIT
     timeout: int = DEFAULT_TIMEOUT
@@ -141,10 +159,24 @@ class AgenticLoop:
                                          summarizer=summarizer, max_items=max_items,
                                          result=result, emit=_emit, journal=journal)
         finally:
+            # 兜底回滚（U78）：任何未 commit 的补丁都不得留在仓库里。
+            # 覆盖本方法的 4 处 return（Hook 拦截 / 审批暂停 / 无进展 / 上限归档）
+            # 以及 decide 抛异常的情形——「改了代码但循环异常退出」
+            # 是最容易留下半成品改动的路径。
+            self._rollback_pending()
             # 终局快照入账：4 处 return（含 Hook 拦截/审批暂停/上限归档）都覆盖。
             # 崩溃恢复 = 重放此 checkpoint 及其后事件。
             if journal is not None:
                 journal.append(EV_CHECKPOINT, {"loop": result.as_dict()})
+
+    def _rollback_pending(self) -> tuple[str, ...]:
+        """回滚尚未 commit 的补丁。**幂等**，无 patcher 时返回空。"""
+        if self.patcher is None:
+            return ()
+        pending = getattr(self.patcher, "pending", ())
+        if not pending:
+            return ()
+        return tuple(self.patcher.rollback())
 
     async def _run_inner(self, *, goal: str, items: Sequence[ContextItem],
                          redactor: Redactor,
@@ -194,17 +226,59 @@ class AgenticLoop:
                     return result
 
             executed: list[SandboxResult] = []
-            for command in proposal.commands:
-                outcome = self.sandbox.run(command, timeout=self.timeout)
-                executed.append(outcome)
-                result.sandbox_results.append(outcome)
-                emit(StageRecord(
-                    iteration, STAGE_EXECUTE,
-                    f"执行 {command} → exit={outcome.exit_code}",
-                    "ok" if outcome.ok else "fail"))
+            # ---- 补丁落盘：**Hook 已放行，现在才允许动代码**（U78）----
+            applied: tuple[str, ...] = ()
+            apply_failed = ""
+            if (self.patcher is not None and proposal.change is not None
+                    and proposal.change.diff.strip()):
+                outcome = self.patcher.apply(proposal.change)
+                result.patch_results.append(outcome)
+                if outcome.ok:
+                    applied = tuple(outcome.paths)
+                    emit(StageRecord(
+                        iteration, STAGE_EXECUTE,
+                        f"应用补丁 {'、'.join(outcome.paths)}（{outcome.touched} 行）",
+                        "ok", {"patch_applied": True,
+                               "patch_paths": list(outcome.paths),
+                               "patch_touched": outcome.touched}))
+                else:
+                    apply_failed = outcome.reason
+                    emit(StageRecord(
+                        iteration, STAGE_EXECUTE,
+                        f"补丁未能应用（未改动任何文件）：{outcome.reason[:240]}",
+                        "fail", {"patch_applied": False,
+                                 "patch_error": outcome.reason}))
+
+            if not apply_failed:
+                for command in proposal.commands:
+                    outcome = self.sandbox.run(command, timeout=self.timeout)
+                    executed.append(outcome)
+                    result.sandbox_results.append(outcome)
+                    emit(StageRecord(
+                        iteration, STAGE_EXECUTE,
+                        f"执行 {command} → exit={outcome.exit_code}",
+                        "ok" if outcome.ok else "fail"))
 
             # ---- 阶段四：结果自纠错 ----
-            made_progress = bool(executed) and all(r.ok for r in executed)
+            # `verified` 只有一种取真方式：**跑了命令且全绿**。
+            # 「没跑命令」不等于「没问题」——空命令集一律视为未验证。
+            verified = bool(executed) and all(r.ok for r in executed)
+
+            if applied:
+                if verified:
+                    # 验证通过才保留。commit 之后此轮改动才不再可回滚，
+                    # 置后到这一步是刻意的：先 commit 再验证等于没有回滚能力。
+                    self.patcher.commit()
+                else:
+                    restored = self.patcher.rollback()
+                    emit(StageRecord(
+                        iteration, STAGE_CORRECT,
+                        f"验证未通过，已回滚 {'、'.join(restored)}："
+                        f"未验证的改动留在仓库里是这条链路最坏的失败模式",
+                        "rollback", {"rolled_back": True,
+                                     "restored": list(restored)}))
+
+            made_progress = verified and not apply_failed
             if not executed:
                 made_progress = False
 
@@ -212,14 +286,20 @@ class AgenticLoop:
                 result.converged = True
                 result.reason = "已达标，循环收敛"
                 emit(StageRecord(iteration, STAGE_CORRECT,
-                                                  "判定达标", "converged"))
+                                 "判定达标", "converged",
+                                 {"verified": verified,
+                                  "patch_applied": bool(applied)}))
                 return result
 
             no_progress_streak = 0 if made_progress else no_progress_streak + 1
             emit(StageRecord(
                 iteration, STAGE_CORRECT,
                 f"未达标（{'有进展' if made_progress else f'连续 {no_progress_streak} 轮无进展'}）",
-                "progress" if made_progress else "stalled"))
+                "progress" if made_progress else "stalled",
+                # 下游据这两个字段判断「这一轮到底改没改、验没验」，
+                # 而不是匹配 detail 里的中文
+                {"verified": verified, "patch_applied": bool(applied),
+                 "rolled_back": bool(applied and not verified)}))
             if no_progress_streak >= self.no_progress_limit:
                 result.reason = (
                     f"连续 {no_progress_streak} 轮无实质进展，提前终止（U32），转人工")

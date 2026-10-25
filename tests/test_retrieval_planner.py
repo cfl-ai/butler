@@ -199,3 +199,15 @@ def test_bare_comma_is_deliberately_not_a_multi_intent_separator():
     """
     assert classify("这个多少钱，怎么付款")[0] is QueryCategory.PROCEDURE
     assert classify("给我个方案，怎么部署内网服务")[0] is QueryCategory.RECOMMENDATION
+
+
+def test_no_signal_query_is_unknown_not_small_talk():
+    """无确定性信号时应落到 UNKNOWN，**不得落到 small_talk**。
+
+    这条区分不是命名口味：`small_talk` 会跳过检索（闲聊不检索）。
+    把「听不出来的问题」当闲聊，等于**不查就答**——
+    用户问了个具体的事，系统回一句寒暄，比说「我不确定」还糟。
+    """
+    for query in ("那个啥来着", "随便问问"):
+        resolved, _, _ = classify(query)
+        assert resolved is QueryCategory.UNKNOWN, f"{query!r} → {resolved}"

@@ -104,7 +104,9 @@ def test_p10_decisions_are_registered_and_resolved():
     # U49 = Harness 自身评测体系（2026-10-19 补，见 harness/evaluation.py）
     # U58 = 上下文分项计量与 shadowing 压缩（2026-10-23 补，见 harness/context.py）
     # U77 = 缺陷受理的四道闸与自我修改边界（2026-10-25 补，见 harness/intake.py）
-    assert keys == {"U08", "U32", "U33", "U34", "U35", "U36", "U49", "U58", "U77"}
+    # U78 = 大模型写补丁的安全边界（2026-10-25 补，见 harness/patch.py、coder.py）
+    assert keys == {"U08", "U32", "U33", "U34", "U35", "U36", "U49", "U58",
+                    "U77", "U78"}
     for key in keys:
         assert decisions.get(key).status == decisions.RESOLVED
 

@@ -357,12 +357,18 @@ def test_harness_intakes_defects_and_runs_a_real_command_in_sandbox():
 
 
 def test_harness_does_not_claim_success_after_only_intaking():
-    """受理完不等于修好：必须如实标注未应用补丁、未收敛。"""
+    """受理完不等于修好：必须如实标注未应用补丁、未收敛。
+
+    U78 之后「没改代码」的**原因**变了（不再是「应用器未实现」，
+    而是「未注入代码创作端口」）。断言跟着原因走，但**判据没变**：
+    只要没真改代码，就必须 applied=False 且给出可读理由。
+    """
     batch = _batch_of(_report(retrieved=()))
     payload = _run_harness(_harness_state(batch.as_dict()))
     assert payload["converged"] is False
     assert payload["patch_not_applied"]["applied"] is False
-    assert "补丁应用器" in payload["patch_not_applied"]["reason"]
+    reason = payload["patch_not_applied"]["reason"]
+    assert "代码创作" in reason or "coder" in reason, reason
 
 
 def test_harness_rejects_manual_defects_at_the_door():

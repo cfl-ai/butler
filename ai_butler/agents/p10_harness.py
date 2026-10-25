@@ -21,19 +21,32 @@ if not __package__:  # pragma: no cover - 仅直接运行时触发
     _sys.path.insert(0, str(_Path(__file__).resolve().parents[2]))
     del _sys, _Path
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, ClassVar, Mapping, Sequence
 
 from ai_butler.agents.capabilities import CAP_RETRIEVAL, CAP_WIKI_READ
 from ai_butler.agents.phase import PhaseAgent
 from ai_butler.evaluation.defects import batch_from_dict
 from ai_butler.evaluation.redaction import Redactor
+from ai_butler.harness.coder import CodeProposal, SnippetReader
 from ai_butler.harness.context import ContextItem
 from ai_butler.harness.hooks import HookChain
-from ai_butler.harness.intake import IntakeResult, RepairIntake, qa_verdict_from_batch
-from ai_butler.harness.loop import AgenticLoop, LoopResult, Proposal
-from ai_butler.harness.memory import ENTRY_PREFIX, MemoryEntry, from_qa_report
+from ai_butler.harness.intake import (
+    IntakeResult,
+    RepairIntake,
+    files_from_hint,
+    qa_verdict_from_batch,
+)
+from ai_butler.harness.loop import (
+    STAGE_CORRECT,
+    AgenticLoop,
+    LoopResult,
+    Proposal,
+)
+from ai_butler.harness.memory import MemoryEntry, from_qa_report
+from ai_butler.harness.patch import ALLOWED_SCOPE_BY_KIND, PatchApplier
 from ai_butler.harness.risk import Change
 from ai_butler.harness.sandbox import DEFAULT_TIMEOUT, SandboxPort
 from ai_butler.harness.skills import SkillRegistry, default_registry
@@ -59,11 +72,31 @@ class HarnessAgent(PhaseAgent):
     max_iterations: int = 8
     no_progress_limit: int = 2
 
+    # ---- U78：代码创作与补丁落盘 ----
+    #: 代码创作端口（`harness.coder.CodeWriter`）。**未注入就不改代码**：
+    #: 只跑验证命令并如实标注「需要补丁」，不假装修过。
+    coder: Any = None
+    #: 补丁落盘的工作根。缺省时取 `state["patch_root"]`。
+    #: 与 `sandbox` 的 root 应当一致，否则「改的地方」和「测的地方」不是一个目录。
+    patch_root: str | None = None
+    #: 补丁应用器（可注入替身用于测试）；缺省按 `patch_root` 现建
+    applier: Any = None
+    #: 一轮里最多向模型要几次补丁（实现参数）。缺陷多时若每张工单都要一次，
+    #: 成本与归因都不受控：「改坏了」到底是哪一张的功劳，说不清。
+    #: 未拿到补丁的工单保持原样，下轮继续（不是丢弃）。
+    max_coder_calls: int = 2
+
     #: 本轮缺陷受理结果（U76）。**不是状态缓存，是本轮的可审计产物**：
     #: 为什么某条缺陷没被受理，必须在这一轮里说清楚（拒收原因在 rejected 里）
     intake_result: IntakeResult | None = field(init=False, default=None)
     intake_error: str = field(init=False, default="")
     defect_batch: Any = field(init=False, default=None)
+
+    #: 本轮代码创作结果（U78）。失败也要留痕：为什么没产出补丁，
+    #: 与「产出了但被拒绝」是不同的两件事。
+    code_results: list[CodeProposal] = field(init=False, default_factory=list)
+    #: 最近一次尝试的 diff（无论是否应用成功）——复评要审计它
+    attempted_diff: str = field(init=False, default="")
 
     def _context_items(self, state: Mapping[str, Any]) -> list[ContextItem]:
         out: list[ContextItem] = []
@@ -146,6 +179,167 @@ class HarnessAgent(PhaseAgent):
             return qa_verdict_from_batch(self.defect_batch)
         return None
 
+    # ------------------------------------------------------------------ #
+    # U78：向大模型要补丁
+    # ------------------------------------------------------------------ #
+    def _patch_root(self, state: Mapping[str, Any]) -> str:
+        root = self.patch_root or state.get("patch_root") or ""
+        return str(root) if root else ""
+
+    def _ticket_for(self, change: Change) -> Any:
+        """按 `change_id` 找回工单。变更 id 的构造式在 `intake._change_for` 里。"""
+        if self.intake_result is None:
+            return None
+        for ticket in self.intake_result.tickets:
+            if ticket.proposal.change is not None and \
+                    ticket.proposal.change.change_id == change.change_id:
+                return ticket
+        return None
+
+    def _defect_for(self, change: Change) -> Any:
+        ticket = self._ticket_for(change)
+        return ticket.defect if ticket is not None else None
+
+    @staticmethod
+    def _candidate_files(change: Change, defect: Any) -> tuple[str, ...]:
+        files = tuple(change.files) or files_from_hint(defect.target_hint)
+        if files:
+            return files
+        # 兜底：用该类别的范围前缀里**看起来像文件**的项。
+        # 一个文件都给不出来时宁可不产补丁——没有源码上下文，
+        # 模型只能凭空编，编出来的 diff 必然对不上。
+        return tuple(p for p in ALLOWED_SCOPE_BY_KIND.get(
+            defect.kind.value, ()) if p.endswith(".py"))
+
+    @staticmethod
+    def _keywords(defect: Any) -> tuple[str, ...]:
+        """从缺陷证据里挑标识符，用于在大文件里定位片段。
+
+        只取形如 `lower_snake_case` / `CamelCase` 的英文标识符，
+        中文词太泛（「检索」「阈值」几乎每行都有），定位反而失准。
+        """
+        import re
+        text = f"{defect.evidence} {defect.target_hint}"
+        found = re.findall(r"[A-Za-z_][A-Za-z0-9_]{3,}", text)
+        seen: list[str] = []
+        for token in found:
+            if token.lower() in {"with", "from", "that", "this", "none", "true",
+                                 "false", "return", "pytest", "http"}:
+                continue
+            if token not in seen:
+                seen.append(token)
+        return tuple(seen[:12])
+
+    async def _prepare_patches(self, proposals: Sequence[Proposal],
+                               state: Mapping[str, Any]) -> list[Proposal]:
+        """给缺 diff 的提案向大模型要补丁。**不改提案顺序与优先级。**
+
+        产出的是**候选**补丁：范围是否越界由 `PatchGuard` 判，
+        能不能应用由 `PatchApplier` 判，修没修好由复评判。
+        本方法一个都不代判。
+        """
+        if self.coder is None:
+            return list(proposals)
+        root = self._patch_root(state)
+        if not root:
+            return list(proposals)
+
+        reader = SnippetReader(Path(root))
+        out: list[Proposal] = []
+        budget = int(state.get("max_coder_calls") or self.max_coder_calls)
+
+        for proposal in proposals:
+            change = proposal.change
+            if change is None or change.diff.strip():
+                out.append(proposal)
+                continue
+            defect = self._defect_for(change)
+            if defect is None:
+                # 不是从缺陷单来的提案（来源无法定位），不替它编补丁
+                out.append(proposal)
+                continue
+            if budget <= 0:
+                # 预算用完：**保持原样**，让它在下一轮继续，不是丢弃
+                out.append(proposal)
+                continue
+            budget -= 1
+
+            ticket = self._ticket_for(change)
+            verify_target = (ticket.verify_target if ticket is not None
+                             else "pytest -q")
+            snippets = reader.read(self._candidate_files(change, defect),
+                                   kind=defect.kind.value,
+                                   keywords=self._keywords(defect))
+            try:
+                code = await self.coder.propose(
+                    defect=defect, snippets=snippets,
+                    verify_target=verify_target)
+            except Exception as exc:                     # noqa: BLE001
+                # 端口实现自己出异常：如实记下，不让整轮崩在一处
+                self.code_results.append(CodeProposal(
+                    False, error=f"{type(exc).__name__}: {exc}"))
+                out.append(proposal)
+                continue
+
+            self.code_results.append(code)
+            if code.ok:
+                # 只有**会被应用**的补丁才留作复评的审计对象。
+                # 被范围校验拒掉或模型主动弃权的那些，不构成「改动」，
+                # 拿去审计只会让复评报一条重复的越界发现。
+                self.attempted_diff = code.diff
+            if not code.ok:
+                # 没产出合规补丁：保留原提案（无 diff），循环会如实验证并转人工
+                out.append(proposal)
+                continue
+
+            out.append(replace(
+                proposal,
+                change=replace(
+                    change, diff=code.diff, files=code.paths,
+                    extra={**dict(change.extra), "diff_pending": False,
+                           "coder_attempts": code.attempts,
+                           "coder_rationale": code.rationale}),
+                summary=(f"{proposal.summary}｜代码创作层已产出补丁："
+                         f"{'、'.join(code.paths)}（{code.patches.touched} 行）"
+                         if code.patches else proposal.summary)))
+        return out
+
+    @staticmethod
+    def _verified_patch(history: Sequence[Any]) -> bool:
+        """上一轮是否「应用了补丁且验证全绿」。
+
+        **只看最近的 STAGE_CORRECT**：更早的轮次状态已被后续轮次覆盖，
+        拿历史里任意一次成功来确认达标，会出现「第二轮改坏了，
+        但第一轮成功过所以判定达标」。
+        """
+        for record in reversed(list(history)):
+            if record.stage != STAGE_CORRECT:
+                continue
+            meta = record.meta or {}
+            return bool(meta.get("verified") and meta.get("patch_applied"))
+        return False
+
+    def _no_patch_reason(self, result: LoopResult) -> str:
+        """`applied=False` 时**必须说清为什么**。四种原因，处置完全不同。"""
+        if self.coder is None:
+            return ("未注入代码创作端口（coder）：本轮只跑验证命令，不改代码。"
+                    "落地需注入 CodeWriter（见 harness/coder.py）后重跑")
+        if not self.attempted_diff:
+            failures = [c for c in self.code_results if not c.ok]
+            if failures:
+                last = failures[-1]
+                if last.skipped:
+                    # 弃权是**正确的**处置，理由要原文带出来：
+                    # 「模型说上下文不够」和「模型写不出来」要能区分。
+                    return f"模型主动判断不该改代码（未臆造补丁）：{last.rationale}"
+                detail = last.error or "；".join(last.rejected[-2:])
+                return f"代码创作层未产出合规补丁：{detail}"
+            return "代码创作层未产出补丁（无可改的提案，或缺源码上下文）"
+        for outcome in reversed(result.patch_results):
+            if not getattr(outcome, "ok", False):
+                return f"补丁未能应用：{outcome.reason[:300]}"
+        return "补丁未保留：验证未通过已回滚，或被 Hook 拦截"
+
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
         uid = self.require_user_id(state)
         now = _now()
@@ -157,9 +351,20 @@ class HarnessAgent(PhaseAgent):
                 "reason": "未接入沙箱（裁定 U34：沙箱是 AI Infra 的能力，由运行时注入）"}}
 
         proposals = self._proposals(state)
+        # U78：向大模型要补丁。**在 Hook 之前**——补丁是待审对象，
+        # 先应用再判风险等于让高危变更先落地（loop 里顺序同理）。
+        proposals = await self._prepare_patches(proposals, state)
         pending = list(proposals)
 
         async def _decide(_context, _history) -> Proposal:
+            # 「上一轮补丁已应用且验证全绿」才由决策层确认达标。
+            # 注意这不等于「缺陷修好了」：沙箱测试通过只证明没弄坏现有测试，
+            # 真正的结论要等评测中台复评（`evaluation/recheck.py`）。
+            if self._verified_patch(_history):
+                return Proposal(
+                    summary=("上一轮补丁已应用且验证命令全绿，确认本轮变更"
+                             "（是否真修好由评测中台复评判定，本循环不代判）"),
+                    done=True)
             if pending:
                 return pending.pop(0)
             # **提案用尽 ≠ 达标**：早先这里写 done=True，导致循环在什么都没做的情况下
@@ -167,12 +372,19 @@ class HarnessAgent(PhaseAgent):
             # 由无进展规则收尾并如实标注「转人工」。
             return Proposal(summary="决策层未给出新的提案（提案已用尽）", done=False)
 
+        root = self._patch_root(state)
+        applier = self.applier
+        if applier is None and root:
+            applier = PatchApplier(root=Path(root))
+
         loop = AgenticLoop(
             decide=_decide,
             # 质检结论在上一步 `_proposals` 里已确定（缺陷单即结论），
             # 必须**在这里**取，不能等循环里再取——Hook 是在执行前判的
             hooks=HookChain.default(qa_verdict=self._qa_verdict(state)),
             sandbox=self.sandbox,
+            # 无 coder 或无 root 时 patcher 为 None，循环退化为「只跑命令」
+            patcher=applier,
             max_iterations=self.max_iterations,
             no_progress_limit=self.no_progress_limit,
             timeout=int(state.get("sandbox_timeout") or DEFAULT_TIMEOUT))
@@ -191,6 +403,10 @@ class HarnessAgent(PhaseAgent):
                     recorded_at=now.isoformat()):
                 entries.append(entry)
 
+        # 「本轮真的改动了代码吗」只算一次，供下面两个字段共用
+        patch_applied = any(bool(getattr(r, "ok", False))
+                            for r in result.patch_results)
+
         return {"p10_harness": {
             "user_id": uid, "phase": self.phase_code, "ran": True,
             "goal": str(state.get("harness_goal") or ""),
@@ -201,12 +417,22 @@ class HarnessAgent(PhaseAgent):
             "intake": (self.intake_result.as_dict(redactor)
                        if self.intake_result is not None else None),
             "intake_error": self.intake_error,
-            # **未实现项如实登记**：本轮只到「变更单」，没有补丁应用器。
-            # 声称能自动改源码而实际没有，比不做更坏（声明≠能力）。
+            # ---- 补丁（U78）：本轮到底改了什么、验没验、保没保留 ----
+            # 这是评审要读的那一段：`applied=False` 时下面的 `reason` 必须能解释
+            # 为什么没改（没 coder / 模型没产出 / 补丁越界 / 应用失败）。
+            "patch": {
+                "applied": patch_applied,
+                "root": root,
+                "results": [r.as_dict() for r in result.patch_results],
+                # 复评要用它做改动审计。**即使是应用失败的 diff 也要给**：
+                # 审计要看的是「它想改什么」，不是「它改成了什么」。
+                "diff": self.attempted_diff,
+                "code": [c.as_dict(redactor=redactor) for c in self.code_results],
+                "coder_wired": self.coder is not None,
+            },
             "patch_not_applied": {
-                "applied": False,
-                "reason": "本轮未实现补丁应用器：缺陷单的 diff 为空并标注 "
-                          "diff_pending，落地需人工或 LLM 决策层注入补丁后重跑",
+                "applied": patch_applied,
+                "reason": "" if patch_applied else self._no_patch_reason(result),
             },
             # ---- 计划书步骤10：评测与版本管理 ----
             "change_note": {

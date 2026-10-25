@@ -51,9 +51,16 @@ from ai_butler.harness.sandbox import ALLOWED_COMMANDS
 #:
 #: **未登记一律不受理**：允许调用方传命令进来，就等于允许任意命令进沙箱，
 #: 沙箱白名单管得住「程序名」，管不住参数。这张表是唯一入口。
+#:
+#: 多个文件用空格分隔（一条 `pytest -q a b` 命令）。早先只登记一个文件，
+#: 结果 `recall_gap` 指向评测平台的测试，**根本不覆盖检索侧的改动**——
+#: 补丁改坏了 `planner.py` 而验证照样全绿。多登记一个的成本很低，
+#: 漏验的代价是「绿着绿灯把功能改坏」。
 _VERIFY_TARGETS: Mapping[DefectKind, str] = {
-    DefectKind.RECALL_GAP: "tests/test_evaluation_platform.py",
-    DefectKind.MISSING_EVIDENCE: "tests/test_evaluation_platform.py",
+    DefectKind.RECALL_GAP: ("tests/test_retrieval_planner.py "
+                            "tests/test_evaluation_platform.py"),
+    DefectKind.MISSING_EVIDENCE: ("tests/test_retrieval_planner.py "
+                                  "tests/test_evaluation_platform.py"),
     DefectKind.QUALITY_GAP: "tests/test_evaluation_platform.py",
     DefectKind.FALSE_TOOL_CALL: "tests/test_retrieval_planner.py",
     DefectKind.UNSTABLE: "tests/test_harness_p10.py",
@@ -150,7 +157,7 @@ class IntakeResult:
         }
 
 
-def _files_from_hint(hint: str) -> tuple[str, ...]:
+def files_from_hint(hint: str) -> tuple[str, ...]:
     """从收敛提示里挑出**真正的文件路径**。
 
     `target_hint` 是人读的一句话（「retrieval/planner.py 的 CATEGORY_TOOLS 与……」
@@ -179,7 +186,7 @@ def _change_for(defect: Defect) -> Change:
         change_id=f"fix:{defect.defect_id}",
         description=(f"修复 {defect.title}。{HINT_DISCLAIMER}：{defect.target_hint}；"
                      f"复现要点：{defect.repro}"),
-        files=_files_from_hint(defect.target_hint),
+        files=files_from_hint(defect.target_hint),
         diff="",
         redacted=True,
         modifies_jev_template=False,

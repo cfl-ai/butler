@@ -196,6 +196,37 @@ class PlatformReport:
         red.assert_deep_clean(safe, where=f"评测报告 {self.case_id}")
         return safe
 
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "PlatformReport":
+        """从 `as_dict()` 的形态还原。**复评必需**：
+
+        复评要比较「修复前」与「修复后」，前者来自上一轮存进 State 的
+        dict 形态。没有这个还原方法，调用方只能拿 dict 硬凑一个残缺报告，
+        或者干脆拿「现在通过」当基线——两种做法都会让对比失去意义。
+        """
+        raw_dimensions = payload.get("dimensions") or {}
+        dimensions: dict[str, DimensionResult] = {}
+        for key, raw in raw_dimensions.items():
+            raw = raw or {}
+            score = raw.get("score")
+            dimensions[str(key)] = DimensionResult(
+                key=str(raw.get("key") or key),
+                score=None if score is None else float(score),
+                passed=bool(raw.get("passed")),
+                evidence=str(raw.get("evidence") or ""),
+                applicable=bool(raw.get("applicable", True)),
+                details=dict(raw.get("details") or {}))
+        return cls(
+            case_id=str(payload.get("case_id") or ""),
+            question=str(payload.get("question") or ""),
+            generated_at=str(payload.get("generated_at") or ""),
+            runs=int(payload.get("runs") or 0),
+            dimensions=dimensions,
+            overall_score=float(payload.get("overall_score") or 0.0),
+            verdict=Verdict(str(payload.get("verdict") or Verdict.FAIL.value)),
+            vetoed=bool(payload.get("vetoed")),
+            reason=str(payload.get("reason") or ""))
+
     def render_text(self) -> str:
         """渲染成可读文本（供日志与控制台；项目不产 md 文件）。"""
         lines = [
