@@ -280,10 +280,16 @@ def test_guest_never_gets_a_conversation(settings, redis_client):
 # 三、退化必须说出口（E-77 的正向守护）
 # --------------------------------------------------------------------------- #
 def test_unwired_orchestrator_says_single_turn(settings, workdir):
-    """没装配上下文时不能装作有记忆，原因必须出现在 notes 里。"""
+    """没装配上下文时不能装作有记忆，原因必须出现在 notes 里。
+
+    本用例只测**上下文**这条缝，所以把意图路由显式关掉：
+    U74 之后「开关开着却没装配路由」会直接 `ValueError`（防 E-77 静默退化），
+    那时候就测不到这里的降级措辞了。
+    """
     gateway = _Gateway()
     orchestrator = build_chat_orchestrator(
-        gateway=gateway, search=lambda q, u: [], settings=settings,
+        gateway=gateway, search=lambda q, u: [],
+        settings=settings.model_copy(update={"intent_router_enable": False}),
         context_manager=None)
 
     async def collect():
@@ -303,7 +309,8 @@ def test_missing_conversation_id_says_single_turn(settings, workdir):
     manager = build_chat_context_manager(
         FileStore(workdir / "storage", settings=settings), settings)
     orchestrator = build_chat_orchestrator(
-        gateway=gateway, search=lambda q, u: [], settings=settings,
+        gateway=gateway, search=lambda q, u: [],
+        settings=settings.model_copy(update={"intent_router_enable": False}),
         context_manager=manager)
 
     async def collect():

@@ -26,7 +26,8 @@ class StubProvider(Provider):
         self._fail = fail
 
     async def chat(self, messages, *, model=None, timeout=0, max_tokens=None,
-                   api_key=None, base_url=None):
+                   api_key=None, base_url=None, temperature=None):
+        """`temperature` 是 U74 新增的判定确定性参数，桩必须跟着契约走。"""
         if self._fail:
             raise RuntimeError(f"{self.name} down")
         return ChatResult(text=self._text, provider=self.name, model="stub", latency_ms=1)

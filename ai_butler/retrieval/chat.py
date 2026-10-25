@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from typing import AsyncIterator, Callable, Protocol, Sequence
 
 from ai_butler.core import access
+from ai_butler.core.input_guard import InputGuardError
 from ai_butler.core.model_access import ModelAccess, ModelAccessError
 from ai_butler.infra.llm_gateway import ChatMessage, GatewayError, LLMGateway
 from ai_butler.material_center.verification import (
@@ -43,9 +44,15 @@ from ai_butler.material_center.verification import (
 )
 from ai_butler.retrieval.planner import QueryCategory, RetrievalPlan, plan as plan_query
 from ai_butler.scheduler.context import ContextManager
+from ai_butler.scheduler.router import IntentRouter, RouteDecision, RouteRequest
 
 #: 检索函数签名：query + 用户 → 命中列表。user_id 为空表示只用公共库。
 SearchFn = Callable[[str, str | None], Sequence[dict]]
+
+#: 送进路由的候选标签集 —— **从 `QueryCategory` 派生，不另写一份字面量**。
+#: 存两份字面量必然漂移（E-44）；`tests/test_intent_router_wiring.py` 里有一条
+#: 断言它与 `intent_wiring.INTENT_LABELS` 逐字相同，防止哪天一边改了另一边忘。
+INTENT_LABELS_FROM_TAXONOMY: tuple[str, ...] = tuple(c.value for c in QueryCategory)
 
 _SYSTEM = (
     "你是「AI 管家」的文字助手。规则：\n"
@@ -120,7 +127,9 @@ class ChatOrchestrator:
                  model_access: "ModelAccess | None" = None,
                  verify_answer: bool = True,
                  context_manager: ContextManager | None = None,
-                 history_enable: bool = True) -> None:
+                 history_enable: bool = True,
+                 intent_router: IntentRouter | None = None,
+                 intent_labels: Sequence[str] | None = None) -> None:
         self.gateway = gateway
         self.search = search
         self.top_k = top_k
@@ -131,6 +140,9 @@ class ChatOrchestrator:
         #: U73：多轮上下文。**装配了才谈得上记忆**，没装就如实说单轮。
         self.context_manager = context_manager
         self.history_enable = history_enable
+        #: U74：五层意图路由。None 表示没接（会如实记账，不假装「判不出」）。
+        self.intent_router = intent_router
+        self.intent_labels = tuple(intent_labels or INTENT_LABELS_FROM_TAXONOMY)
 
     # ---------------- 上下文（U73） ----------------
     def _history(self, user_id: str, conversation_id: str | None,
@@ -183,6 +195,52 @@ class ChatOrchestrator:
         except Exception as exc:                  # noqa: BLE001 —— 写失败不推翻已回答
             return f"历史写入失败（{type(exc).__name__}）：下一轮将看不到本次问答"
         return ""
+
+    # ---------------- 意图路由（U74） ----------------
+    async def _route(self, user_id: str, query: str,
+                     conversation_id: str | None) -> tuple[RouteDecision | None, str]:
+        """跑一次五层意图路由。返回 `(决策, 不可用原因)`。
+
+        **三类结果必须分开**，混起来就分不清「判不出」与「没接通」：
+
+        - 决策 `label=None`：路由跑了，五层都没给出结论 —— 这是**正常**结果，
+          planner 会退回自己的确定性分类（UNKNOWN → 最稳的 hybrid_rerank）；
+        - `intent_router is None`：**没装配**，原因如实说出（E-77 的形态）；
+        - 抛异常：路由本身坏了，降级为确定性分类，并把异常类型带上。
+        """
+        if self.intent_router is None:
+            return None, "意图路由未装配：本轮按确定性规则分类"
+        try:
+            decision = await self.intent_router.route(RouteRequest(
+                user_id=user_id,
+                session_id=conversation_id or "single-turn",
+                utterance=query,
+                labels=self.intent_labels))
+        except InputGuardError:
+            raise                                 # 风控拒绝要原样上抛，由调用方转成 error
+        except Exception as exc:                  # noqa: BLE001 —— 路由失败不阻断回答
+            return None, f"意图路由失败（{type(exc).__name__}）：本轮按确定性规则分类"
+        return decision, ""
+
+    def _intent_view(self, decision: RouteDecision | None, note: str) -> dict:
+        """下发给端侧/日志的路由视图。**没有就说没有**，不做零值伪装。"""
+        if decision is None:
+            return {"wired": False, "note": note}
+        view: dict = {
+            "wired": True,
+            "layer": decision.layer,
+            "label": decision.label,
+            "confidence": round(decision.confidence, 3),
+            "degraded": decision.degraded,
+            "notes": list(decision.degradation_notes),
+            "untrusted": decision.input_untrusted,
+            # 影子态**不等结果**，所以这里只能报「本层未参与决策」，
+            # 报不出它判了什么 —— 那正是旁路的代价，写在数据里比藏着好。
+            "layers": [a.layer for a in decision.attempts],
+        }
+        if note:
+            view["note"] = note
+        return view
 
     # ---------------- 检索 ----------------
     def _retrieve(self, query: str, user_id: str | None) -> tuple[list[dict], str | None]:
@@ -270,14 +328,52 @@ class ChatOrchestrator:
         history, last_question, history_problem = self._history(
             user_id, conversation_id, resolved_tier)
 
+        # ---- 意图路由（U74）：先问「这句话想干什么」，再决定怎么查 ----
         try:
-            retrieval_plan = plan_query(query, tier=resolved_tier)
+            intent_decision, intent_note = await self._route(
+                user_id, query, conversation_id)
+        except InputGuardError as exc:
+            # 风控 BLOCK：不进入业务链路，但要**说清是被拦了**，
+            # 不能让它混成一次普通的回答失败（用户会一直重试同一种说法）。
+            yield ChatEvent("error", text="这条输入未通过安全检查，已停止处理。",
+                            data={"code": "input_blocked", "detail": str(exc)})
+            return
+
+        intent_notes: list[str] = [intent_note] if intent_note else []
+        if intent_decision is not None and intent_decision.degraded:
+            intent_notes.extend(f"路由 {n}" for n in intent_decision.degradation_notes)
+
+        # JEV-003 在链路上的落点：路由判定必须澄清 → 暂停分发，不进检索。
+        # 话术由系统按枚举模板渲染（U25），不是模型自由生成的句子。
+        if intent_decision is not None and intent_decision.must_pause:
+            question = intent_decision.clarifying_question
+            remember_note = self._remember(
+                user_id, conversation_id, question=query, answer=question,
+                category="multi_intent")
+            notes = intent_notes + [n for n in (history_problem, remember_note) if n]
+            yield ChatEvent("clarify", text=question,
+                            speech=question if self._can_speak(resolved_tier) else "",
+                            data={"intent": self._intent_view(intent_decision, ""),
+                                  "notes": notes})
+            yield ChatEvent("done", data={"clarified": True, "source": "intent_router",
+                                          "intent_layer": intent_decision.layer,
+                                          "notes": notes,
+                                          "conversation_id": conversation_id})
+            return
+
+        try:
+            retrieval_plan = plan_query(
+                query, tier=resolved_tier,
+                intent_layer=intent_decision.layer if intent_decision else None,
+                intent_label=intent_decision.label if intent_decision else None)
         except Exception as exc:                      # noqa: BLE001
             yield ChatEvent("error", text=f"请求无法规划：{exc}",
                             data={"code": "plan_failed"})
             return
 
-        yield ChatEvent("plan", data=retrieval_plan.as_dict())
+        plan_payload = retrieval_plan.as_dict()
+        plan_payload["intent"] = self._intent_view(intent_decision, intent_note)
+        yield ChatEvent("plan", data=plan_payload)
 
         # 多意图：计划书要求「不自动选择优先级，必须向用户确认」（JEV-003）
         if retrieval_plan.needs_clarification:
@@ -290,7 +386,7 @@ class ChatOrchestrator:
             yield ChatEvent("clarify", text=retrieval_plan.clarify_question,
                             speech=retrieval_plan.clarify_question
                             if self._can_speak(resolved_tier) else "")
-            clarify_notes = [n for n in (history_problem, remember_note) if n]
+            clarify_notes = intent_notes + [n for n in (history_problem, remember_note) if n]
             yield ChatEvent("done", data={"clarified": True, "notes": clarify_notes,
                                           "conversation_id": conversation_id})
             return
@@ -302,7 +398,7 @@ class ChatOrchestrator:
             self._retrieve(search_text,
                            user_id if resolved_tier is access.AccessTier.MEMBER else None)
 
-        notes = list(retrieval_plan.notes)
+        notes = list(retrieval_plan.notes) + intent_notes
         if degraded:
             notes.append(degraded)
         if expansion:
@@ -322,6 +418,8 @@ class ChatOrchestrator:
             yield ChatEvent("chunk", text=text,
                             speech=text if self._can_speak(resolved_tier) else "")
             yield ChatEvent("done", data={"abstained": True, "notes": notes,
+                                          "intent_layer": intent_decision.layer
+                                          if intent_decision else None,
                                           "conversation_id": conversation_id})
             return
 
@@ -393,12 +491,18 @@ class ChatOrchestrator:
 
         yield ChatEvent("done", data={
             "category": retrieval_plan.category.value,
+            "decided_by": retrieval_plan.decided_by,
             "tools": list(retrieval_plan.tools),
             "hits": len(hits),
             "verified": verification.grounded if verification else None,
             "notes": notes,
             "history": bool(history.strip()),
             "conversation_id": conversation_id,
+            # 路由的结论要**能被下游核对**：`intent_layer` 是「这句话走完了哪一层」，
+            # 没有它，评测只能看到分类结果，看不出分类是规则给的还是模型给的。
+            "intent_layer": intent_decision.layer if intent_decision else None,
+            "intent_label": intent_decision.label if intent_decision else None,
+            "intent_wired": self.intent_router is not None,
             "remembered": self.context_manager is not None and bool(conversation_id)
                           and not remember_note and bool(final_answer.strip()),
         })

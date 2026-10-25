@@ -227,14 +227,66 @@ class HardRuleLayer:
 # --------------------------------------------------------------------------- #
 # 第 2 层：Jev 决策
 # --------------------------------------------------------------------------- #
+class ShadowTasks:
+    """影子旁路的任务登记簿。
+
+    **为什么影子必须旁路**：原实现把 `shadow_mode` 判在「决策拿到之后」，
+    也就是模型仍被完整调用一次，而 `route()` 是 `await`、单层超时 5 秒。
+    于是「只记录不决策」在成本上等于「照常调用一次模型」—— 影子期不是
+    无感观测，是给每个请求白加一次模型延迟（最坏 5 秒）。
+    影子要能看到真实分布，就不能改变被观测系统的行为，延迟也算行为。
+
+    `drain()` 给测试与优雅关闭用：生产路径**不等**它，这正是旁路的含义。
+    """
+
+    def __init__(self) -> None:
+        self._tasks: set[asyncio.Task] = set()
+
+    def submit(self, coro) -> None:
+        task = asyncio.ensure_future(coro)
+        self._tasks.add(task)
+        # 取出结果，避免 "Task exception was never retrieved" 噪音；
+        # 影子任务内部已自行兜异常，这里的 exc 只是双保险。
+        task.add_done_callback(self._tasks.discard)
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+    @property
+    def pending(self) -> int:
+        return len(self._tasks)
+
+    async def drain(self, timeout: float = 30.0) -> int:
+        """等待所有影子任务结束，返回处理条数。超时不清空，避免假装跑完。"""
+        tasks = list(self._tasks)
+        if not tasks:
+            return 0
+        done, pending = await asyncio.wait(tasks, timeout=timeout)
+        return len(done) if not pending else len(done)
+
+
 class JevLayer:
     name = LAYER_JEV
 
-    def __init__(self, client: JevClient, *, on_shadow=None) -> None:
+    def __init__(self, client: JevClient, *, on_shadow=None,
+                 shadow: bool | None = None) -> None:
+        """`shadow` 三态，含义不能混：
+
+        - `None`：沿用旧行为 —— 完整调用一次，由决策自带的 `shadow` 标记
+          决定是否采信。**这条路径会阻塞**，只为兼容既有调用方保留。
+        - `True`：**旁路影子** —— 立即返回「不采信」，模型调用丢后台任务。
+          生产装配走这条（`intent_wiring.build_intent_router`）。
+        - `False`：正常决策。
+        """
         self.client = client
         self.on_shadow = on_shadow
+        self.shadow = shadow
+        self.tasks = ShadowTasks()
 
     async def evaluate(self, request: RouteRequest) -> LayerVerdict | None:
+        if self.shadow is True:
+            self.tasks.submit(self._probe(request))
+            return LayerVerdict(accepted=False, shadow=True,
+                                note="影子模式（旁路执行）：后台记录，不参与决策")
+
         decision: JevDecision = await self.client.decide(
             user_id=request.user_id, question=request.utterance,
             allowed_labels=request.labels)
@@ -264,6 +316,20 @@ class JevLayer:
         return LayerVerdict(accepted=False, label=decision.label,
                             confidence=decision.confidence,
                             note=decision.reason or "Jev 未给出可用结论，向下流转")
+
+    async def _probe(self, request: RouteRequest) -> None:
+        """影子探测。**任何异常都吞掉** —— 影子故障不得影响主链路。"""
+        try:
+            decision = await self.client.decide(
+                user_id=request.user_id, question=request.utterance,
+                allowed_labels=request.labels)
+        except Exception:                             # noqa: BLE001
+            return
+        if self.on_shadow is not None:
+            try:
+                self.on_shadow(decision)
+            except Exception:                         # noqa: BLE001
+                return
 
 
 # --------------------------------------------------------------------------- #
@@ -423,6 +489,15 @@ class IntentRouter:
     def layer_names(self) -> tuple[str, ...]:
         return tuple(layer.name for layer in self.layers)
 
+    async def drain_shadow(self, timeout: float = 30.0) -> int:
+        """等影子任务跑完（测试与优雅关闭用）。生产主链路**不调它**。"""
+        total = 0
+        for layer in self.layers:
+            tasks = getattr(layer, "tasks", None)
+            if isinstance(tasks, ShadowTasks):
+                total += await tasks.drain(timeout=timeout)
+        return total
+
     async def route(self, request: RouteRequest) -> RouteDecision:
         trace_id = request.trace_id or uuid.uuid4().hex[:16]
         attempts: list[LayerAttempt] = []
@@ -511,13 +586,13 @@ def default_layers(*, hard_rules: Sequence[HardRule] = (), jev_client: JevClient
                    gateway: LLMGateway | None = None,
                    vector_threshold: float = DEFAULT_VECTOR_THRESHOLD,
                    vertical_threshold: float = DEFAULT_VERTICAL_THRESHOLD,
-                   on_shadow=None) -> list[IntentLayer]:
+                   on_shadow=None, jev_shadow: bool | None = None) -> list[IntentLayer]:
     """按冻结顺序组装实际可用的层；缺席的层直接跳过（仍保持相对顺序）。"""
     layers: list[IntentLayer] = []
     if hard_rules:
         layers.append(HardRuleLayer(hard_rules))
     if jev_client is not None:
-        layers.append(JevLayer(jev_client, on_shadow=on_shadow))
+        layers.append(JevLayer(jev_client, on_shadow=on_shadow, shadow=jev_shadow))
     if embedder is not None and exemplars:
         layers.append(VectorLayer(embedder, exemplars, threshold=vector_threshold))
     if vertical_model is not None:

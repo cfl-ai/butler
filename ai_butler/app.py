@@ -73,6 +73,7 @@ from ai_butler.retrieval import describe_categories, describe_tools, plan as pla
 from ai_butler.retrieval.chat import ChatOrchestrator
 from ai_butler.retrieval.wiring import build_search_fn
 from ai_butler.scheduler.context import ContextManager, ContextPolicy
+from ai_butler.scheduler import intent_wiring
 from ai_butler.verticals.tour.places import load_places
 
 #: 公开路径白名单：只有基础设施探活 + 登录/访客入口。
@@ -112,8 +113,9 @@ def build_chat_context_manager(files, settings: Settings) -> ContextManager:
 def build_chat_orchestrator(*, gateway, search, settings: Settings,
                             model_access=None,
                             context_manager: ContextManager | None = None,
+                            intent_router=None,
                             ) -> ChatOrchestrator:
-    """文字查询链路的**唯一装配点**（U73）。
+    """文字查询链路的**唯一装配点**（U73 / U74）。
 
     为什么单独立一个函数：E-77 的教训是「`ContextManager` 有实现、有测试，
     但全项目没有一个地方构造它」—— 测试只能证明类可用，证明不了链路在用。
@@ -122,7 +124,14 @@ def build_chat_orchestrator(*, gateway, search, settings: Settings,
 
     注意 `context_manager` 允许为 None：那是**显式**的单轮模式（测试缝），
     不是「忘了接」。生产路径由 `create_app` 无条件传入。
+    `intent_router` 同理，但多一条纪律：**开关开着却没装配，直接报错**。
+    否则「路由没插上」会退化成一个安静的性能问题（每次都按正则分类）。
     """
+    if settings.intent_router_enable and intent_router is None:
+        raise ValueError(
+            "intent_router_enable=true 但未装配意图路由："
+            "这会让五层路由静默退化为纯正则分类（E-77 的形态）。"
+            "要么传入 build_intent_router() 的结果，要么显式关掉开关。")
     return ChatOrchestrator(
         gateway, search=search,
         top_k=settings.chat_top_k,
@@ -131,6 +140,8 @@ def build_chat_orchestrator(*, gateway, search, settings: Settings,
         verify_answer=settings.chat_verify_enable,
         context_manager=context_manager,
         history_enable=settings.chat_history_enable,
+        intent_router=intent_router,
+        intent_labels=intent_wiring.INTENT_LABELS,
     )
 
 
@@ -1038,9 +1049,14 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     search = chat_search if chat_search is not None else build_search_fn(settings)
     context_manager = build_chat_context_manager(files, settings)
+    # 意图路由（U74）：装配完立刻**后台预热**向量层（冷启动约 9.7s，不能在请求里做）
+    intent_router = intent_wiring.build_intent_router(settings, gateway=gateway)
+    if intent_router is None and settings.intent_router_enable:
+        logger.error("意图路由装配为空，文字查询将退化为纯正则分类", None)
     orchestrator = build_chat_orchestrator(
         gateway=gateway, search=search, settings=settings,
-        model_access=model_access, context_manager=context_manager)
+        model_access=model_access, context_manager=context_manager,
+        intent_router=intent_router)
     if redis is not None:
         conversation_index: conv_idx_mod.ConversationIndex = \
             conv_idx_mod.RedisConversationIndex(
@@ -1185,6 +1201,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
     app.state.model_access = model_access
     app.state.chat_orchestrator = orchestrator
     app.state.chat_context_manager = context_manager
+    app.state.intent_router = intent_router
     app.state.conversation_index = conversation_index
     app.state.guest_budget = guest_budget
     return app

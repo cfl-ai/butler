@@ -183,6 +183,17 @@ class Settings(BaseSettings):
     chat_summary_max_chars: int = 600            # 摘要上限
     conversation_ttl_seconds: int = 604800       # 索引项保留 7 天
 
+    # ---------- 五层意图路由接线（U74，计划书三、P3）----------
+    # 五层里**只有三层有实现**：L1 硬规则 / L2 Jev / L3 向量。
+    # L4 垂类模型全项目只有 Protocol 没有实现（U03 要求先标定），
+    # L5 与 L2 是同一件事（同网关同 prompt 形态），接了两份账 —— 详见 scheduler/intent_wiring.py。
+    intent_router_enable: bool = True
+    intent_vector_enable: bool = True
+    # 0.62 **不是标定值**：它是本层既有默认值，且在 62 句自建语料上实测优于 0.80/0.85
+    # （总准 83.9% vs 77.4%）。但那次实测的示例语料与测试句同源，L3 成绩被高估；
+    # U03 要求的中文验证集标定**未完成**，所以这里留成可调数字，不写成定论。
+    intent_vector_threshold: float = 0.62
+
     # ---- 账号体系（U67 / U68 / U69）----
     # 账号文件放哪：空则跟 storage_root 走，独立配置是为了让隐私数据能单独挂卷
     account_store_root: str = ""
@@ -239,6 +250,22 @@ class Settings(BaseSettings):
     jev_confidence_threshold: float = 0.82        # jev_confidence_threshold = 0.82
     jev_fallback_enable: bool = True              # jev_fallback_enable = true
     jev_shadow_mode: bool = True                  # jev_shadow_mode = true
+
+    # ---- 以下两项是**实现参数**，不属于【八】冻结集合，可调 ----
+    # E-78：64 token 会被弱模型「复述候选标签」吃掉，JSON 写到一半被截断。
+    # 本机 3B 实测 64→256 后 3/6 成功变 6/6；云端 deepseek-chat 实测 64 也不截断（62/62）。
+    # 因此 256 不是修 bug，是**给弱模型留余量**：成本可忽略，没必要卡在边界上。
+    jev_max_tokens: int = 256
+    # E-80：**默认采信**模型的澄清请求（JEV-003 是冻结不变量，偏离要有证据）。
+    # 实测对比：
+    #   · 本机 qwen2.5vl:3b —— 6 次澄清 6 次错（把「信息不足」当成「多意图」），
+    #     关掉后 A 方案从 69.4% 升到 79.0%，那时关掉是对的；
+    #   · 云端 deepseek-chat —— 16/62 要求澄清，其中 13 条的标签本来就对，
+    #     且集中在 multi_intent(7/7) 与 unknown(6/6)，正是**该问**的两类；
+    #     关掉只多拿 1 个用例（+1.6 点，落在 62 句语料的噪声内），
+    #     不足以作为偏离冻结不变量的理由。
+    # 结论：默认 True；**若把 L2 换成弱模型，请设 JEV_ALLOW_CLARIFY=false**。
+    jev_allow_clarify: bool = True
 
     @field_validator("environment")
     @classmethod

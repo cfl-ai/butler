@@ -115,8 +115,12 @@ class Provider:
     async def chat(self, messages: Sequence[ChatMessage], *, model: str | None,
                    timeout: float, max_tokens: int | None,
                    api_key: str | None = None,
-                   base_url: str | None = None) -> ChatResult:
+                   base_url: str | None = None,
+                   temperature: float | None = None) -> ChatResult:
         """`api_key` / `base_url` 是**按调用传入**的覆盖值。
+
+        `temperature` 为 None 时**不下发该字段**，沿用各厂默认值；
+        判定类调用（Jev）传 0 —— 见 `JevClient.decide` 的说明。
 
         它们只允许来自 `core/model_access.ModelAccess.resolve()`（已做过归属校验、
         且密钥已解密），**绝不能直接取自请求体** —— 否则用户能把任意 key 塞进网关。
@@ -146,11 +150,15 @@ class OllamaProvider(Provider):
         }
 
     async def chat(self, messages, *, model=None, timeout, max_tokens=None,
-                   api_key=None, base_url=None) -> ChatResult:
+                   api_key=None, base_url=None, temperature=None) -> ChatResult:
         t0 = time.perf_counter()
+        payload = self._payload(messages, model, max_tokens, False)
+        if temperature is not None:
+            # `_payload` 只在给了 max_tokens 时才带 options，这里必须 setdefault
+            payload.setdefault("options", {})["temperature"] = temperature
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(f"{base_url or self.settings.ollama_base_url}/api/chat",
-                                  json=self._payload(messages, model, max_tokens, False))
+                                  json=payload)
             r.raise_for_status()
             d = r.json()
         return ChatResult(
@@ -184,7 +192,7 @@ class DeepSeekProvider(Provider):
     name = "deepseek"
 
     async def chat(self, messages, *, model=None, timeout, max_tokens=None,
-                   api_key=None, base_url=None) -> ChatResult:
+                   api_key=None, base_url=None, temperature=None) -> ChatResult:
         key = api_key or self.settings.deepseek_api_key
         if not key:
             raise GatewayUnavailableError("DEEPSEEK_API_KEY 未配置")
@@ -195,6 +203,8 @@ class DeepSeekProvider(Provider):
         }
         if max_tokens is not None:
             body["max_tokens"] = max_tokens
+        if temperature is not None:
+            body["temperature"] = temperature
         t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(
@@ -261,7 +271,7 @@ class OpenAICompatProvider(Provider):
         return api_key, base_url.rstrip("/")
 
     async def chat(self, messages, *, model=None, timeout, max_tokens=None,
-                   api_key=None, base_url=None) -> ChatResult:
+                   api_key=None, base_url=None, temperature=None) -> ChatResult:
         key, base = self._require(api_key, base_url)
         if not model:
             raise GatewayUnavailableError("openai-compatible 必须显式给出 model")
@@ -272,6 +282,8 @@ class OpenAICompatProvider(Provider):
         }
         if max_tokens is not None:
             body["max_tokens"] = max_tokens
+        if temperature is not None:
+            body["temperature"] = temperature
         t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(f"{base}/chat/completions",
@@ -373,7 +385,8 @@ class LLMGateway:
                    rate_bucket: str = "llm",
                    provider: str | None = None,
                    api_key: str | None = None,
-                   base_url: str | None = None) -> ChatResult:
+                   base_url: str | None = None,
+                   temperature: float | None = None) -> ChatResult:
         """`provider` / `api_key` / `base_url` 来自 `ModelAccess.resolve()`。
 
         三者一旦显式给出，就**只走这一个供应商、不做降级**：
@@ -393,7 +406,8 @@ class LLMGateway:
                 return await p.chat(messages, model=model,
                                     timeout=self.settings.llm_timeout_seconds,
                                     max_tokens=max_tokens,
-                                    api_key=api_key, base_url=base_url)
+                                    api_key=api_key, base_url=base_url,
+                                    temperature=temperature)
 
             for attempt in range(self.settings.llm_max_retries + 1):
                 try:
@@ -513,7 +527,11 @@ class JevClient:
                     ChatMessage("system", _JEV_SYSTEM),
                     ChatMessage("user", f"候选标签：{list(allowed_labels)}\n待判定问题：{question}"),
                 ],
-                model=model, max_tokens=64,
+                model=model, max_tokens=self.settings.jev_max_tokens,
+                # **判定节点必须可复现**：温度不定时，同一条句子两次可能给出
+                # 不同标签与置信，路由行为就成了不可复现的（评测也无从比较）。
+                # 这不是「让模型更准」，是让结论稳定 —— 准不准由 prompt 与模型决定。
+                temperature=0.0,
                 # 计划书三、P3「Jev 调用独立配额统计」：走独立 bucket，不占业务话务配额
                 rate_limit=self.settings.jev_rate_limit_per_minute,
                 rate_bucket="jev",
@@ -523,12 +541,18 @@ class JevClient:
             return JevDecision(None, 0.0, "fallback",
                                reason=f"Jev 调用失败，降级下游路由：{type(exc).__name__}")
 
-        def build(source: str, **extra: Any) -> JevDecision:
+        def build(source: str, *, drop_clarification: bool = False,
+                  **extra: Any) -> JevDecision:
             return JevDecision(
                 structured.label, structured.confidence, source,      # type: ignore[arg-type]
                 candidate_labels=structured.candidate_labels,
-                require_clarification=structured.require_clarification,
-                clarification_category=structured.clarification_category, **extra)
+                # 关闭澄清采信时**必须同时清空这两个字段**：留着 True 会让
+                # JevLayer 继续按 JEV-003 暂停分发，等于开关没起作用。
+                require_clarification=(False if drop_clarification
+                                       else structured.require_clarification),
+                clarification_category=("" if drop_clarification
+                                        else structured.clarification_category),
+                **extra)
 
         if self.settings.jev_shadow_mode:
             # 影子模式：结果只做对照记录，不参与业务决策
@@ -538,6 +562,17 @@ class JevClient:
         if structured.require_clarification:
             # 澄清是**安全动作**：不受置信阈值门控。
             # 若被阈值拦下，低置信时就可能漏掉「必须向用户确认」的多意图冲突。
+            if not self.settings.jev_allow_clarify:
+                # E-80：**只在弱模型上关**。本机 3B 把「信息不足」判成「多意图」，
+                # 6 次澄清 6 次错；云端 deepseek-chat 实测澄清集中在 multi_intent
+                # 与 unknown 两类（正是该问的），因此**默认是开的**。
+                # 关掉的是「采信这个模型的澄清请求」，JEV-003 的机制原样保留：
+                # 一旦采信，路由暂停分发照旧生效。
+                # 关掉之后的后果是**退回确定性判据**，不是「自动选优先级」：
+                # planner 的正则多意图判定仍然是权威澄清来源。
+                return build("fallback", drop_clarification=True,
+                             reason="模型要求澄清，但 jev_allow_clarify=false（弱模型误报），"
+                                    "退回确定性分类")
             return build("jev")
 
         if structured.confidence < self.settings.jev_confidence_threshold:

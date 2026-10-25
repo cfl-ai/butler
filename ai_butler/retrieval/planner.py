@@ -274,12 +274,17 @@ _MULTI_INTENT = re.compile(r"[?？；;]|以及|并且|另外|同时|顺便")
 SMALL_TALK_MAX_CHARS = 12
 
 
-def classify(query: str, *, intent_layer: str | None = None) -> tuple[QueryCategory,
-                                                                     str, tuple[str, ...]]:
+def classify(query: str, *, intent_layer: str | None = None,
+             intent_label: str | None = None) -> tuple[QueryCategory, str, tuple[str, ...]]:
     """给出 (分类, 判定依据, 命中信号)。
 
     判定顺序固定，**先确定性后概率性**：
-    闲聊 → 多意图 → 逐条信号（优先级即表序）→ 五层兜底结论 → UNKNOWN。
+    闲聊 → 多意图 → 逐条信号（优先级即表序）→ 五层路由结论 → UNKNOWN。
+
+    `intent_label` 是五层意图路由（U74）给出的标签，**只在确定性信号全部落空时
+    才被采用**。顺序不能反过来：正则是可复现的判据，模型判定不是；
+    让概率结论覆盖确定性结论，等于用「大概对」换掉「确定对」，
+    而且会让同一条查询在不同时间得到不同工具序列（E-53 要的是「说得出理由」）。
     """
     text = (query or "").strip()
     if not text:
@@ -303,6 +308,23 @@ def classify(query: str, *, intent_layer: str | None = None) -> tuple[QueryCateg
     if hits:
         # 表序即优先级：第一命中即主分类（设计上更具体的类别排在更泛的前面）
         return hits[0][1], f"命中信号「{hits[0][0]}」", tuple(n for n, _ in hits)
+
+    # 确定性信号全落空：这时才用五层路由的结论（它是概率性的，必须排最后）
+    if intent_label:
+        try:
+            category = QueryCategory(intent_label)
+        except ValueError:
+            # 标签不在冻结集合内：不猜，按 UNKNOWN 走最稳的路，并留痕
+            return (QueryCategory.UNKNOWN,
+                    f"五层路由给出未登记的标签 {intent_label!r}，按未知处理",
+                    ("intent_label_invalid",))
+        if category is QueryCategory.UNKNOWN:
+            return (QueryCategory.UNKNOWN,
+                    f"五层路由（{intent_layer or '未知层'}）亦判为 unknown",
+                    (f"intent={intent_label}",))
+        return (category,
+                f"五层意图路由（{intent_layer or '未知层'}）判定为 {intent_label}",
+                (f"intent={intent_label}", f"layer={intent_layer or ''}"))
 
     # 没有任何确定性信号：把决定权交给五层路由的结论，不再自己猜
     if intent_layer == LAYER_LLM_FALLBACK:
@@ -366,7 +388,8 @@ class PlanError(ValueError):
 
 
 def plan(query: str, *, tier: access.AccessTier = access.AccessTier.GUEST,
-         intent_layer: str | None = None, min_confidence: float | None = None,
+         intent_layer: str | None = None, intent_label: str | None = None,
+         min_confidence: float | None = None,
          with_route: bool = True) -> RetrievalPlan:
     """把一句话规划成「分类 + 工具序列」。
 
@@ -375,14 +398,18 @@ def plan(query: str, *, tier: access.AccessTier = access.AccessTier.GUEST,
     tier:
         访问层级。**工具按层级裁剪**：没权限的工具在规划期就被剔除并记账，
         不让它跑到执行期才炸（那时用户看到的是「查不到」，而不是「去登录」）。
-    intent_layer / min_confidence:
-        透传给 `material_center.routing.route_query`，**只消费不改写**（U46）。
+    intent_layer / intent_label:
+        `intent_layer` 透传给 `material_center.routing.route_query`，**只消费不改写**（U46）。
+        `intent_label` 是五层意图路由（U74）的结论，**仅在正则信号全落空时采用**。
+    min_confidence:
+        透传给路线判定。
     """
     text = (query or "").strip()
     if not text:
         raise PlanError("查询不得为空 —— 空查询无从规划")
 
-    category, decided_by, signals = classify(text, intent_layer=intent_layer)
+    category, decided_by, signals = classify(text, intent_layer=intent_layer,
+                                             intent_label=intent_label)
 
     route: RoutingDecision | None = None
     notes: list[str] = []
