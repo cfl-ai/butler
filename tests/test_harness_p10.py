@@ -114,8 +114,14 @@ def test_p10_decisions_are_registered_and_resolved():
     # U85 = 离线闭环的排程单元（2026-10-25 补，见 agents/repair_job.py）
     # U86 = 账本写互斥（2026-10-25 补，见 core/filelock.py）
     # U87 = 账本落盘每行 fsync（2026-10-25 补，见三处 append）
+    # U88 = 源码修改授权簿（2026-10-25 补，见 core/authority.py）
+    # U89 = 离线闭环的本机 CLI 入口（2026-10-25 补，见 scripts/run_repair_loop.py）
+    # U90 = 撤销审批票的持久化（2026-10-25 补，见 core/approval.py 的 FileApprovalService）
+    # U92 = 闭环的唯一生产装配点（2026-10-25 补，见 agents/repair_entry.py）
+    # U93 = 授权簿与 PatchGuard 两层独立（2026-10-25 补，范围口径共用 harness/patch.py）
     assert keys == {"U08", "U32", "U33", "U34", "U35", "U36", "U49", "U58",
-                    "U77", "U78", "U80", "U81", "U82", "U83", "U85", "U86", "U87"}
+                    "U77", "U78", "U80", "U81", "U82", "U83", "U85", "U86", "U87",
+                    "U88", "U89", "U90", "U92", "U93"}
     for key in keys:
         assert decisions.get(key).status == decisions.RESOLVED
 

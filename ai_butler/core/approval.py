@@ -24,10 +24,15 @@
 
 from __future__ import annotations
 
+import json
+import os
 import time
 import uuid
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Callable
+
+from ai_butler.core.filelock import FileLock
 
 #: 状态机（单向）
 PENDING = "pending"
@@ -183,3 +188,140 @@ class ApprovalService:
             self._tickets[ticket.approval_id] = expired
             return expired
         return ticket
+
+
+# ================================================================== #
+# 持久实现：票要跨得过进程重启（U90）                                  #
+# ================================================================== #
+class FileApprovalService:
+    """审批票的持久实现。**接口与 `ApprovalService` 一致**，可原地替换。
+
+    为什么需要它
+    ------------
+    撤销一张已提交补丁的流程天然跨进程：闭环进程申请票 → 人去看 diff →
+    人（在另一个 shell 里）批准 → 闭环重跑时消费。内存实现在第一步之后
+    就把票丢了——于是「人工确认」退化成「确认不了」，或者更糟：
+    有人为了跑通而把审批整个绕掉。
+
+    **纪律不变**（这是替换的前提，不是可选项）：
+    一次性、签名绑定、主体绑定、TTL 即拒、状态机单向，全部复用
+    `ApprovalService` 的判定逻辑——本类只负责「把票存住、存对」：
+
+    - 写路径（request / approve / reject / consume）在**锁内**完成
+      「读盘 → 判定 → 写盘」（U86：只包 append 的锁挡不住两个进程
+      各自基于旧快照判断可以写）；
+    - 每本票都落盘并 fsync（U87：flush 不等于落盘，半行 JSON 会让
+      整本票读不出来，而「票不存在」与「票被拒」是两种完全不同的故障）；
+    - 文件损坏**拒载**，不静默从空开始：空簿会把「已批准的票」变成
+      「票不存在」，看着像从没申请过——那正是审计最怕的一种安静。
+
+    **读路径不写盘**：到期与否在读取时当场判定（`ApprovalService`
+    的 `_apply_expiry`），不在 `get` / `pending` 里落状态——读操作
+    不该留下写入副作用，否则「看一眼票」都能和正在审批的人撞上锁。
+    """
+
+    def __init__(self, path: str | Path, *, ttl_seconds: float,
+                 clock: Callable[[], float] = time.time,
+                 lock: FileLock | None = None, lock_timeout: float = 5.0) -> None:
+        if ttl_seconds <= 0:
+            raise ApprovalError("ttl_seconds 必须为正")
+        self.path = Path(path)
+        self.ttl = float(ttl_seconds)
+        self._clock = clock
+        self._lock = lock or FileLock(f"{self.path}.lock",
+                                      timeout=lock_timeout, purpose="审批票")
+        self._inner = ApprovalService(ttl_seconds=self.ttl, clock=clock)
+
+    # ---------------- 申请 ---------------- #
+    def request(self, *, tool: str, signature: str, agent: str, role: str,
+                tier: int, reason: str) -> ApprovalRequest:
+        with self._lock:
+            self._reload()
+            ticket = self._inner.request(
+                tool=tool, signature=signature, agent=agent, role=role,
+                tier=tier, reason=reason)
+            self._save()
+            return ticket
+
+    # ---------------- 人工决策 ---------------- #
+    def approve(self, approval_id: str, *, by: str) -> ApprovalRequest:
+        return self._decide(approval_id, APPROVED, by)
+
+    def reject(self, approval_id: str, *, by: str) -> ApprovalRequest:
+        return self._decide(approval_id, REJECTED, by)
+
+    def _decide(self, approval_id: str, status: str, by: str) -> ApprovalRequest:
+        with self._lock:
+            self._reload()
+            ticket = self._inner._decide(approval_id, status, by)
+            self._save()
+            return ticket
+
+    # ---------------- 消费（dispatch 侧） ---------------- #
+    def consume(self, approval_id: str, *, tool: str, signature: str,
+                agent: str, role: str) -> ApprovalRequest:
+        with self._lock:
+            self._reload()
+            ticket = self._inner.consume(
+                approval_id, tool=tool, signature=signature,
+                agent=agent, role=role)
+            self._save()
+            return ticket
+
+    # ---------------- 查询 ---------------- #
+    def get(self, approval_id: str) -> ApprovalRequest | None:
+        with self._lock:
+            self._reload()
+            return self._inner.get(approval_id)
+
+    def pending(self) -> tuple[ApprovalRequest, ...]:
+        with self._lock:
+            self._reload()
+            return self._inner.pending()
+
+    def tickets(self) -> tuple[ApprovalRequest, ...]:
+        """全部票（含终态）——给 CLI 的 `tickets` 子命令对账用。"""
+        with self._lock:
+            self._reload()
+            return tuple(self._inner._tickets.values())
+
+    # ---------------- 持久化内部 ---------------- #
+    def _reload(self) -> None:
+        """把磁盘上的票装进内层服务。**损坏即拒**，不静默从空开始。"""
+        if not self.path.exists():
+            self._inner._tickets = {}
+            return
+        try:
+            raw = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ApprovalError(
+                f"{self.path} 不是合法 JSON（{type(exc).__name__}）："
+                f"审批票簿损坏，拒绝加载。手改出来的损坏猜不回原文——"
+                f"「票不存在」与「票被拒」是两种完全不同的故障，"
+                f"静默从空开始会把前者伪装成后者。请从备份恢复。") from exc
+        if not isinstance(raw, list):
+            raise ApprovalError(f"{self.path} 顶层应为数组，实际 {type(raw).__name__}")
+        tickets: dict[str, ApprovalRequest] = {}
+        for item in raw:
+            if not isinstance(item, dict) or "approval_id" not in item:
+                raise ApprovalError(f"审批票记录缺 approval_id：{item!r}")
+            try:
+                ticket = ApprovalRequest(**item)
+            except TypeError as exc:
+                # 字段对不上 = 这份文件不是本模块写的（或版本漂移）。
+                # 不猜、不挑能用的字段——猜错的字段正好是安全相关的那几个。
+                raise ApprovalError(
+                    f"审批票记录字段不符（{exc}）：{item!r}") from exc
+            tickets[ticket.approval_id] = ticket
+        self._inner._tickets = tickets
+
+    def _save(self) -> None:
+        """原子写盘 + fsync（U87）。调用方须持锁。"""
+        payload = json.dumps([t.as_dict() for t in self._inner._tickets.values()],
+                             ensure_ascii=False, indent=2)
+        tmp = self.path.with_suffix(".json.tmp")
+        with tmp.open("w", encoding="utf-8") as fh:
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, self.path)

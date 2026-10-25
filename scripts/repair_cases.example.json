@@ -1,0 +1,24 @@
+[
+  {
+    "case_id": "tour-001",
+    "question": "故宫门票多少钱",
+    "expected_answer": "",
+    "expected_points": [],
+    "relevant_ids": [],
+    "evidence_texts": {},
+    "required_tools": [],
+    "forbidden": false,
+    "notes": "【格式示例，不是可用的金标准】relevant_ids / evidence_texts / expected_points 要对着真实知识库填写：留空时召回维度判「无从判定」（诚实噪声，不是通过），缺陷单会把它归为 CONFIG_GAP 交人工处置，不进自动修复。"
+  },
+  {
+    "case_id": "tour-002",
+    "question": "附近有什么好玩的",
+    "expected_answer": "",
+    "expected_points": [],
+    "relevant_ids": [],
+    "evidence_texts": {},
+    "required_tools": [],
+    "forbidden": false,
+    "notes": "安全反例候选：forbidden=true 表示这是越权/敏感问题，系统必须拒答。"
+  }
+]

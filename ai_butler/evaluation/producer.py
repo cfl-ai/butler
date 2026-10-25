@@ -58,7 +58,8 @@ from ai_butler.evaluation.trace import (
     RetrievalRecord,
 )
 
-__all__ = ["StreamFactory", "StreamTraceProducer", "COLLECTOR_USER_ID"]
+__all__ = ["StreamFactory", "StreamTraceProducer", "COLLECTOR_USER_ID",
+           "trace_from_events"]
 
 #: 复评重放时使用的系统身份。理由同 `coder.CODER_USER_ID`：
 #: 离线链路没有登录用户，不借用真实用户的话务与配额。
@@ -66,6 +67,60 @@ COLLECTOR_USER_ID = "system:p10-recheck"
 
 #: `(query) -> AsyncIterator[event]`。event 只要有 `.type` / `.text` / `.data`。
 StreamFactory = Callable[[str], AsyncIterator[Any]]
+
+
+def trace_from_events(*, trace_id: str, question: str,
+                      events: Sequence[Any]) -> AgentTrace:
+    """把一次对话的事件流折成 `AgentTrace`。
+
+    **复评现跑与在线埋点共用这一个折叠函数**（U91）：两处各折一遍，
+    必然在两件最早被发现的事上分叉——`revise` 是替换还是续写
+    （真实管道弃答时用户看到的是弃答那一版）、`done` 缺失算不算跑完。
+    分叉的方向还都是「看起来正常」：折出来的痕迹能评，只是评的不是
+    用户真正看到的那一版。
+
+    事件流只提供「计划要调哪些工具」（`plan` 事件的 tools），不提供实际的
+    工具调用记录，所以 `tool_calls` 恒为空、`llm_calls` 恒为空：
+    工具调用真实性与成本两个维度判「无从判定」而不是「通过」。
+    **不伪造**——伪造出来的「工具都调了」会让复评放过真正的工具缺失。
+    """
+    chunks: list[str] = []
+    revised: str | None = None
+    retrieved: tuple[str, ...] = ()
+    exceptions: list[ExceptionRecord] = []
+    completed = False
+
+    for event in events:
+        kind = str(getattr(event, "type", "") or "")
+        data = getattr(event, "data", None) or {}
+        text = str(getattr(event, "text", "") or "")
+
+        if kind == "chunk":
+            chunks.append(text)
+        elif kind == "revise":
+            # 复检推翻了初稿：这是**替换**，不是续写（见模块顶部「一」）
+            revised = text
+        elif kind == "error":
+            exceptions.append(ExceptionRecord(
+                stage="execution",
+                error_code=str(data.get("code") or "unknown"),
+                message=text))
+        elif kind == "done":
+            completed = True
+            retrieved = tuple(str(x) for x in (data.get("retrieved_ids") or ()))
+
+    return AgentTrace(
+        trace_id=trace_id,
+        question=question,
+        answer=(revised if revised is not None else "".join(chunks)).strip(),
+        retrieval=RetrievalRecord(query=question, retrieved_ids=retrieved),
+        tool_calls=(),
+        exceptions=tuple(exceptions),
+        completed=completed,
+        # `category` 放进 claimed_outcomes 之外的字段没有位置，
+        # 且它不是「声称结果」，故不留。需要分类结论请读 `done` 事件本身。
+        security=None,
+    )
 
 
 @dataclass
@@ -103,43 +158,9 @@ class StreamTraceProducer:
 
     # ------------------------------------------------------------------ #
     async def _one(self, case: EvaluationCase, index: int) -> AgentTrace:
-        chunks: list[str] = []
-        revised: str | None = None
-        retrieved: tuple[str, ...] = ()
-        exceptions: list[ExceptionRecord] = []
-        completed = False
-
         # 用 case.question 而不是改写后的问题：评测的金标准是对着原问题写的，
         # 拿改写文本去跑，痕迹与用例就对不上了。
-        async for event in self.stream_factory(case.question):
-            kind = str(getattr(event, "type", "") or "")
-            data = getattr(event, "data", None) or {}
-            text = str(getattr(event, "text", "") or "")
-
-            if kind == "chunk":
-                chunks.append(text)
-            elif kind == "revise":
-                # 复检推翻了初稿：这是**替换**。见模块顶部「一」。
-                revised = text
-            elif kind == "error":
-                exceptions.append(ExceptionRecord(
-                    stage="execution",
-                    error_code=str(data.get("code") or "unknown"),
-                    message=text))
-            elif kind == "done":
-                completed = True
-                retrieved = tuple(str(x) for x in (data.get("retrieved_ids") or ()))
-
-        return AgentTrace(
+        events = [event async for event in self.stream_factory(case.question)]
+        return trace_from_events(
             trace_id=f"{case.case_id}#run{index}",
-            question=case.question,
-            answer=(revised if revised is not None else "".join(chunks)).strip(),
-            retrieval=RetrievalRecord(query=case.question, retrieved_ids=retrieved),
-            # 见模块顶部「未实现」：事件流不提供实际工具调用，这里不伪造
-            tool_calls=(),
-            exceptions=tuple(exceptions),
-            completed=completed,
-            # `category` 放进 claimed_outcomes 之外的字段没有位置，
-            # 且它不是「声称结果」，故不留。需要分类结论请读 `done` 事件本身。
-            security=None,
-        )
+            question=case.question, events=events)

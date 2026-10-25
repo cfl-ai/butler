@@ -290,6 +290,11 @@ class LLMCoder:
 
     `gateway` 是端口注入，不是在本模块里 new 一个——离线链路与在线链路
     必须共用同一套鉴权、限流、熔断（P0-1），另起一套等于绕过它们。
+
+    `model` 显式指定创作用的模型（U89：本机入口按 `ollama_model` 回退
+    `ollama_vision_model` 取值，与在线链路同一个表达式）。不给时由供应商
+    按自己的默认走——而 Ollama 的默认在 `ollama_model` 为空串时会发出
+    一个空模型名，那是「装配时没人决定用哪个模型」，不是供应商的默认。
     """
 
     gateway: Any
@@ -299,6 +304,8 @@ class LLMCoder:
     max_tokens: int = 2048
     #: 创作类调用用非零温度：不同候选补丁之间需要有差异，否则重试等于复读
     temperature: float = 0.2
+    #: 创作用的模型。None = 交给供应商默认（生产入口会显式给，见模块 docstring）。
+    model: str | None = None
 
     async def propose(self, *, defect: Any, snippets: Sequence[CodeSnippet],
                       verify_target: str, feedback: str = "") -> CodeProposal:
@@ -385,7 +392,8 @@ class LLMCoder:
                       ChatMessage("user", user)),
             max_tokens=self.max_tokens,
             rate_bucket="harness",
-            temperature=self.temperature)
+            temperature=self.temperature,
+            model=self.model)
         text = getattr(result, "text", "") or ""
         diff, rationale = extract_diff(text)
         return diff, rationale, text

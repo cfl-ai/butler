@@ -60,6 +60,28 @@ EVENT_TYPES: tuple[str, ...] = (
     EV_CHECKPOINT,
 )
 
+#: 在线会话痕迹账本的 journal_id（U91）。
+#:
+#: 埋点侧（`app.py` 聊天链路）与回放侧（`evaluation/journal_source.py` 的
+#: `JournalTraceSource`）**共用这一个常量**：两侧各写一个字面量的话，
+#: 改一处漏一处的结果是「会话在落账、闭环在回放另一本空账」——
+#: 而两边看起来都正常工作。
+#:
+#: 所有聊天会话共用同一个 journal_id，靠 `session_start` / `session_end`
+#: 事件切段（一个会话一段），不按会话建 journal_id——那会让回放侧
+#: 只能看到一个会话，而 `JournalTraceSource` 读的是「一个账本的全部事件」。
+CHAT_JOURNAL_ID = "chat"
+
+
+def chat_journal_path(settings: Any) -> Path:
+    """在线会话痕迹账本的默认位置：`<storage_root>/offline/chat-journal.jsonl`。
+
+    与离线链路的其它账（版本账 / 溯源账 / 审批票 / 授权簿）同根：
+    它们本来就要放在一起——「哪次会话、改过什么、谁批准的」是一个问题。
+    """
+    root = Path(getattr(settings, "storage_root", "") or "data/dev/storage")
+    return root / "offline" / "chat-journal.jsonl"
+
 
 class JournalError(RuntimeError):
     """账本不可信（链断裂 / 序号断档 / 篡改）。fail-closed：拒绝对外服务。"""
@@ -146,6 +168,9 @@ class FileJournalStore:
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
+        # 装配时就位目录：`append` 用追加模式打开，父目录不存在时
+        # 第一次写入才会炸——而那通常发生在一次会话结束、写 session_end 的
+        # 时刻（埋点白接一半，最难查的一种）。在这里建，失败早在装配期。
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def load(self, journal_id: str) -> list[dict[str, Any]]:

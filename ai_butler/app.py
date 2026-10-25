@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import base64
 import json
+import uuid
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -57,6 +58,14 @@ from ai_butler.infra.vision import (
     VisionUnavailableError,
 )
 from ai_butler.core.session_store import SessionStore
+from ai_butler.core.event_journal import (
+    CHAT_JOURNAL_ID,
+    EventJournal,
+    FileJournalStore,
+    chat_journal_path,
+)
+from ai_butler.evaluation.journal_source import write_trace
+from ai_butler.evaluation.producer import trace_from_events
 from ai_butler.middleware.global_middleware import RequestLogMiddleware, TimeoutMiddleware
 from ai_butler.core import accounts as accounts_mod
 from ai_butler.core import conversation_index as conv_idx_mod
@@ -1057,6 +1066,22 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
         gateway=gateway, search=search, settings=settings,
         model_access=model_access, context_manager=context_manager,
         intent_router=intent_router)
+
+    # ---- 会话痕迹埋点（U91）：每次运行结束折一条 AgentTrace 写进事件账本 ----
+    # 这是 `evaluation/journal_source.py` 声言的「线上链路每次运行结束时（埋点）」
+    # 的**生产侧**。没有它，离线闭环的首轮痕迹来源（U84）永远是空的：
+    # 闭环会停在 `no_traces`，「评测中台发现错误」只能靠人工喂 traces——
+    # 声明有了、能力没有，正是项目铁律要抓的形态。
+    #
+    # 账本装配失败**不连坐聊天**（与视觉网关同一条政策）：只有痕迹读不到，
+    # 回答照常给。失败要log——静默的埋点缺口比没有埋点更难发现。
+    try:
+        trace_journal: EventJournal | None = EventJournal(
+            journal_id=CHAT_JOURNAL_ID,
+            store=FileJournalStore(chat_journal_path(settings)))
+    except Exception as exc:                    # noqa: BLE001
+        trace_journal = None
+        logger.error("会话痕迹账本装配失败：离线闭环将读不到在线会话的痕迹", exc)
     if redis is not None:
         conversation_index: conv_idx_mod.ConversationIndex = \
             conv_idx_mod.RedisConversationIndex(
@@ -1141,6 +1166,28 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
                 conversation_id = resolution.conversation_id
                 conversation_note = resolution.note
 
+        def _journal_session_trace(events: list) -> None:
+            """流结束：折一条 AgentTrace 写进事件账本（U91）。
+
+            **任何异常只记日志**：埋点是手段，回答是目的。为了留痕把
+            用户等着的回答弄坏，或者让一次脱敏断言炸掉整条流，
+            都是把手段当成了目的。
+            """
+            if trace_journal is None or not events:
+                return
+            try:
+                trace = trace_from_events(
+                    trace_id=f"chat:{uuid.uuid4().hex}",
+                    question=utterance, events=events)
+                write_trace(trace_journal, trace, extra={
+                    "user_id": user_id,
+                    "conversation_id": conversation_id or "",
+                    "channel": "chat",
+                    "tier": tier.value,
+                })
+            except Exception as exc:            # noqa: BLE001
+                logger.error("会话痕迹落账失败（不影响本轮回答）", exc)
+
         async def generator() -> AsyncIterator[bytes]:
             # 首字节尽快出去，避免 TimeoutMiddleware 的首字节截止把整条流掐掉
             yield _sse({"type": "accepted", "tier": tier.value,
@@ -1152,10 +1199,14 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
                             "memory": settings.chat_history_enable and bool(conversation_id),
                             "note": conversation_note,
                         }})
+            # 埋点（U91）：事件原样转给端侧的同时留一份，流结束后折成痕迹落账。
+            collected: list = []
             async for event in orchestrator.stream(
                     user_id=user_id, query=utterance, tier=tier,
                     conversation_id=conversation_id or None):
+                collected.append(event)
                 yield _sse(event.as_dict())
+            _journal_session_trace(collected)
 
         return StreamingResponse(generator(), media_type="text/event-stream")
 
