@@ -46,7 +46,7 @@ from ai_butler.harness.loop import (
     Proposal,
 )
 from ai_butler.harness.memory import MemoryEntry, from_qa_report
-from ai_butler.harness.patch import ALLOWED_SCOPE_BY_KIND, PatchApplier
+from ai_butler.harness.patch import ALLOWED_SCOPE_BY_KIND, PatchApplier, PatchGuard
 from ai_butler.harness.risk import Change
 from ai_butler.harness.sandbox import DEFAULT_TIMEOUT, SandboxPort
 from ai_butler.harness.skills import SkillRegistry, default_registry
@@ -180,6 +180,23 @@ class HarnessAgent(PhaseAgent):
         return None
 
     # ------------------------------------------------------------------ #
+    # U81：跨轮边界
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _scope(state: Mapping[str, Any]) -> dict[str, Any]:
+        """本轮边界（由闭环驱动 `agents/repair_loop.py` 计算并放进 State）。
+
+        缺省为空 = 没有跨轮约束（首轮，或调用方没接闭环驱动）。
+        **这里的默认值不承担安全责任**：真正的越界防线是 `PatchGuard`
+        与 `audit_change`，它们不依赖 State 里有没有这个键。
+        """
+        raw = state.get("patch_scope")
+        return dict(raw) if isinstance(raw, Mapping) else {}
+
+    def _locked_paths(self, state: Mapping[str, Any]) -> tuple[str, ...]:
+        return tuple(str(p) for p in (self._scope(state).get("locked_paths") or ()))
+
+    # ------------------------------------------------------------------ #
     # U78：向大模型要补丁
     # ------------------------------------------------------------------ #
     def _patch_root(self, state: Mapping[str, Any]) -> str:
@@ -247,6 +264,7 @@ class HarnessAgent(PhaseAgent):
         reader = SnippetReader(Path(root))
         out: list[Proposal] = []
         budget = int(state.get("max_coder_calls") or self.max_coder_calls)
+        locked = self._locked_paths(state)
 
         for proposal in proposals:
             change = proposal.change
@@ -258,6 +276,24 @@ class HarnessAgent(PhaseAgent):
                 # 不是从缺陷单来的提案（来源无法定位），不替它编补丁
                 out.append(proposal)
                 continue
+
+            # ---- 跨轮边界（U81）：被前几轮改过的文件不进上下文 ----
+            # 剔除而不是「给了再拦」：模型看不到那些文件，就不会去改。
+            # 「给了再靠校验拦住」多烧一次调用，还会让溯源里出现
+            # 「它本来想改 X 但被拒了」这种与执行无关的噪声。
+            candidates = self._candidate_files(change, defect)
+            if locked:
+                kept = tuple(p for p in candidates if p not in locked)
+                if not kept:
+                    self.code_results.append(CodeProposal(
+                        False, skipped=True,
+                        rationale=(f"待改文件 {list(candidates)} 都已被前几轮提交的补丁"
+                                   f"改动过；在未撤销上一轮的前提下不再改动，"
+                                   f"以免两份自动补丁叠在同一处、责任无法分割")))
+                    out.append(proposal)
+                    continue
+                candidates = kept
+
             if budget <= 0:
                 # 预算用完：**保持原样**，让它在下一轮继续，不是丢弃
                 out.append(proposal)
@@ -267,7 +303,7 @@ class HarnessAgent(PhaseAgent):
             ticket = self._ticket_for(change)
             verify_target = (ticket.verify_target if ticket is not None
                              else "pytest -q")
-            snippets = reader.read(self._candidate_files(change, defect),
+            snippets = reader.read(candidates,
                                    kind=defect.kind.value,
                                    keywords=self._keywords(defect))
             try:
@@ -282,6 +318,22 @@ class HarnessAgent(PhaseAgent):
                 continue
 
             self.code_results.append(code)
+            if code.ok and locked and code.patches is not None:
+                # 边界约束的最后一道：候选里剔掉了，模型仍可能凭记忆写出别的文件。
+                # 用 `PatchGuard.frozen_hits` 而不是在这里手比路径——
+                # 「哪些路径算锁」必须只有一处定义，否则两份判据迟早分叉。
+                hit = PatchGuard.for_kind(
+                    defect.kind.value, frozen_paths=locked).frozen_hits(code.patches)
+                if hit:
+                    self.code_results[-1] = CodeProposal(
+                        False, diff=code.diff, rationale=code.rationale,
+                        attempts=code.attempts,
+                        rejected=code.rejected + (
+                            f"补丁触碰已被前几轮改动过的文件 {list(hit)}："
+                            f"同一文件叠两份自动补丁会让责任无法分割",),
+                        error=f"越过跨轮边界：{list(hit)}")
+                    out.append(proposal)
+                    continue
             if code.ok:
                 # 只有**会被应用**的补丁才留作复评的审计对象。
                 # 被范围校验拒掉或模型主动弃权的那些，不构成「改动」，
@@ -340,10 +392,63 @@ class HarnessAgent(PhaseAgent):
                 return f"补丁未能应用：{outcome.reason[:300]}"
         return "补丁未保留：验证未通过已回滚，或被 Hook 拦截"
 
+    def _committed_patch(self, result: LoopResult) -> dict[str, Any] | None:
+        """本轮**成功提交**的那份补丁的撤销凭据（U81）。
+
+        只给最后一份成功的。一个 run 里 `_verified_patch` 会在成功后收敛，
+        实际最多提交一次；给「全部」会让撤销出现「撤哪一份」的歧义，
+        而歧义在自动化里等于不可执行。
+
+        `before` 是源码正文，**刻意不进 `PatchResult.as_dict()`**：
+        它只供记账与撤销，不该顺着 State 到处流。这里单独给一个口子，
+        是因为撤销发生在很久之后（`PatchApplier` 的备份早已清空）。
+        """
+        for outcome in reversed(result.patch_results):
+            if not getattr(outcome, "ok", False):
+                continue
+            before = getattr(outcome, "before", None)
+            if not before:
+                continue
+            return {
+                "paths": list(outcome.paths),
+                "before": dict(before),
+                "touched": outcome.touched,
+                "diff": self.attempted_diff,
+                "rationale": (self.code_results[-1].rationale
+                              if self.code_results else ""),
+                # 本轮**受理**的缺陷（通常只有一条即精确对应；多条时如实标注为
+                # 「本轮受理集合」，不冒充「这份补丁专门修的那条」）
+                "defect_ids": self._intake_defect_ids(),
+            }
+        return None
+
+    def _intake_defect_ids(self) -> list[str]:
+        if self.intake_result is None:
+            return []
+        ids: list[str] = []
+        for ticket in self.intake_result.tickets:
+            if ticket.defect.defect_id not in ids:
+                ids.append(ticket.defect.defect_id)
+        return ids
+
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
         uid = self.require_user_id(state)
         now = _now()
         redactor = Redactor(analyzer=self.analyzer)
+
+        # ---- 清掉上一轮的残留（U81）----
+        # 跨轮重试会**复用同一个 Agent 实例**，而这些字段是「本轮的产物」。
+        # 不清的后果不是崩，是**说错话**：
+        #   - `code_results` 攒着第一轮的记录 → `_no_patch_reason` 读到第一轮的
+        #     成功补丁，说出「补丁未保留：验证未通过已回滚」这种与事实相反的话；
+        #   - `attempted_diff` 还是第一轮的 diff → 送进复评审计的是**上一轮**
+        #     的改动，而这一轮可能一个字都没改。
+        # 单轮跑一万次都不会暴露，多轮第一次就中（E-79 那类串味）。
+        self.code_results = []
+        self.attempted_diff = ""
+        self.intake_result = None
+        self.intake_error = ""
+        self.defect_batch = None
 
         if self.sandbox is None:
             return {"p10_harness": {
@@ -429,6 +534,10 @@ class HarnessAgent(PhaseAgent):
                 "diff": self.attempted_diff,
                 "code": [c.as_dict(redactor=redactor) for c in self.code_results],
                 "coder_wired": self.coder is not None,
+                # 本轮边界（U81）：驱动算的规矩，落在这里供溯源与审计对照
+                "scope": self._scope(state),
+                # 撤销凭据（U81）：只有真正 commit 过的补丁才有
+                "committed": self._committed_patch(result),
             },
             "patch_not_applied": {
                 "applied": patch_applied,

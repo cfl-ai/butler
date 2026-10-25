@@ -36,7 +36,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 from ai_butler.harness.risk import Change
 
@@ -291,11 +291,21 @@ def parse_unified_diff(text: str) -> ParsedPatch:
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class PatchGuard:
-    """改动范围校验。**违规即整份补丁作废**，不挑「能改的改」。"""
+    """改动范围校验。**违规即整份补丁作废**，不挑「能改的改」。
+
+    `frozen_paths`（U81）是**跨轮**的边界：前几轮已经提交过补丁的文件，
+    本轮不许再改。要改必须先撤销（撤销需人工确认，见 `harness/revision.py`）。
+
+    为什么「同一文件再改一次」也要拦：第二轮补丁的上下文行是第一轮改过之后
+    的内容，两份补丁叠在一起后，出问题时无法说清是哪一轮造成的。
+    责任不可分割的自动化改动，比改错更难处理。
+    """
 
     kind: str
     max_files: int = MAX_FILES
     max_touched: int = MAX_TOUCHED_LINES
+    #: 已被前几轮提交的补丁改动过的文件（本轮不可再改，除非先撤销）
+    frozen_paths: tuple[str, ...] = ()
 
     @property
     def allowed_prefixes(self) -> tuple[str, ...]:
@@ -327,7 +337,27 @@ class PatchGuard:
             if not any(f.path == p or f.path.startswith(p) for p in allowed):
                 out.append(f"{f.path} 不在缺陷类别 {self.kind} 允许的范围 "
                            f"{list(allowed)} 内")
+                continue
+            # 跨轮边界（U81）。放在范围校验**之后**：先判「这块该不该你管」，
+            # 再判「这块虽然归你管，但这轮归你改吗」——两个问题的处置不同，
+            # 理由也必须不同（前者是越权，后者是等待撤销审批）。
+            if any(f.path == p for p in self.frozen_paths):
+                out.append(
+                    f"{f.path} 已被前几轮提交的补丁改动过，本轮不可再改："
+                    f"同一文件叠两份自动补丁会让责任无法分割。"
+                    f"确实需要再改，必须先撤销上一轮（撤销需人工审批）")
         return tuple(out)
+
+    def frozen_hits(self, patch: ParsedPatch) -> tuple[str, ...]:
+        """补丁触碰到的跨轮锁定文件。空 = 没越界。
+
+        单独一个方法而不是从 `violations()` 里过滤：调用方要区分
+        「越权改别的板块」与「改了自己的板块但这轮归别人」，两者的
+        处置完全不同（前者作废，后者等撤销审批）。从中文句子里筛
+        ——那是 E-44 的老路。
+        """
+        return tuple(f.path for f in patch.files
+                     if any(f.path == p for p in self.frozen_paths))
 
     def check(self, patch: ParsedPatch) -> None:
         bad = self.violations(patch)
@@ -354,10 +384,19 @@ class PatchResult:
     touched: int = 0
     reason: str = ""
     rolled_back: bool = False
+    #: 应用**前**的各文件原文（None = 原本不存在）。`ok=True` 时才有内容。
+    #:
+    #: 它是「撤销一份已提交补丁」的唯一依据（U81）：`commit()` 之后
+    #: `PatchApplier` 的备份就丢了，而撤销发生在更晚的时候。
+    #: 刻意**不进 `as_dict()`**：那是源码正文，会顺着 State 一路传下去；
+    #: 需要它的只有记账环节，由调用方直接读属性。
+    before: Mapping[str, str | None] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, object]:
         return {"ok": self.ok, "paths": list(self.paths), "touched": self.touched,
-                "reason": self.reason, "rolled_back": self.rolled_back}
+                "reason": self.reason, "rolled_back": self.rolled_back,
+                # 只给计数：让人知道「有快照可撤销」，但不把源码塞进日志
+                "before_paths": sorted(self.before)}
 
 
 @dataclass
@@ -463,8 +502,12 @@ class PatchApplier:
                                     reason=f"写入失败：{exc}", rolled_back=True)
             return self.last
 
+        # 快照在这里打包，而不是让调用方从 `_backup` 里翻：`_backup` 是
+        # 「还没提交」的状态，commit 后即清空；而撤销需要它在更晚的时候仍在。
+        snapshot: dict[str, str | None] = {
+            rel: original for rel, _target, original, _updated in staged}
         self.last = PatchResult(True, paths=patch.paths, touched=patch.touched,
-                                reason="已应用")
+                                reason="已应用", before=snapshot)
         return self.last
 
     # ------------------------------------------------------------------ #

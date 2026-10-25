@@ -111,30 +111,30 @@ class EvaluationPlatformAgent(SubAgent):
         return list(traces_from_dicts(raw))
 
     # ------------------------------------------------------------------ #
-    def run(self, state: dict[str, Any]) -> dict[str, Any]:
-        uid = self.require_user_id(state)
-        cases = self._cases(state)
-        traces = self._traces(state)
+    # ------------------------------------------------------------------ #
+    def section_from_reports(self, *, uid: str,
+                             reports: Sequence[PlatformReport],
+                             case_count: int,
+                             trace_count: int = 0) -> dict[str, Any]:
+        """把一批报告装配成 `eval_platform` 段。**`run()` 与跨轮基线晋升共用**。
 
-        # 按 question 分组：同一问题的多次运行构成一个运行组
-        # （稳定性维度的分母就在这里形成）
-        groups: dict[str, list] = {}
-        for trace in traces:
-            groups.setdefault(trace.question, []).append(trace)
+        为什么要抽出来：跨轮重试时，第二轮的基线是「第一轮复评重跑产出的报告」
+        （`RecheckResult.after_reports`），而驱动需要用与首轮**完全相同的形态**
+        把它放进 State——否则下游读 `summary` / `defects` 时会遇到两套字段。
+        两处各写一遍的结局是迟早分叉（E-44 的同一课）。
 
-        reports = [self.platform.evaluate(groups.get(case.question, []), case)
-                   for case in cases]
-
+        `trace_count` 只在首轮有意义（后续轮没有调用方给的痕迹，痕迹由复评现产）。
+        """
         passed = [r for r in reports if r.passed]
         vetoed = [r for r in reports if r.vetoed]
         failed = [r for r in reports if not r.passed]
         # 缺陷单（U76）：报告说「不行」，缺陷单说「哪一类、谁处理、从哪改、怎么复现」。
         # 没有这一步，P10 的 harness 拿不到任何可执行输入（harness_proposals 零生产者）。
         batch = defects_from_reports(reports, redactor=self.redactor)
-        return {"eval_platform": {
+        return {
             "user_id": uid,
-            "case_count": len(cases),
-            "trace_count": len(traces),
+            "case_count": case_count,
+            "trace_count": trace_count,
             "summary": {
                 "passed": len(passed),
                 "failed": len(failed),
@@ -155,7 +155,25 @@ class EvaluationPlatformAgent(SubAgent):
             # 两层都**从 redactor 推导**，不写死（与 P9 看板同一立场）
             "redaction": {"regex_layer": self.redactor.regex_layer_active,
                           "model_layer": self.redactor.model_layer_active},
-        }}
+        }
+
+    def run(self, state: dict[str, Any]) -> dict[str, Any]:
+        uid = self.require_user_id(state)
+        cases = self._cases(state)
+        traces = self._traces(state)
+
+        # 按 question 分组：同一问题的多次运行构成一个运行组
+        # （稳定性维度的分母就在这里形成）
+        groups: dict[str, list] = {}
+        for trace in traces:
+            groups.setdefault(trace.question, []).append(trace)
+
+        reports = [self.platform.evaluate(groups.get(case.question, []), case)
+                   for case in cases]
+
+        return {"eval_platform": self.section_from_reports(
+            uid=uid, reports=reports, case_count=len(cases),
+            trace_count=len(traces))}
 
     # ------------------------------------------------------------------ #
     # 第二轮评测（U79）

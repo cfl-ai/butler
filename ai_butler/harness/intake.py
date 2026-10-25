@@ -32,6 +32,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -157,6 +158,14 @@ class IntakeResult:
         }
 
 
+#: 从自然语言里挑形如 `a/b/c.py` 的片段。**不能用 split**：
+#: `target_hint` 写的是「`chat.py`、`planner.py`（候选数 top_k…）」这种句子，
+#: 按空白切开后第二个路径的尾巴粘着中文括号，`endswith(".py")` 判不过，
+#: 于是**静默漏掉一个文件**——而下游（候选文件、跨轮锁定）全靠这份列表。
+#: 正则只认「看起来就是路径」的片段，宁可少认，不可认错。
+_PATH_IN_TEXT = re.compile(r"[A-Za-z0-9_./\\-]+\.py(?![A-Za-z0-9_])")
+
+
 def files_from_hint(hint: str) -> tuple[str, ...]:
     """从收敛提示里挑出**真正的文件路径**。
 
@@ -166,12 +175,12 @@ def files_from_hint(hint: str) -> tuple[str, ...]:
     下游会拿它当改动范围，一个中文字符串混在路径列表里迟早出事。
     这里只保留形如 `xxx/yyy.py` 的片段，认不出就返回空（空比错好）。
     """
+    text = str(hint or "").replace("\\", "/")
     out: list[str] = []
-    for token in hint.replace("、", " ").replace("，", " ").split():
-        token = token.strip("（）(),。；;：:")
-        if "/" in token and token.endswith(".py"):
-            if token not in out:
-                out.append(token)
+    for token in _PATH_IN_TEXT.findall(text):
+        token = token.lstrip("./")
+        if "/" in token and token not in out:
+            out.append(token)
     return tuple(out)
 
 

@@ -106,8 +106,10 @@ def test_p10_decisions_are_registered_and_resolved():
     # U77 = 缺陷受理的四道闸与自我修改边界（2026-10-25 补，见 harness/intake.py）
     # U78 = 大模型写补丁的安全边界（2026-10-25 补，见 harness/patch.py、coder.py）
     # U80 = 两个 Agent 的配合要有装配点与固定顺序（2026-10-25 补，见 agents/repair_loop.py）
+    # U81 = 跨轮重试的四道约束（2026-10-25 补，见 harness/revision.py、trail.py、
+    #       evaluation/fingerprint.py）
     assert keys == {"U08", "U32", "U33", "U34", "U35", "U36", "U49", "U58",
-                    "U77", "U78", "U80"}
+                    "U77", "U78", "U80", "U81"}
     for key in keys:
         assert decisions.get(key).status == decisions.RESOLVED
 

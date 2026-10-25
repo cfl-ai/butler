@@ -208,9 +208,15 @@ class TraceProducer(Protocol):
 
 
 class RecheckVerdict(str, Enum):
-    """复评结论。**四态 + 一个「不知道」，没有布尔成功。**"""
+    """复评结论。**四态 + 一个「修了一半」+ 一个「不知道」，没有布尔成功。**"""
 
-    ACCEPTED = "accepted"                  # 目标修好、无回归、无阻断违规
+    ACCEPTED = "accepted"                  # 目标全部修好、无回归、无阻断违规、全部用例都验过
+    #: 修好了一部分（U81）。**刻意不并进 `accepted`**：
+    #: 用户的要求是「成功解决问题」，3 条缺陷修好 1 条不叫解决。
+    #: 也不并进 `rejected_no_effect`：那说「白改了」，而这里明明改了也有效果。
+    #: 把它记成任一态都是在训练自己说假话——这正是「不同的事必须分开记」的
+    #: 同一条纪律（`no_data` 与 `clean`、`unverified` 与 `accepted` 都遵循它）。
+    PARTIALLY_FIXED = "partially_fixed"
     REJECTED_AUDIT = "rejected_audit"      # 乱改：触发阻断级审计发现
     REJECTED_REGRESSION = "rejected_regression"  # 改坏了：原来通过的现在不过
     REJECTED_NO_EFFECT = "rejected_no_effect"    # 白改：目标缺陷一条没消失
@@ -237,8 +243,17 @@ class RecheckResult:
     #: 新产出的缺陷（提示「改出了新问题」，与 regressed 区分：
     #: 后者是原有用例由过转过，前者是出现了以往没报过的问题）
     new_kinds: tuple[str, ...] = ()
+    #: **本轮复评之后仍然存在**的缺陷 id（U81）。跨轮重试的下一轮就拿它当输入——
+    #: 「还剩什么没修」必须由评测方给出，不能让驱动自己拿「刚才那份清单」减一减：
+    #: 减法的前提是「每轮只修一条」，而补丁可能一次修好几条、也可能改出新缺陷。
+    remaining: tuple[str, ...] = ()
+    #: 本轮复评**重新产出的报告**（U81）。下一轮的基线就是它。
+    #: 不导出它，跨轮就只能拿第一轮的旧报告当基线——那是修复前的状态，
+    #: 拿它比会把「已经修好的」再算一次「修好了」。
+    after_reports: tuple[PlatformReport, ...] = ()
 
-    def as_dict(self, redactor: Redactor | None = None) -> dict[str, Any]:
+    def as_dict(self, redactor: Redactor | None = None,
+                *, include_reports: bool = True) -> dict[str, Any]:
         red = redactor or Redactor()
         payload = {
             "verdict": self.verdict.value,
@@ -253,7 +268,10 @@ class RecheckResult:
             "before_defects": self.before_defects,
             "after_defects": self.after_defects,
             "new_kinds": list(self.new_kinds),
+            "remaining": list(self.remaining),
         }
+        if include_reports:
+            payload["reports"] = [r.as_dict(red) for r in self.after_reports]
         safe = red.redact_deep(payload)
         red.assert_deep_clean(safe, where="修复复评结论")
         return safe
@@ -337,18 +355,32 @@ class Rechecker:
         before_n = _count_defects(before_reports)
         after_batch = defects_from_reports(after_reports) if after_reports else DefectBatch()
         new_kinds = tuple(sorted({d.kind.value for d in after_batch.defects}))
+        remaining = tuple(d.defect_id for d in after_batch.defects)
 
         if regressed:
             verdict = RecheckVerdict.REJECTED_REGRESSION
             reason = (f"{len(regressed)} 个原本通过的用例在改动后不通过："
                       f"{regressed}。自动变更不得以牺牲已有正确性为代价")
-        elif fixed:
-            verdict = RecheckVerdict.ACCEPTED
-            reason = (f"目标缺陷已消失（{len(fixed)} 个用例由不通过转为通过），"
-                      f"无回归。审计：{'通过' if audit is None or audit.passed else '通过'}")
         elif errored and len(errored) == len(cases):
             verdict = RecheckVerdict.UNVERIFIED
             reason = f"全部用例复评失败，无法判定：{errored[:3]}"
+        elif fixed and not remaining and not errored:
+            verdict = RecheckVerdict.ACCEPTED
+            reason = (f"目标缺陷已消失（{len(fixed)} 个用例由不通过转为通过），"
+                      f"无回归、无剩余缺陷。审计：通过")
+        elif fixed:
+            # 修好了一部分。**不叫 accepted**：用户要的是「成功解决问题」，
+            # 剩一条没修就不算解决；也不叫 no_effect：它明明有效果。
+            verdict = RecheckVerdict.PARTIALLY_FIXED
+            bits = [f"{len(fixed)} 个用例由不通过转为通过"]
+            if remaining:
+                bits.append(f"仍有 {len(remaining)} 条缺陷未消除："
+                            f"{list(remaining[:4])}")
+            if errored:
+                # 没重跑成功的用例**不能算修好**——它们的缺陷是否还在，
+                # 本轮根本没有证据。把它算进「剩余」比算进「已修」诚实。
+                bits.append(f"{len(errored)} 个用例复评失败、状态未知：{errored[:3]}")
+            reason = "；".join(bits) + "。未解决全部目标，继续下一轮或转人工"
         else:
             verdict = RecheckVerdict.REJECTED_NO_EFFECT
             reason = (f"改动后没有一个目标用例转为通过（仍不通过 {len(still_broken)} 个）")
@@ -365,7 +397,8 @@ class Rechecker:
             fixed=tuple(fixed), regressed=tuple(regressed),
             still_broken=tuple(still_broken), errored=tuple(errored),
             before_defects=before_n, after_defects=len(after_batch.defects),
-            new_kinds=new_kinds)
+            new_kinds=new_kinds, remaining=remaining,
+            after_reports=tuple(after_reports))
 
 
 def _count_defects(reports: Sequence[PlatformReport]) -> int:
