@@ -381,6 +381,10 @@ class _AiButlerAppState extends State<AiButlerApp> {
     await _wake.stop();
     await _wakeService.stop();         // 登出就别再占着麦克风常驻了
     await _cache.clearCurrent();       // 登出即清当前账号缓存
+    // 会话标识属于「上一个人的对话」，不能留给下一个账号复用。
+    // 服务端本来就会因归属不符重新签发（兜底），但端侧先清掉能少一次无谓的重签，
+    // 也更符合直觉：登出之后不该还攥着上一段对话的把手。
+    _api.startNewConversation();
     await _session.signOut();
     if (mounted) {
       setState(() {

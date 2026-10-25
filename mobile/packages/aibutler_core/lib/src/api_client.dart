@@ -88,6 +88,27 @@ class ApiClient {
   final TransportPort _transport;
   final SessionManager _session;
 
+  /// 当前对话的会话标识（U73）。**由服务端签发**，端侧只负责保存与回传。
+  ///
+  /// 客户端绝不自己生成：服务端对未签发 / 格式非法 / 归属不符的标识一律重新签发，
+  /// 自造 ID 只会让「这段对话还算不算同一段」变得不可预测。
+  /// 此前这里传的是 `deviceId` —— 等于一台设备上所有对话共用一个分片并永久累积，
+  /// 正是「Session ID 传递错误」的现实版本。
+  String? _conversationId;
+  String? get conversationId => _conversationId;
+
+  /// 主动开一段新对话：丢掉当前标识，下一条消息由服务端重新签发。
+  void startNewConversation() => _conversationId = null;
+
+  /// 从 `accepted` 事件收取服务端的结果。
+  ///
+  /// **空值要覆盖成空**：它表示「本次不建会话」（访客 / 多轮记忆已关闭），
+  /// 此时保留旧值会让下一条消息继续引用一段本就不该用的历史。
+  void _captureConversation(ChatStreamEvent event) {
+    final issued = event.data['conversation_id'];
+    _conversationId = (issued is String && issued.isNotEmpty) ? issued : null;
+  }
+
   static const String loginPath = '/api/session/login';
   static const String guestPath = '/api/session/guest';
   static const String profilePath = '/api/access/profile';
@@ -255,17 +276,27 @@ class ApiClient {
   }) async* {
     final token = _token();
     if (_session.isSignedIn) await _session.touch(now);
-    final stream = _transport.stream(chatPath, body: {
+    final body = <String, dynamic>{
       'utterance': utterance,
       'input_mode': manualInput ? 'text' : 'voice',
+      // 设备号：仅用于设备维度上报，**不再冒充会话标识**（U73 之前的历史遗留）
       'session_id': _session.current?.deviceId ?? '',
-    }, token: token);
+    };
+    final conversation = _conversationId;
+    if (conversation != null && conversation.isNotEmpty) {
+      body['conversation_id'] = conversation;
+    }
+    final stream = _transport.stream(chatPath, body: body, token: token);
 
     await for (final raw in stream) {
       if ((raw['status_code'] as num?)?.toInt() == 401) {
         throw const SessionExpiredException();
       }
-      yield ChatStreamEvent.fromJson(raw);
+      final event = ChatStreamEvent.fromJson(raw);
+      if (event.type == ChatEventType.accepted) {
+        _captureConversation(event);
+      }
+      yield event;
     }
   }
 

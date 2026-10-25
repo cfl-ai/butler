@@ -1334,6 +1334,61 @@ CI 只写在配置里、平时不跑，**新加的验证入口不会自动进去
 
 ---
 
+## E-77 测试自己 `new` 被测类，只能证明「类能用」，证明不了「链路在用」
+
+- 起因：被问「是否具备识别语义和上下文的模块」。语义侧一问就实、上下文侧一问就空，
+  于是顺着「谁在调」逐层 grep，得到两张互相矛盾的账：
+  1. **`scheduler/context.py` 的 `ContextManager` 在 `ai_butler/` 内零引用** ——
+     除了 `tests/test_scheduler_context.py` 直接 `ContextManager(...)` 实例化它，全项目没有第二个调用点。
+  2. **`retrieval/chat.py` 组装 messages 只有 `system` + `user` 两条**，
+     历史轮次根本没进提示词；`/api/chat/stream` 只读 `utterance`，
+     而端侧 `chatEvents()` 早就在 body 里传了 `session_id` ——
+     **字段一路传到后端门口，被 `body.get("utterance")` 之外的沉默吞掉了**。
+
+- 危害等级：文档 §16.5 把「多轮状态保持 / 窗口控制 / 摘要压缩」列为 **P3 交付物且标记已实现**，
+  `test_scheduler_context.py` 也确实全绿。但真实效果是：用户连问「这个多少钱」「那第二个呢」，
+  第二句模型完全不知道第一句是什么。**绿灯亮着，功能不存在**（E-21/E-29/E-33/E-69/E-72 同族，
+  这次连「接口缺方法」的破绽都没有 —— 接口齐全、实现齐全、测试齐全，只差一行注入）。
+
+- 同一枚举暴露的第二处：五层意图路由的 `HardRuleLayer` / `VectorLayer` / `LLMFallbackLayer`
+  在 `ai_butler/` 内**同样零引用**，没有任何组装函数把它们串成 `RoutePipeline`。
+  层是齐的，机器没发动。`JevClient` 与 `LLMGateway` 有真实现，但没被装进去。
+  这意味着之前「五层路由已实现」的结论只成立于**单层视角**，不成立于**系统视角**。
+
+- 为什么守护没拦住：`test_scheduler_context.py` 测的是「窗口怎么裁、摘要怎么压、越权怎么拒」——
+  这些都对，且都只在 `ContextManager` 内部成立。**测试自己构造依赖**，
+  于是「谁来构造它」这件事天然落在测试视野之外。
+  这与 E-72「端口缺方法，测试无视野」是同一类盲区的两个面：
+  一个是**接口缺口**让调用无处可写，一个是**装配缺口**让调用无人来写。
+
+- 要补的守护不是再测一遍 `ContextManager`，而是**装配断言**：
+  1. `app` 装配出的 `ChatOrchestrator` 必须持有 `context_manager`（非 None），
+     否则启动即失败 —— 把「有没有插电」变成可执行断言，而不是靠人记得。
+  2. 端到端跨请求用例：两句请求带同一会话键，第二句发给网关的 messages
+     **必须包含第一句**；换 `user_id` 必须读不到（P4 隔离）。
+  3. 访客不落盘（历史里会出现原话，属 PII）。
+
+- 教训：问「某能力有没有」时，三问答齐才算数 ——
+  **有没有实现类 / 有没有测试 / 有没有人构造它**。前两问回答「是」，第三问回答「没有」，
+  结论就是「没有」。项目里凡标 `implemented=True` 的条目，都值得被第三问抽查一遍。
+
+- **已修（2026-10-25，U73，见规范 §54.13）**：
+  1. 抽出 `build_chat_orchestrator()` / `build_chat_context_manager()` 作为唯一装配点，
+     `create_app` 无条件传入；守护测试断言
+     `app.state.chat_orchestrator.context_manager is not None`。
+  2. `ChatOrchestrator.stream(conversation_id=)` 接 `ContextManager`：
+     历史进提示词（`【对话历史】` 段，空则整段消失），回答完成后
+     `append_exchange` 一问一答一次落盘。
+  3. 会话标识改为**服务端签发 + 归属校验**（`core/conversation_index.py`，U73）：
+     端侧把 `deviceId` 当 `session_id` 传的旧账就此结清，未签发/格式非法/归属不符一律重签，
+     索引后端异常 fail-closed。
+  4. 新增 `tests/test_chat_history.py`（21 项）：跨请求可见、换账号读不到、
+     伪造标识被重签、访客不落盘、LLM 失败不写半轮、`revise` 后存用户看到那版、
+     未装配必须说明、装配断言。端侧 `chat_conversation_test.dart`（5 项）。
+  5. **仍未做**：五层路由的组装点（`HardRuleLayer` 等仍零引用），E-77 的第二处待办。
+
+---
+
 ## 二、环境基线（复现上述解决方案所必需）
 
 - 操作系统：Windows AMD64，16 逻辑核，内存 11 GB，C 盘可用 36.5 GB / D 盘可用 106.7 GB

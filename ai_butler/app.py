@@ -59,6 +59,7 @@ from ai_butler.infra.vision import (
 from ai_butler.core.session_store import SessionStore
 from ai_butler.middleware.global_middleware import RequestLogMiddleware, TimeoutMiddleware
 from ai_butler.core import accounts as accounts_mod
+from ai_butler.core import conversation_index as conv_idx_mod
 from ai_butler.core import geo as geo_mod
 from ai_butler.core import model_access as model_mod
 from ai_butler.core.security import FieldCipher
@@ -71,6 +72,7 @@ from ai_butler.middleware.session_auth import (
 from ai_butler.retrieval import describe_categories, describe_tools, plan as plan_query
 from ai_butler.retrieval.chat import ChatOrchestrator
 from ai_butler.retrieval.wiring import build_search_fn
+from ai_butler.scheduler.context import ContextManager, ContextPolicy
 from ai_butler.verticals.tour.places import load_places
 
 #: 公开路径白名单：只有基础设施探活 + 登录/访客入口。
@@ -95,6 +97,41 @@ PUBLIC_PATHS: frozenset[str] = frozenset({
 #: 图文识别的上传上限（base64 字符数），约合 9MB 原始图片。
 #: 手机直出照片 3~8MB，留了余量；再大就该在端上先压缩，而不是让云端硬吃。
 MAX_BASE64_CHARS: int = 12_000_000
+
+
+def build_chat_context_manager(files, settings: Settings) -> ContextManager:
+    """装配多轮上下文（U73）。**唯一装配点**，测试直接断言它。"""
+    return ContextManager(files, policy=ContextPolicy(
+        max_turns=settings.chat_history_max_turns,
+        max_chars=settings.chat_history_max_chars,
+        keep_recent_turns=settings.chat_history_keep_turns,
+        summary_max_chars=settings.chat_summary_max_chars,
+    ))
+
+
+def build_chat_orchestrator(*, gateway, search, settings: Settings,
+                            model_access=None,
+                            context_manager: ContextManager | None = None,
+                            ) -> ChatOrchestrator:
+    """文字查询链路的**唯一装配点**（U73）。
+
+    为什么单独立一个函数：E-77 的教训是「`ContextManager` 有实现、有测试，
+    但全项目没有一个地方构造它」—— 测试只能证明类可用，证明不了链路在用。
+    把构造收成一个可导入的函数后，「有没有插电」就能被一条断言钉住
+    （`test_chat_history.py::test_orchestrator_is_wired_with_context`）。
+
+    注意 `context_manager` 允许为 None：那是**显式**的单轮模式（测试缝），
+    不是「忘了接」。生产路径由 `create_app` 无条件传入。
+    """
+    return ChatOrchestrator(
+        gateway, search=search,
+        top_k=settings.chat_top_k,
+        model=settings.ollama_model or settings.ollama_vision_model or None,
+        model_access=model_access,
+        verify_answer=settings.chat_verify_enable,
+        context_manager=context_manager,
+        history_enable=settings.chat_history_enable,
+    )
 
 
 def create_app(settings: Settings, redis, *, chat_gateway=None,
@@ -1000,12 +1037,19 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
             logger.error("LLM 网关装配失败，文字查询将不可用", exc)
 
     search = chat_search if chat_search is not None else build_search_fn(settings)
-    orchestrator = ChatOrchestrator(
-        gateway, search=search,
-        top_k=settings.chat_top_k,
-        model=settings.ollama_model or settings.ollama_vision_model or None,
-        model_access=model_access,
-        verify_answer=settings.chat_verify_enable)
+    context_manager = build_chat_context_manager(files, settings)
+    orchestrator = build_chat_orchestrator(
+        gateway=gateway, search=search, settings=settings,
+        model_access=model_access, context_manager=context_manager)
+    if redis is not None:
+        conversation_index: conv_idx_mod.ConversationIndex = \
+            conv_idx_mod.RedisConversationIndex(
+                redis, ttl_seconds=settings.conversation_ttl_seconds)
+    else:
+        # 没有 Redis 就没有跨进程的归属表。退化为进程内表，并**说出来** ——
+        # 静默退化会让多实例部署下出现「历史忽然消失」，且查不到原因。
+        logger.warning("Redis 未就绪：会话索引退化为进程内内存表，多实例下历史不可共享")
+        conversation_index = conv_idx_mod.InMemoryConversationIndex()
 
     @app.post("/api/chat/stream")
     async def chat_stream(request: Request) -> StreamingResponse:
@@ -1055,11 +1099,46 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
                             "访客额度已用完，请登录后继续"),
                     media_type="text/event-stream")
 
+        # U73：会话标识**必须由服务端签发并校验归属**。
+        # 不信任客户端自报的任何字段 —— 端侧此前把设备号当 session_id 传，
+        # 结果是一台设备上所有对话落进同一分片并永久累积。三种情况一律重签：
+        # 从没签发过、格式非法、归属不符（后两者对客户端**不作区分**，
+        # 避免变成「探测他人会话是否存在」的口子）。
+        requested_conversation = str((body or {}).get("conversation_id") or "").strip()
+        conversation_id = ""
+        conversation_note = ""
+        if tier is access.AccessTier.GUEST:
+            conversation_note = "访客不建立会话：对话历史不落盘"
+        elif not settings.chat_history_enable:
+            # 功能关掉时**连索引都不建**：建了索引却不写历史，等于留下
+            # 一堆指向空会话的标识，排障时会被误读成「历史丢了」。
+            conversation_note = "多轮记忆已关闭：不建立会话，历史不落盘"
+        else:
+            try:
+                resolution = await conv_idx_mod.resolve(
+                    request.app.state.conversation_index, user_id=user_id,
+                    requested=requested_conversation)
+            except Exception as exc:            # noqa: BLE001 —— 索引不可用退化为单轮
+                conversation_note = (f"会话索引不可用（{type(exc).__name__}）："
+                                     "本轮为单轮问答")
+            else:
+                conversation_id = resolution.conversation_id
+                conversation_note = resolution.note
+
         async def generator() -> AsyncIterator[bytes]:
             # 首字节尽快出去，避免 TimeoutMiddleware 的首字节截止把整条流掐掉
-            yield _sse({"type": "accepted", "tier": tier.value})
-            async for event in orchestrator.stream(user_id=user_id, query=utterance,
-                                                   tier=tier):
+            yield _sse({"type": "accepted", "tier": tier.value,
+                        "data": {
+                            "conversation_id": conversation_id,
+                            # `memory` 表示**这个账号现在有没有多轮记忆**；
+                            # 本轮是否真的带上了历史，在 `done.data.history` 里报。
+                            # 两个语义分开，否则首轮会把「没历史」误报成「没开店」。
+                            "memory": settings.chat_history_enable and bool(conversation_id),
+                            "note": conversation_note,
+                        }})
+            async for event in orchestrator.stream(
+                    user_id=user_id, query=utterance, tier=tier,
+                    conversation_id=conversation_id or None):
                 yield _sse(event.as_dict())
 
         return StreamingResponse(generator(), media_type="text/event-stream")
@@ -1105,5 +1184,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
     app.state.accounts = accounts
     app.state.model_access = model_access
     app.state.chat_orchestrator = orchestrator
+    app.state.chat_context_manager = context_manager
+    app.state.conversation_index = conversation_index
     app.state.guest_budget = guest_budget
     return app

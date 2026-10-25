@@ -189,6 +189,43 @@ class ContextManager:
         ctx.turns.append(Turn(role=role, content=content, intent=intent, trace_id=trace_id))
         return self.save(self.compact_if_needed(ctx))
 
+    def append_exchange(self, user_id: str, session_id: str, *, question: str,
+                        answer: str, intent: str | None = None,
+                        trace_id: str = "") -> ConversationContext:
+        """一问一答**一次落盘**（U73 接线用）。
+
+        为什么不用两次 `append`：两次意味着 load → save → load → save 四次磁盘动作，
+        中间任一步失败就会留下「有问无答」的半轮。半轮比没有更坏 ——
+        下一轮模型看到「用户问了、没人答」，容易把同一个问题再答一遍或自行脑补。
+        两轮要么一起进，要么都不进。
+        """
+        if not str(question).strip() or not str(answer).strip():
+            raise ContextError("一问一答必须同时非空：不接受半轮写入")
+        ctx = self.load(user_id, session_id)
+        ctx.turns.append(Turn(role=ROLE_USER, content=question, intent=intent,
+                              trace_id=trace_id))
+        ctx.turns.append(Turn(role=ROLE_ASSISTANT, content=answer, trace_id=trace_id))
+        return self.save(self.compact_if_needed(ctx))
+
+    def render_history(self, user_id: str, session_id: str) -> str:
+        """读当前窗口并渲染成给大模型看的文本。空上下文返回空串。
+
+        **没有历史就返回空串，不返回占位话术** —— 「（无历史）」会被模型当成
+        一条真实信息去引用，反而制造出不存在的前文。
+        """
+        ctx = self.load(user_id, session_id)
+        return ctx.render(self.policy)
+
+    def forget(self, user_id: str, session_id: str) -> bool:
+        """删掉一段会话上下文（登出、会话重置时调用）。"""
+        key = self._key(user_id, session_id)
+        path = self._path(*key)
+        self._memory.pop(key, None)
+        if path is not None and path.is_file():
+            path.unlink()
+            return True
+        return False
+
     # ---------------- 摘要压缩 ---------------- #
     def needs_compaction(self, ctx: ConversationContext) -> bool:
         active = [t for t in ctx.turns if not t.compacted]

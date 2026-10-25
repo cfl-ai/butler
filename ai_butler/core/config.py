@@ -173,6 +173,16 @@ class Settings(BaseSettings):
     chat_top_k: int = 5
     guest_public_scope: str = "public-workspace"  # 访客检索用的公共作用域标识
 
+    # ---------- 多轮上下文（U73，计划书三、P3「会话上下文管理」）----------
+    # 关掉即全局退化为单轮；**默认开**，因为「多轮」是计划书点名要求的能力，
+    # 默认关等于把它做成一个需要用户自己发现的开关。
+    chat_history_enable: bool = True
+    chat_history_max_turns: int = 20             # 窗口内最多保留的轮数
+    chat_history_max_chars: int = 4000           # 窗口总字符上限（压缩触发线）
+    chat_history_keep_turns: int = 6             # 压缩时无条件保留的最近轮数
+    chat_summary_max_chars: int = 600            # 摘要上限
+    conversation_ttl_seconds: int = 604800       # 索引项保留 7 天
+
     # ---- 账号体系（U67 / U68 / U69）----
     # 账号文件放哪：空则跟 storage_root 走，独立配置是为了让隐私数据能单独挂卷
     account_store_root: str = ""
