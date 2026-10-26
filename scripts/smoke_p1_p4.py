@@ -363,6 +363,8 @@ async def main() -> int:
         # 本机 qwen2.5vl:3b 没有工具能力，所以这里既不能用假网关演一遍，
         # 也不能假装跑通 —— 只断言两件真事：能力结论可诊断、开关关闭时零行为变化。
         from ai_butler.infra.llm_gateway import LLMGateway
+        from ai_butler.scheduler.tool_catalog import build_tool_registry
+        from ai_butler.scheduler.tools import ToolCall
 
         gw = LLMGateway(s)
         capable, why = gw.tool_capability()
@@ -370,13 +372,26 @@ async def main() -> int:
             router=IntentRouter([HardRuleLayer([HardRule(r"订.*酒店", "book_hotel")])]),
             agents={"planner_agent": planner},
             plan=DispatchPlan(chains={"book_hotel": ("planner_agent",)}),
-            tool_registry=ToolRegistry(), gateway=gw)
+            tool_registry=build_tool_registry(search_service=service, wiki_store=wiki),
+            gateway=gw)
         ires = await intake_scheduler.run(
             user_id=USER, session_id="smoke-intake",
             utterance="帮我订个酒店", labels=LABELS)
         assert ires.intake == {}, (
             f"function_calling_enable 默认关闭时，接通层不得写入任何通道：{ires.intake}")
-        ok(f"接通层装配就绪（网关已装、开关关闭 → intake 未写入，零行为变化）")
+
+        # 注册表不能是空的：空清单会让接通层永远走 no_tools_for_capabilities
+        exposed = intake_scheduler.dispatcher.registry.as_openai_tools()
+        assert exposed, "接通层拿不到任何工具：真实工具清单未装配"
+        # 真跑一次工具调用（走同一个分发器、同一套权限），证明工具真能执行
+        hit = intake_scheduler.dispatcher.dispatch(
+            ToolCall(name="search_materials", payload={"query": "西湖 开放时间", "top_k": 3}),
+            user_id=USER)
+        assert hit.ok, f"工具调用失败：{hit.note} / {hit.error_code}"
+        assert hit.output["count"] >= 1, f"检索没拿到素材：{hit.output}"
+        ok(f"接通层装配就绪（开关关闭 → intake 未写入）；"
+           f"真实工具 {[t['function']['name'] for t in exposed]} 可执行，"
+           f"检索命中 {hit.output['count']} 条")
         print(f"        工具能力：{'可用' if capable else '不可用'} —— {why}")
     except Exception as exc:                          # noqa: BLE001
         fail("主状态机", exc)
