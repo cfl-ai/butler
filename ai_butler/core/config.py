@@ -184,8 +184,10 @@ class Settings(BaseSettings):
     conversation_ttl_seconds: int = 604800       # 索引项保留 7 天
 
     # ---------- 五层意图路由接线（U74，计划书三、P3）----------
-    # 五层里**只有三层有实现**：L1 硬规则 / L2 Jev / L3 向量。
-    # L4 垂类模型全项目只有 Protocol 没有实现（U03 要求先标定），
+    # 五层里 L1 硬规则 / L2 Jev / L3 向量**有实现并已接线**；
+    # L4 垂类模型（U110，落地 U98 协议）**已有实现但默认不接线**——
+    #   scheduler/vertical.py 给出了首个 `VerticalDecisionModel` 实现，标定守护全绿前
+    #   不进主路由（避免未标定的阈值污染线上分发）；
     # L5 与 L2 是同一件事（同网关同 prompt 形态），接了两份账 —— 详见 scheduler/intent_wiring.py。
     intent_router_enable: bool = True
     intent_vector_enable: bool = True
@@ -193,6 +195,14 @@ class Settings(BaseSettings):
     # （总准 83.9% vs 77.4%）。但那次实测的示例语料与测试句同源，L3 成绩被高估；
     # U03 要求的中文验证集标定**未完成**，所以这里留成可调数字，不写成定论。
     intent_vector_threshold: float = 0.62
+
+    # ---- 第 4 层：垂类专用决策模型（U110，落地 U98）----
+    # 默认**不接线**进主路由：L4 的阈值尚未在人工标注验证集上标定
+    # （VERTICAL_THRESHOLD_CALIBRATED=False，与 L3 同纪律），标定守护全绿后再打开。
+    # 打开后 L4 在 L3 之后接入（保持五层冻结顺序的子序列）。
+    vertical_router_enable: bool = False
+    # 与 scheduler.router.DEFAULT_VERTICAL_THRESHOLD 对齐；同样**未标定**，可调数字。
+    vertical_threshold: float = 0.55
 
     # ---- 账号体系（U67 / U68 / U69）----
     # 账号文件放哪：空则跟 storage_root 走，独立配置是为了让隐私数据能单独挂卷

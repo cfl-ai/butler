@@ -49,6 +49,7 @@ from ai_butler.core.permissions import (
 )
 from ai_butler.scheduler.throttle import ResourceThrottle
 from ai_butler.scheduler.tools import ToolDispatcher, ToolRegistry
+from ai_butler.scheduler.vertical import VerticalDispatcher
 
 try:                                            # LangGraph 0.2+ 提供 START 常量
     from langgraph.graph import END, START, StateGraph
@@ -187,10 +188,15 @@ class SceneScheduler:
                  tool_registry: ToolRegistry | None = None,
                  throttle: ResourceThrottle | None = None,
                  journal: EventJournal | None = None,
+                 verticals: VerticalDispatcher | None = None,
                  role: UserRole = UserRole.MEMBER) -> None:
         self.router = router
         self.agents = dict(agents)
         self.plan = plan
+        #: 垂类派发器（U110）。**为 None 时垂类能力整体不存在** —— 不是「接了但没命中」，
+        #: 而是这一轴根本没装，L4 即便给得出垂类键也没有执行者。默认 None，
+        #: 因此既有调用方行为零变化；装配它的地方才有垂类能力。
+        self.verticals = verticals
         self.observer = observer
         #: append-only 会话事件账本（U57）。传入即把本任务的 Trace 埋点
         #: 桥接落账（journal_observer 包装 observer 语义）；不传则维持
@@ -318,7 +324,60 @@ class SceneScheduler:
         with trace.span(NODE_DISPATCH, intent=state.get("intent") or ""):
             return await self._dispatch(state, trace)
 
+    async def _dispatch_vertical(self, state: dict[str, Any], trace: Trace) -> dict[str, Any]:
+        """把任务交给垂类 Agent（U110；表 11：垂类是**业务执行单元**）。
+
+        垂类键（如 `"tour"`）不在 `DispatchPlan` 的检索分类链里，走阶段链等于空转，
+        所以这里单独一支：命中即由垂类自己执行，执行完就结束本次分发。
+
+        三种失败都**留痕且不阻断主流程**（三、P3 全链路降级）：装配失败、执行抛错、
+        越权改写受保护字段 —— 分别记进 `failed` + `degradation`，不往上抛。
+        """
+        key = str(state.get("intent") or "")
+        name = f"vertical:{key}"
+        degradation: list[str] = list(state.get("degradation") or [])
+        results: dict[str, Any] = {}
+        dispatched: list[str] = []
+        failed: list[str] = []
+
+        def _done() -> dict[str, Any]:
+            return {"agent_results": results, "dispatched": dispatched, "skipped": [],
+                    "failed": failed, "degradation": degradation,
+                    "rollback_count": int(state.get("rollback_count") or 0),
+                    "rolled_back": list(state.get("rolled_back") or [])}
+
+        if not state.get("login_status"):
+            degradation.append("会话失效，垂类 Agent 跳过执行（三、P4）")
+            return _done()
+
+        with trace.span(name):
+            agent = self.verticals.resolve(key)
+            if agent is None:
+                failed.append(name)
+                degradation.append(
+                    f"垂类 {key!r} 无可用执行者：{self.verticals.note_error(key)}")
+                return _done()
+            try:
+                updates = await resolve(agent(dict(state)))
+            except Exception as exc:             # noqa: BLE001 — 垂类失败不阻断主流程
+                failed.append(name)
+                degradation.append(
+                    f"垂类 Agent {key!r} 执行失败：{type(exc).__name__}: {exc}")
+                return _done()
+            illegal = [k for k in updates if k in PROTECTED_STATE_FIELDS]
+            if illegal:
+                failed.append(name)
+                degradation.append(
+                    f"垂类 Agent {key!r} 试图改写受保护字段 {illegal}，已拒绝（三、P4）")
+                return _done()
+            results[name] = updates
+            dispatched.append(name)
+        return _done()
+
     async def _dispatch(self, state: dict[str, Any], trace: Trace) -> dict[str, Any]:
+        # 垂类优先（U110）：L4 命中的是垂类键而非检索分类，交给垂类派发器执行。
+        if self.verticals is not None and self.verticals.has(state.get("intent")):
+            return await self._dispatch_vertical(state, trace)
         chain = self.plan.agents_for(state.get("intent"))
         results: dict[str, Any] = {}
         dispatched: list[str] = []

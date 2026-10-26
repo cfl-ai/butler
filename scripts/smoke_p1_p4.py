@@ -63,6 +63,11 @@ from ai_butler.material_center.vector_store import ChromaVectorStore  # noqa: E4
 from ai_butler.scheduler.graph import DispatchPlan, SceneScheduler  # noqa: E402
 from ai_butler.scheduler.observe import ListObserver  # noqa: E402
 from ai_butler.scheduler.router import HardRule, HardRuleLayer, IntentRouter, JevLayer  # noqa: E402
+from ai_butler.scheduler.vertical import (  # noqa: E402
+    VerticalDispatchLayer,
+    VerticalDispatcher,
+    build_vertical_model,
+)
 
 USER = "smoke-p1p4-user"
 DOC_PREFIX = "smoke-p1p4"
@@ -335,6 +340,23 @@ async def main() -> int:
         print(f"        P4 集群：设备 {dev['device_count']} 台 / 指标 {len(dev['metrics'])} 项；"
               f"增量抽取产出 {len(inc['facts'])} 条绑定证据的事实，"
               f"跳过 {len(inc['skipped'])} 条")
+
+        # 垂类派发（U110）：L4 命中垂类键 → 由垂类 Agent 执行，而不是走阶段链。
+        # 这里是**非测试**的可运行装配点：证明 `build_tour_agent` 不只在 pytest 里被触达。
+        vertical_scheduler = SceneScheduler(
+            router=IntentRouter([VerticalDispatchLayer(build_vertical_model())]),
+            agents={}, plan=DispatchPlan(chains={}),
+            verticals=VerticalDispatcher(), observer=observer)
+        vres = await vertical_scheduler.run(
+            user_id=USER, session_id="smoke-vertical",
+            utterance="帮我规划杭州两日游行程攻略", labels=LABELS)
+        assert vres.intent == "tour", f"垂类意图未命中：{vres.intent}"
+        assert vres.dispatched == ["vertical:tour"], (
+            f"垂类未被执行：dispatched={vres.dispatched} degradation={vres.degradation}")
+        # 缺行程参数属本职范围内失败：垂类应留下「请补充参数」，而不是回退或假装成功
+        assert vres.agent_results["vertical:tour"]["tour_result"]["ask"]
+        ok(f"垂类派发：意图={vres.intent} 执行者={vres.dispatched}；"
+           f"垂类如实要求补参数（未回退、未假装成功）")
     except Exception as exc:                          # noqa: BLE001
         fail("主状态机", exc)
 

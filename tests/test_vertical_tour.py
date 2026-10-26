@@ -132,8 +132,9 @@ def test_phase_two_decisions_are_registered_and_resolved():
     # U101/U103/U104 = 高德接入方式、坐标基准转换、镇乡层级缺口；
     # U105/U106 = 电脑端定位、规划含时间；
     # U108 = 高德官方 key 接入（2026-10-26，restapi 接通、township/周边 POI 解锁）
+    # U109 = 高德官方 POI 检索（v3/place/text + around，与 regeo 顺带 POI 不重叠）
     assert keys == {"U37", "U38", "U39", "U40", "U94", "U95", "U96", "U97",
-                    "U101", "U103", "U104", "U105", "U106", "U108"}
+                    "U101", "U103", "U104", "U105", "U106", "U108", "U109"}
     for key in keys:
         assert decisions.get(key).status == decisions.RESOLVED
 

@@ -2660,6 +2660,8 @@ DECISIONS: tuple[Decision, ...] = (
         source="文档推导",
         decided_at=_D10,
         resolution=(
+            "按**计划书三、P3**「五层路由第 4 层：垂类专用决策模型」与表 11 给 TourAgent "
+            "划定的职责边界落地（计划书未给具体算法形态，此处取可解释打分器）。\n"
             "**B1 — L4 决策器**（`scheduler/vertical.py`，新文件，落地 U98 的协议）："
             "`VerticalDecisionModel` 实现为「关键词 + 结构特征」轻量标定器，"
             "`predict(utterance, labels) -> (label, score) | None`；"
@@ -2672,13 +2674,42 @@ DECISIONS: tuple[Decision, ...] = (
             "routing 用 `OSRMRouter`（缺 key 时 `official=False` 降级并如实标注）；"
             "把 tour 注册进 `VerticalRegistry` 使 L4 可达。`build_tour_agent()` 是"
             "TourAgent 派发链路的唯一装配点（同 U108 的 `make_amap_source` 范式）。\n"
-            "**默认不激活 L4 进主路由**：`intent_wiring.build_intent_router` 仍只接"
-            "L1/L2/L3（U03 冻结五层顺序，不强行插入），L4 经 `VerticalRegistry` 显式"
-            "可达，待标定守护全绿再考虑接线。\n"
+            "**默认不激活 L4 进主路由**：`intent_wiring.build_intent_router` 仅在"
+            "`vertical_router_enable=true` 时把 `VerticalDispatchLayer` 追加在 L3 之后"
+            "（保持表 6 冻结顺序的子序列，守护已钉住 `position == sorted(position)`）；"
+            "`VERTICAL_THRESHOLD_CALIBRATED=False` 如实标注「阈值未在人工标注验证集标定」。\n"
+            "**派发闭环（关键）**：光有模型不算装。`VerticalDispatcher` 按注册表"
+            "`factory`（'module:attr' 形态，惰性解析 + 缓存）把垂类键换成**真 Agent**；"
+            "`SceneScheduler`（唯一分发者）新增可选 `verticals=`，命中垂类即由垂类执行"
+            "（垂类键不在检索分类链里，走阶段链等于空转）；装配失败 / 执行抛错 / "
+            "越权改写受保护字段三种情形都记 failed + degradation，不阻断主流程。\n"
             "**修 E-86**：`AmapSource`/`OSRMRouter` 此前只在 `tests/` 触达，"
             "TourAgent 只在测试里实例化；本项把它们接进生产装配，使「机制」真正「装了电」。"),
         references=(),
         license_note="文档推导（计划书 P3 与表 11 的组合要求），无外部代码复用",
+        code_reuse="n/a",
+    ),
+    # ---- U111：SceneScheduler 本身没有生产装配点（不冒充已上线） ----
+    Decision(
+        key="U111",
+        phase="P3",
+        title="P3 主状态机（SceneScheduler）缺少生产装配点：垂类链路只到脚本/测试层",
+        plan_quote="三、P3「用户发起任意请求触发主状态机；路由结果决定后续 Agent 调用链」",
+        status=PENDING,
+        source="文档推导",
+        decided_at=_D10,
+        resolution=(
+            "**如实声明**：U110 把垂类派发接进了 `SceneScheduler`，但 `SceneScheduler` "
+            "自己全项目只在 `scripts/smoke_p1_p4.py` 与 `tests/` 里被构造，`app.py` "
+            "只装配了 `intent_router`（U74）给聊天链路用，**没有构造主状态机**。\n"
+            "所以「L4 命中 → 垂类执行」这条链路目前**不是线上链路**：它是可运行、"
+            "有守护、端到端验证过的，但没有 HTTP 入口触发它。按铁律不写成「已上线」。\n"
+            "**待办**：在 `create_app` 里装配 `SceneScheduler`（阶段 Agent 注册表 + "
+            "DispatchPlan + `verticals=VerticalDispatcher()`），或在 `/api/chat/stream` "
+            "之外给出显式的任务入口。**不擅自新增 API**（计划书未定义入口形态），"
+            "需先裁定入口语义再实现。"),
+        references=(),
+        license_note="文档推导（P3 主状态机的装配缺口），无外部代码复用",
         code_reuse="n/a",
     ),
 )

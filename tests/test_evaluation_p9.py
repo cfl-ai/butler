@@ -101,7 +101,11 @@ def test_p9_decisions_are_registered_and_resolved():
                     "U84", "U91"}
     for key in keys:
         assert decisions.get(key).status == decisions.RESOLVED
-    assert not decisions.pending(), "台账不应有未裁定项"
+    # 台账允许存在**未裁定**项 —— 它登记的本就是「计划书没定义、不能自行脑补」的项。
+    # 但必须逐条点名：安静地多出一条 PENDING，等于有人在偷偷记假账。
+    # U111 = P3 主状态机（SceneScheduler）没有生产装配点，HTTP 入口形态计划书未定义，
+    #        裁定「不擅自新增 API」之后仍待裁定入口语义 —— 详见 decisions.get("U111")。
+    assert {d.key for d in decisions.pending()} == {"U111"}, decisions.pending()
 
 
 # ============================== 脱敏（U30 / 三、P9）============================== #

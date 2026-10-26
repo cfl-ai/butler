@@ -23,7 +23,7 @@ E-77 的教训：`HardRuleLayer` / `VectorLayer` / `JevLayer` 三个类**有实�
 | L1 硬规则 | **接** | 正则**从 `planner.CATEGORY_SIGNALS` 派生**，不另存一份（E-44：两处正则必漂移） |
 | L2 Jev | **接** | 影子期走旁路（不阻塞主链路）；`JEV_SHADOW_MODE=false` 即生效 |
 | L3 向量 | **接** | 本地 bge 编码，断网可用；懒加载，进程内共享 |
-| L4 垂类模型 | **不接** | 全项目只有 `VerticalDecisionModel` 协议，没有任何实现；U03 要求先标定 |
+| L4 垂类模型 | **默认不接** | U110 已落地首个 `VerticalDecisionModel` 实现（关键词+结构特征打分器），但阈值尚未在人工标注验证集上标定（`VERTICAL_THRESHOLD_CALIBRATED=False`），故默认不接线；`vertical_router_enable=true` 才接入（保持冻结顺序的子序列） |
 | L5 大模型兜底 | **不接** | 与 L2 是同一件事（同网关、同 prompt 形态、同解析），接了两份账 |
 
 **层数仍然是五层**（表 6 冻结），这里只是「有实现的层才进管道」。
@@ -69,6 +69,11 @@ from ai_butler.scheduler.router import (
     JevLayer,
     RouteError,
     VectorLayer,
+)
+from ai_butler.scheduler.vertical import (
+    VERTICAL_THRESHOLD_CALIBRATED,
+    VerticalDispatchLayer,
+    build_vertical_model,
 )
 
 #: 路由标签集 = `QueryCategory` 的全部取值。
@@ -425,6 +430,12 @@ def build_intent_router(settings: Settings, *, gateway: LLMGateway | None = None
         vector_layer.start_warmup()
         layers.append(vector_layer)
 
+    # L4 垂类模型（U110）：默认不接，仅 `vertical_router_enable=true` 时接入，
+    # 且必须排在 L3 之后（保持五层冻结顺序的子序列）。
+    if settings.vertical_router_enable:
+        layers.append(VerticalDispatchLayer(
+            build_vertical_model(), threshold=settings.vertical_threshold))
+
     if not layers:
         return None
 
@@ -447,6 +458,9 @@ def describe(settings: Settings) -> dict[str, object]:
         "labels": list(INTENT_LABELS),
         "vector_threshold": settings.intent_vector_threshold,
         "vector_threshold_calibrated": VECTOR_THRESHOLD_CALIBRATED,
+        "vertical_router_enable": settings.vertical_router_enable,
+        "vertical_threshold": settings.vertical_threshold,
+        "vertical_threshold_calibrated": VERTICAL_THRESHOLD_CALIBRATED,
         "jev_shadow_mode": settings.jev_shadow_mode,
         "jev_allow_clarify": settings.jev_allow_clarify,
         "exemplars_per_label": {k: len(v) for k, v in EXEMPLARS.items()},
@@ -462,6 +476,8 @@ def _wired(name: str, settings: Settings) -> bool:
         return bool(settings.jev_enable)
     if name == LAYER_VECTOR:
         return bool(settings.intent_vector_enable)
+    if name == LAYER_VERTICAL:
+        return bool(settings.vertical_router_enable)
     return False
 
 
@@ -469,7 +485,10 @@ def _skip_reason(name: str, settings: Settings) -> str:
     if not settings.intent_router_enable:
         return "intent_router_enable=false：整条路由未装配"
     if name == LAYER_VERTICAL:
-        return "全项目无 VerticalDecisionModel 实现（只有协议）；U03 要求先标定"
+        if settings.vertical_router_enable:
+            return "已接线（U110：关键词+结构特征打分器）"
+        return ("有实现但未接线（U110）：阈值未标定"
+                "（VERTICAL_THRESHOLD_CALIBRATED=False），打开 vertical_router_enable 才接入")
     if name == LAYER_LLM:
         return "与 L2 Jev 是同一件事（同网关、同 prompt 形态、同解析），不重复接"
     if name == LAYER_JEV:
