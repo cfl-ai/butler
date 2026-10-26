@@ -63,6 +63,7 @@ from ai_butler.material_center.vector_store import ChromaVectorStore  # noqa: E4
 from ai_butler.scheduler.graph import DispatchPlan, SceneScheduler  # noqa: E402
 from ai_butler.scheduler.observe import ListObserver  # noqa: E402
 from ai_butler.scheduler.router import HardRule, HardRuleLayer, IntentRouter, JevLayer  # noqa: E402
+from ai_butler.scheduler.tools import ToolRegistry  # noqa: E402
 from ai_butler.scheduler.vertical import (  # noqa: E402
     VerticalDispatchLayer,
     VerticalDispatcher,
@@ -357,6 +358,26 @@ async def main() -> int:
         assert vres.agent_results["vertical:tour"]["tour_result"]["ask"]
         ok(f"垂类派发：意图={vres.intent} 执行者={vres.dispatched}；"
            f"垂类如实要求补参数（未回退、未假装成功）")
+
+        # 输入接通（U114）：网关装上了，但**先问能力再谈跑不跑**。
+        # 本机 qwen2.5vl:3b 没有工具能力，所以这里既不能用假网关演一遍，
+        # 也不能假装跑通 —— 只断言两件真事：能力结论可诊断、开关关闭时零行为变化。
+        from ai_butler.infra.llm_gateway import LLMGateway
+
+        gw = LLMGateway(s)
+        capable, why = gw.tool_capability()
+        intake_scheduler = SceneScheduler(
+            router=IntentRouter([HardRuleLayer([HardRule(r"订.*酒店", "book_hotel")])]),
+            agents={"planner_agent": planner},
+            plan=DispatchPlan(chains={"book_hotel": ("planner_agent",)}),
+            tool_registry=ToolRegistry(), gateway=gw)
+        ires = await intake_scheduler.run(
+            user_id=USER, session_id="smoke-intake",
+            utterance="帮我订个酒店", labels=LABELS)
+        assert ires.intake == {}, (
+            f"function_calling_enable 默认关闭时，接通层不得写入任何通道：{ires.intake}")
+        ok(f"接通层装配就绪（网关已装、开关关闭 → intake 未写入，零行为变化）")
+        print(f"        工具能力：{'可用' if capable else '不可用'} —— {why}")
     except Exception as exc:                          # noqa: BLE001
         fail("主状态机", exc)
 

@@ -110,6 +110,9 @@ class SchedulerState(GraphState, total=False):
     rolled_back: list[str]
     #: 会话失效时的终止码
     login_required: str
+    #: 输入接通层结论（U114）。**未启用时不写入** —— 空壳 dict 与「没跑过」
+    #: 在下游看不出区别，那正是「声明了没接上」的形状（E-86）。
+    intake: dict[str, Any]
 
 
 class SchedulerError(RuntimeError):
@@ -153,6 +156,9 @@ class SchedulerResult:
     #: 工具统一调度的统计（调用次数、重复拦截数、是否无增量）
     tool_calls: dict[str, Any] = field(default_factory=dict)
     spans: list[dict[str, Any]] = field(default_factory=list)
+    #: 输入接通层结论（U114）。**开关关闭/未装网关时为空 dict** 表示这一层没跑；
+    #: 判空必须用「有没有 units」，不要用「是不是 dict」—— 两者都能进 as_dict。
+    intake: dict[str, Any] = field(default_factory=dict)
 
     @property
     def resolved(self) -> bool:
@@ -177,7 +183,8 @@ class SchedulerResult:
                 "degraded": self.degraded, "degradation": list(self.degradation),
             "input_untrusted": self.input_untrusted,
                 "tool_calls": dict(self.tool_calls),
-                "agent_results": {k: v for k, v in self.agent_results.items()}}
+                "agent_results": {k: v for k, v in self.agent_results.items()},
+                "intake": dict(self.intake)}
 
 
 class SceneScheduler:
@@ -189,6 +196,7 @@ class SceneScheduler:
                  throttle: ResourceThrottle | None = None,
                  journal: EventJournal | None = None,
                  verticals: VerticalDispatcher | None = None,
+                 gateway: Any | None = None,
                  role: UserRole = UserRole.MEMBER) -> None:
         self.router = router
         self.agents = dict(agents)
@@ -197,6 +205,10 @@ class SceneScheduler:
         #: 而是这一轴根本没装，L4 即便给得出垂类键也没有执行者。默认 None，
         #: 因此既有调用方行为零变化；装配它的地方才有垂类能力。
         self.verticals = verticals
+        #: 大模型网关（U112/U114）。**为 None 时输入接通层整体不存在**：
+        #: 没有网关就没有 function calling 回路可跑，此时 `intake` 通道不写入，
+        #: 而不是写个空壳冒充"处理过"。默认 None，既有调用方行为零变化。
+        self.gateway = gateway
         self.observer = observer
         #: append-only 会话事件账本（U57）。传入即把本任务的 Trace 埋点
         #: 桥接落账（journal_observer 包装 observer 语义）；不传则维持
@@ -322,7 +334,51 @@ class SceneScheduler:
     async def _node_dispatch(self, state: dict[str, Any]) -> dict[str, Any]:
         trace = self._current_trace()
         with trace.span(NODE_DISPATCH, intent=state.get("intent") or ""):
-            return await self._dispatch(state, trace)
+            intake_updates = await self._run_intake(state, trace)
+            # 让本轮分发**看得到**接通结论（否则 intake 只是写给账本看的摆设）
+            updates = await self._dispatch({**state, **intake_updates}, trace)
+            # 接通是**加法**：只补 `intake` 通道，其余一律以分发结论为准。
+            # 由谁执行仍然只由 路由 + DispatchPlan 决定（多意图自动分派为 False
+            # 是计划书规则），离散化不能反过来改写一个确定性结论。
+            return {**intake_updates, **updates}
+
+    async def _run_intake(self, state: dict[str, Any], trace: Trace) -> dict[str, Any]:
+        """输入接通层（U114 装配点）：分发前把用户输入离散化并跑裁剪过的回路。
+
+        装配在**唯一的任务分发者**上，而不是只在测试里调 —— 只在测试里调过
+        的链路等于没有链路（E-86）。
+
+        三道闸都不会被跳过：
+        1. 没装网关 → 整层不存在，不写 `intake`；
+        2. 开关关闭 → 同上，行为与接通前逐字一致；
+        3. 会话失效 → 不跑（与子 Agent 跳过执行同一口径）。
+
+        回路里的工具调用走的是**同一个** `self.dispatcher`（权限三层求值、审批、
+        重复拦截、无增量终止、超时全在里面），function calling 不是绕过闸门的后门。
+        """
+        from ai_butler.core.config import get_settings
+        from ai_butler.scheduler.intake import run_units
+
+        if self.gateway is None:
+            return {}
+        cfg = get_settings()
+        if not getattr(cfg, "function_calling_enable", False):
+            return {}
+        if not state.get("login_status"):
+            return {}
+        try:
+            with trace.span("intake"):
+                report = await run_units(
+                    gateway=self.gateway, dispatcher=self.dispatcher,
+                    registry=self.dispatcher.registry, user_id=state.get("user_id", ""),
+                    utterance=state.get("utterance", "") or "",
+                    intent_label=state.get("intent") or "", settings=cfg)
+        except Exception as exc:                  # noqa: BLE001 — 接通失败不阻断主流程
+            # 如实留痕：写的是「接通失败」，不是「接通了但没结果」
+            return {"intake": {"disabled": False, "error":
+                               f"{type(exc).__name__}: {exc}", "units": [],
+                               "ran_count": 0, "unassigned": []}}
+        return {"intake": report.as_dict()}
 
     async def _dispatch_vertical(self, state: dict[str, Any], trace: Trace) -> dict[str, Any]:
         """把任务交给垂类 Agent（U110；表 11：垂类是**业务执行单元**）。
@@ -553,4 +609,5 @@ class SceneScheduler:
             degradation=list(final.get("degradation") or []),
             tool_calls=self.dispatcher.snapshot(),
             spans=[s.as_dict() for s in trace.spans],
+            intake=dict(final.get("intake") or {}),
         )

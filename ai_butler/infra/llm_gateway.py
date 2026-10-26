@@ -509,6 +509,29 @@ class LLMGateway:
         order = [p for p in self.settings.provider_order if p in self._providers]
         return order or list(self._providers)
 
+    # ---- 能力协商的可观测出口（U112）----
+    def tool_capability(self, model: str | None = None,
+                        provider: str | None = None) -> tuple[bool, str]:
+        """本网关当前能否下发工具清单；不可用时给出**可诊断的原因**。
+
+        返回 `(可用, 说明)`。把「不可用」的原因分成两类，因为修法完全不同：
+        - 供应商协议不支持 → 换供应商；
+        - 模型不在 `function_calling_models` 白名单 → 登记模型或换模型。
+
+        只在**不真的发起请求**的前提下探测：探针工具名不会被下发出去。
+        """
+        order = [provider] if provider else self._order()
+        if not order or order[0] not in self._providers:
+            return False, "没有可用的供应商（provider_order 为空或未注册）"
+        name = order[0]
+        target = model or getattr(self.settings, f"{name}_model", "") or ""
+        probe = [{"type": "function", "function": {"name": "_capability_probe"}}]
+        try:
+            self._providers[name].reject_unsupported_tools(probe, target)
+        except ToolUnsupportedError as exc:
+            return False, str(exc)
+        return True, f"供应商 {name} / 模型 {target or '默认'} 可下发工具调用"
+
     # ---- 非流式 ----
     async def chat(self, *, user_id: str, messages: Sequence[ChatMessage],
                    model: str | None = None, max_tokens: int | None = None,

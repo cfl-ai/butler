@@ -164,10 +164,16 @@ class ToolSpec:
             if self.params_schema.get("type") != "object":
                 raise ToolError(f"工具 {self.name!r} 的 params_schema.type 必须是 'object'")
 
+    #: 本工具属于哪个 `CAP_*` 能力（U114）。**工具→能力的唯一真值源**：
+    #: 调配结论给出的是能力集合，能否落到具体工具，靠这一字段，
+    #: 而不是在别处再维护一张「能力→工具」映射表（多一张表就多一处漂移）。
+    #: 留空 = 未归类，**不对模型暴露**（宁可少暴露，也不让模型看见职责外的工具）。
+    capability: str = ""
+
     @property
     def exposed_to_model(self) -> bool:
-        """是否向模型暴露（U112）。"""
-        return self.params_schema is not None
+        """是否向模型暴露（U112/U114）：**契约与能力归属两道闸都要过**。"""
+        return self.params_schema is not None and bool(self.capability)
 
 
 class ToolRegistry:
@@ -181,7 +187,8 @@ class ToolRegistry:
                  required: CapabilityLevel = CapabilityLevel.L2_SIDE_EFFECT,
                  sensitivity: DataSensitivity | None = None,
                  timeout_seconds: float | None = None,
-                 params_schema: Mapping[str, Any] | None = None) -> ToolSpec:
+                 params_schema: Mapping[str, Any] | None = None,
+                 capability: str = "") -> ToolSpec:
         if not name or not str(name).strip():
             raise ToolError("工具必须声明非空的 name")
         if name in self._specs:
@@ -192,7 +199,7 @@ class ToolRegistry:
                         progresses=progresses, description=description,
                         required=required, sensitivity=sensitivity,
                         timeout_seconds=timeout_seconds,
-                        params_schema=params_schema)
+                        params_schema=params_schema, capability=capability)
         self._specs[name] = spec
         return spec
 
@@ -205,13 +212,7 @@ class ToolRegistry:
         **只导出显式声明了 `params_schema` 的工具**：没写参数契约的工具不会被模型
         看到。宁可少暴露，也不让模型去猜一个没有契约的工具该怎么调（没契约 = 没护栏）。
         """
-        return [
-            {"type": "function",
-             "function": {"name": s.name,
-                          "description": s.description or s.name,
-                          "parameters": dict(s.params_schema or {})}}
-            for s in self.specs() if s.exposed_to_model
-        ]
+        return [spec_as_openai_tool(s) for s in self.specs() if s.exposed_to_model]
 
     def get(self, name: str) -> ToolSpec:
         try:
@@ -224,6 +225,17 @@ class ToolRegistry:
 
     def specs(self) -> tuple[ToolSpec, ...]:
         return tuple(self._specs[n] for n in self.names())
+
+
+def spec_as_openai_tool(spec: ToolSpec) -> dict[str, Any]:
+    """单个工具的对外声明形态。**序列化只有这一处** ——
+    `as_openai_tools` 与按能力裁剪的 `build_tools_for` 都走它，
+    免得两处各写一份 dict 结构，改一处漏一处（E-44 家族）。
+    """
+    return {"type": "function",
+            "function": {"name": spec.name,
+                         "description": spec.description or spec.name,
+                         "parameters": dict(spec.params_schema or {})}}
 
 
 class ToolDispatcher:

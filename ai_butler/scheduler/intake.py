@@ -50,7 +50,14 @@ from ai_butler.agents.capabilities import (
     CAP_WIKI_READ,
     CAP_WIKI_WRITE,
 )
+from ai_butler.core.config import get_settings
+from ai_butler.infra.llm_gateway import ChatMessage
 from ai_butler.retrieval.planner import QueryCategory, classify
+
+
+#: 合法的任务类型取值（`QueryCategory`）。**不要把非本集合的标签当分类用** ——
+#: 调度器的意图标签是分派名，硬塞进来会让 `ASSIGNMENTS` 全部查空。
+_CATEGORY_VALUES = frozenset(c.value for c in QueryCategory)
 
 
 # --------------------------------------------------------------------------- #
@@ -336,19 +343,26 @@ def discretize(utterance: str, *, context: IntakeContext | None = None,
 
     `intent_label` 只在规则型分类落空时作为兜底（与 `planner.classify` 同口径：
     先确定性后概率性）。
+
+    **但不是任何标签都能当兜底**：调度器给的意图标签是 `DispatchPlan` 的键
+    （如 `"weather_q"`），那是「谁执行」的分派名，不是 `QueryCategory`（「怎么处理」）。
+    把分派名当查询分类塞进来，`ASSIGNMENTS` 永远查不到 —— 表面「接通了」，
+    实际每个单元都被记成 unassigned。所以只接受**合法的 QueryCategory 值**，
+    其余一律不理，让分类器自己判。
     """
     text = (utterance or "").strip()
     if not text:
         return ()
 
+    hint = intent_label if intent_label in _CATEGORY_VALUES else None
     units: list[InformationUnit] = []
     for piece in split_units(text):
         resolved_text, resolved, unresolved, slots = resolve_references(piece, context)
         kind = detect_slot_kind(resolved_text)
         # 任务类型**复用既有分类器**（E-44：另造一套必漂移）
-        category, _reason, _signals = classify(resolved_text, intent_label=intent_label)
-        if category is QueryCategory.UNKNOWN and intent_label:
-            category_value = intent_label
+        category, _reason, _signals = classify(resolved_text, intent_label=hint)
+        if category is QueryCategory.UNKNOWN and hint:
+            category_value = hint
         else:
             category_value = category.value
         # 判不出信息类型但判出了私有回忆 → 按私有处理（保守侧）
@@ -368,16 +382,154 @@ def plan_assignments(units: Sequence[InformationUnit]
     return tuple((u, assign(u)) for u in units)
 
 
+# --------------------------------------------------------------------------- #
+# ⑤ 接通：离散单元 → 裁剪后的工具清单 → function calling 回路（U114）
+# --------------------------------------------------------------------------- #
+def build_tools_for(assignment: Assignment, registry: Any) -> list[dict[str, Any]]:
+    """把调配结论落成**实际下发给模型**的工具清单。
+
+    两道闸都必须过：
+    1. 工具声明的能力 ∈ 调配给的能力集合（计划书三、P4：按职责授予，不是全量下发）；
+    2. 工具写了参数契约（`exposed_to_model`）。
+
+    **只下发该 Agent 职责内的工具** —— 若让模型看见全部工具，权限边界就从
+    「按职责授予」退化成「模型自觉」，那是把护栏交给了概率。
+    """
+    from ai_butler.scheduler.tools import spec_as_openai_tool
+
+    allowed = set(assignment.capabilities)
+    return [spec_as_openai_tool(s) for s in registry.specs()
+            if s.exposed_to_model and s.capability in allowed]
+
+
+@dataclass
+class UnitOutcome:
+    """一个离散单元的处置结果。"""
+
+    unit: InformationUnit
+    assignment: Assignment | None = None
+    tools: tuple[dict[str, Any], ...] = ()
+    result: Any = None                 # ToolLoopResult（未走回路时为 None）
+    #: 为什么没走回路（空 = 正常走到了回路）
+    skipped: str = ""
+
+    @property
+    def ran(self) -> bool:
+        return self.result is not None
+
+
+@dataclass
+class IntakeReport:
+    outcomes: tuple[UnitOutcome, ...] = ()
+    #: 整条接通路径未启用（开关关闭）。**如实标记**，不伪装成"处理了但没结果"。
+    disabled: bool = False
+
+    @property
+    def ran_count(self) -> int:
+        return sum(1 for o in self.outcomes if o.ran)
+
+    @property
+    def unassigned(self) -> tuple[InformationUnit, ...]:
+        return tuple(o.unit for o in self.outcomes if o.skipped == "unassigned")
+
+    def as_dict(self) -> dict[str, Any]:
+        """落成可进 State 的普通字典。
+
+        **只带结论，不带活对象**：进 State 的东西会被下游 Agent、聚合、账本看到，
+        把 `ToolResult` / dataclass 原样塞进去等于让下游去猜内部结构。
+        """
+        units = []
+        for o in self.outcomes:
+            res = o.result
+            units.append({
+                "text": o.unit.text,
+                "origin": o.unit.origin,
+                "slot_kind": o.unit.slot_kind.value,
+                "category": o.unit.category,
+                "resolved": list(o.unit.resolved),
+                "unresolved": list(o.unit.unresolved),
+                "self_contained": o.unit.self_contained,
+                "agent": o.assignment.agent if o.assignment else "",
+                "tools": [t["function"]["name"] for t in o.tools],
+                "skipped": o.skipped,
+                "ran": o.ran,
+                "answer": res.text if res else "",
+                "rounds": res.rounds if res else 0,
+                "truncated": bool(res.truncated) if res else False,
+                "tool_calls": len(res.tool_results) if res else 0,
+                "degradation": list(res.degradation) if res else [],
+            })
+        return {"disabled": self.disabled, "ran_count": self.ran_count,
+                "units": units,
+                "unassigned": [u.text for u in self.unassigned]}
+
+
+async def run_units(*, gateway: Any, dispatcher: Any, registry: Any,
+                    user_id: str, utterance: str,
+                    context: IntakeContext | None = None,
+                    settings: Any = None,
+                    intent_label: str | None = None,
+                    max_rounds: int | None = None) -> IntakeReport:
+    """接通：输入 → 离散单元 → 裁剪工具 → 每个单元一条 function calling 回路。
+
+    `intent_label` 是**五层意图路由（U74）已经给出的结论**。本层不取代路由：
+    路由负责「这是什么任务」，离散化负责「拆开、补全指代、按类型调配」。
+    两者协作才对 —— 让离散化去重复猜一次意图，等于把概率结论覆盖确定性结论。
+
+    **每个单元单独起一条回路**：单元之间是并列关系（「查天气」+「订酒店」），
+    不该共用同一轮对话上下文 —— 否则前一个单元的中间结论会污染下一个单元的判断（E-88）。
+
+    **开关关闭时返回 disabled=True 且不消费任何模型调用**：
+    行为与接通前逐字一致，调用方据此走既有路径。
+    """
+    from ai_butler.scheduler.tool_loop import FunctionCallLoop, mention_tools_available
+
+    cfg = settings or get_settings()
+    if not getattr(cfg, "function_calling_enable", False):
+        return IntakeReport(disabled=True)
+
+    units = discretize(utterance, context=context, intent_label=intent_label)
+    outcomes: list[UnitOutcome] = []
+    for unit in units:
+        assignment = assign(unit)
+        if assignment is None:
+            # 调配表里没有：如实记下，交给既有兜底 —— 不硬塞给模型瞎调
+            outcomes.append(UnitOutcome(unit=unit, skipped="unassigned"))
+            continue
+        tools = build_tools_for(assignment, registry)
+        if not tools:
+            outcomes.append(UnitOutcome(unit=unit, assignment=assignment,
+                                        skipped="no_tools_for_capabilities"))
+            continue
+        loop = FunctionCallLoop(gateway, dispatcher, settings=cfg, max_rounds=max_rounds)
+        hint = mention_tools_available(tools)
+        messages = [
+            ChatMessage(role="system", content=hint) if hint else None,
+            ChatMessage(role="user", content=unit.text),
+        ]
+        result = await loop.run(
+            user_id=user_id,
+            messages=[m for m in messages if m is not None],
+            tools=tools)
+        outcomes.append(UnitOutcome(unit=unit, assignment=assignment,
+                                    tools=tuple(tools), result=result))
+    return IntakeReport(outcomes=tuple(outcomes))
+
+
 __all__ = [
     "ASSIGNMENTS",
     "Assignment",
     "InformationUnit",
     "IntakeContext",
+    "IntakeReport",
     "SlotKind",
+    "UnitOutcome",
     "assign",
+    "build_tools_for",
     "detect_slot_kind",
     "discretize",
     "plan_assignments",
     "resolve_references",
+    "run_units",
     "split_units",
 ]

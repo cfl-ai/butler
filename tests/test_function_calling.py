@@ -46,7 +46,9 @@ _SCHEMA = {"type": "object", "properties": {"q": {"type": "string"}}, "required"
 
 def _registry() -> ToolRegistry:
     reg = ToolRegistry()
-    reg.register("search", lambda **kw: kw, description="检索素材", params_schema=_SCHEMA)
+    # capability 是 U114 的第二道闸：没有归属的工具不对模型暴露
+    reg.register("search", lambda **kw: kw, description="检索素材", params_schema=_SCHEMA,
+                 capability=CAP_RETRIEVAL)
     reg.register("internal_helper", lambda: None, description="内部工具，不对模型开放")
     return reg
 
@@ -71,9 +73,14 @@ def test_params_schema_must_be_object():
 
 
 def test_exposed_to_model_flag():
-    spec = ToolSpec(name="s", handler=lambda: None, params_schema=_SCHEMA)
+    """暴露要过两道闸：参数契约（U112）+ 能力归属（U114）。"""
+    spec = ToolSpec(name="s", handler=lambda: None, params_schema=_SCHEMA,
+                    capability=CAP_RETRIEVAL)
     assert spec.exposed_to_model is True
     assert ToolSpec(name="i", handler=lambda: None).exposed_to_model is False
+    # 只有契约没归属 → 不暴露（宁可少暴露，也不让模型看见职责外的工具）
+    assert ToolSpec(name="j", handler=lambda: None,
+                    params_schema=_SCHEMA).exposed_to_model is False
 
 
 # --------------------------------------------------------------------------- #
@@ -109,6 +116,31 @@ def test_ollama_model_whitelist_gate():
     provider.reject_unsupported_tools([{"type": "function"}], "llama3.1:8b")
     # 不带工具时任何模型都放行（普通对话不受影响）
     provider.reject_unsupported_tools(None, "qwen2.5vl:3b")
+
+
+def test_gateway_reports_tool_capability_without_calling_out():
+    """能力结论要能**主动查**，不能只能靠抛异常才知道为什么不能用。
+
+    这条出口给的是可诊断的说明：换供应商 / 登记白名单是两种修法，
+    糊成一句「供应商都不可用」就等于没给原因。
+    """
+    from ai_butler.infra.llm_gateway import LLMGateway
+
+    settings = Settings(provider_order=("ollama",), function_calling_models=())
+    gateway = LLMGateway(settings, None)
+    capable, why = gateway.tool_capability()
+    assert capable is False
+    assert "function_calling_models" in why
+
+    settings2 = Settings(provider_order=("ollama",),
+                         function_calling_models=("qwen2.5vl:3b",))
+    capable2, why2 = LLMGateway(settings2, None).tool_capability()
+    assert capable2 is True, why2
+
+    # 没有任何可用供应商时也要给出原因，而不是静默 False
+    empty = LLMGateway(Settings(provider_order=()), None)
+    capable3, why3 = empty.tool_capability()
+    assert capable3 is False and why3
 
 
 # --------------------------------------------------------------------------- #
