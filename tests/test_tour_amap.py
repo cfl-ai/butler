@@ -21,6 +21,7 @@ from ai_butler.verticals.tour.amap import (
     AMAP_WEATHER_URL,
     AmapError,
     AmapSource,
+    make_amap_source,
 )
 from ai_butler.verticals.tour.datum import wgs84_to_gcj02
 
@@ -353,6 +354,89 @@ def test_official_weather_parses_lives_and_forecasts():
     assert weather.forecasts[0].max_temp_c == pytest.approx(20.0)
 
 
+def test_official_regeo_sends_location_and_coordsys():
+    """官方端点用 location=经度,纬度（经度在前）+ coordsys=gps，不用 longitude/。
+
+    这是真 key 实测前必须锁定的参数形态——mock 测试无视参数，曾让官方路径
+    长期「声明可用、实则点错参数名」（U108 修）。
+    """
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json={"status": "1", "regeocode": {
+            "addressComponent": {"country": "中国", "province": "北京市",
+                                 "city": "北京市", "district": "东城区",
+                                 "adcode": "110101", "township": "东华门街道"},
+            "roads": []}})
+
+    async def go():
+        return await AmapSource(key="k", transport=httpx.MockTransport(handler)
+                               ).regeo(longitude=116.3975, latitude=39.9087)
+    place = asyncio.run(go())
+    url = captured["url"]
+    assert "location=116.3975" in url and "39.9087" in url
+    assert "coordsys=gps" in url
+    assert "longitude=" not in url
+    assert place.township == "东华门街道"          # 官方才有乡镇
+
+
+def test_official_regeo_gcj02_input_skips_coordsys():
+    """调用方已确认坐标是 GCJ-02 时，不传 coordsys（避免高德二次偏移）。"""
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        return httpx.Response(200, json={"status": "1", "regeocode": {
+            "addressComponent": {"country": "中国", "province": "北京市",
+                                 "city": "北京市", "district": "东城区",
+                                 "adcode": "110101"}, "roads": []}})
+
+    async def go():
+        return await AmapSource(key="k", transport=httpx.MockTransport(handler)
+                               ).regeo(longitude=116.4036, latitude=39.9100,
+                                       datum_of_input="gcj02")
+    asyncio.run(go())
+    assert "location=" in captured["url"]
+    assert "coordsys" not in captured["url"]
+
+
+def test_official_weather_base_and_all_split():
+    """官方天气：base 回实况、all 只回预报（无 lives）。两路合并，不得因 all 缺 lives 报错。
+
+    真 key 实测前必须锁定：extensions=all 不回 lives 是真实行为，曾让官方天气解析器
+    直接 raise「没有实况数据」（U108 修为分两次取）。
+    """
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        if params.get("extensions") == "base":
+            return httpx.Response(200, json={"status": "1", "lives": [
+                {"weather": "多云", "temperature": "18",
+                 "reporttime": "2026-10-26 15:34:06"}]})
+        return httpx.Response(200, json={"status": "1", "forecasts": [{
+            "city": "东城区", "adcode": "110101",
+            "casts": [{"date": "2026-10-26", "dayweather": "晴", "nightweather": "晴",
+                       "daytemp": "18", "nighttemp": "6", "daywind": "西",
+                       "daypower": "1-3"}]}]})
+
+    async def go():
+        return await AmapSource(key="k", transport=httpx.MockTransport(handler)
+                               ).weather("110101")
+    weather = asyncio.run(go())
+    assert weather.official is True
+    assert weather.weather_name == "多云"
+    assert weather.temperature_c == pytest.approx(18.0)
+    assert len(weather.forecasts) == 1
+    assert weather.forecasts[0].max_temp_c == pytest.approx(18.0)
+    assert weather.forecasts[0].min_temp_c == pytest.approx(6.0)
+
+
+def test_make_amap_source_reads_config_key():
+    """工厂从 Settings.amap_key 读 key；有 key 即 official=True（U108 装配点）。"""
+    src = make_amap_source(key="k")
+    assert src.official is True
+
+
 # --------------------------------------------------------------------------- #
 #  真实网络层（LIVE_AMAP=1 才跑）
 # --------------------------------------------------------------------------- #
@@ -375,3 +459,23 @@ def test_live_where_and_weather_chain():
     assert weather.adcode == place.adcode
     assert -60.0 < (weather.temperature_c or 0.0) < 60.0
     assert weather.weather_name
+
+
+# 官方真实链路：必须同时具备 LIVE_AMAP=1 与真实 AMAP_KEY（避免误打官方 API）
+LIVE_OFFICIAL = LIVE and bool(os.environ.get("AMAP_KEY"))
+
+
+@pytest.mark.skipif(not LIVE_OFFICIAL,
+                    reason="未设置 LIVE_AMAP=1 与 AMAP_KEY（官方真实链路冒烟）")
+def test_live_official_where_and_weather():
+    """真 key 官方链路：`make_amap_source()` 读配置拿到 key，逆地理应有镇/乡，
+    天气应有实况 + 预报。这是 U108「key 真正接通」的可重复冒烟。"""
+    place, weather = asyncio.run(
+        make_amap_source().where_and_weather(longitude=BEIJING[0], latitude=BEIJING[1]))
+    assert place.official is True
+    assert place.adcode.startswith("1101")
+    assert place.township                       # 官方才有镇/乡
+    assert weather.official is True
+    assert weather.temperature_c is not None
+    assert weather.weather_name
+    assert len(weather.forecasts) >= 1

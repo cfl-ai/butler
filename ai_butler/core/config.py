@@ -219,6 +219,11 @@ class Settings(BaseSettings):
     geo_grid_decimals: int = 3                    # 坐标粗化位数，3 ≈ 110m
     geo_recommend_limit: int = 5                  # 推荐条数上限
 
+    # ---- 高德 Web 服务（U108，用户 2026-10-26 提供）----
+    # 空 = 走拟人化旁路（official=False）；填入官方 key 即改走 restapi.amap.com
+    # （official=True，镇/乡 township / 周边 POI / 官方 SLA 可用）。秘密，仅存于 .env.*。
+    amap_key: str = ""
+
     # ---- 实时天气（U96/U97）----
     weather_ttl_seconds: float = 600.0            # 缓存 TTL；超期即重新采集
     #: 请求 Open-Meteo 用时区 UTC——`current.time` 原样成为 fetched_at，

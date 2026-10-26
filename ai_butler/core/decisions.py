@@ -2585,6 +2585,39 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="文档推导（计划书 P7 与 U71 的组合要求），无外部代码复用",
         code_reuse="n/a",
     ),
+    Decision(
+        key="U108",
+        phase="V1",
+        title="高德官方 key 已接入：restapi.amap.com 接通，镇/乡(township)与周边 POI 解锁",
+        plan_quote="「实时信息查询：景区开放状态、天气、交通、门票、排队、导航路线」"
+                   "（五、第二阶段表 11）；U101/U104 已预告官方 key 到位后的形态",
+        status=RESOLVED,
+        source="人工授权",
+        decided_at=_D10,
+        resolution=(
+            "**用户于 2026-10-26 提供官方 Web 服务 key**（32 位，存于 .env.dev"
+            "（已被 gitignore）；staging/prod 各留独立占位，勿复用开发 key）。"
+            "实测该 key **有效**，据此把 U101 的「官方 key 优先」从声明落地为装配：\n"
+            "①`Settings.amap_key`（环境变量 `AMAP_KEY`）新增；"
+            "`make_amap_source()` 从配置读取并构造 `AmapSource(key=...)`——"
+            "这是 TourAgent 派发链路的唯一装配点，调用方不得自己 new。\n"
+            "②**修两个真 key 实测才暴露的 bug（声明≠能力的反例）**：\n"
+            "  - 官方逆地理参数错：旧代码发 `longitude=/latitude=`（拟人化端点形态），"
+            "高德官方要 `location=经度,纬度` + `coordsys=gps`，mock 测试无视参数从未发现；"
+            "改后实测天安门吻合；\n"
+            "  - 官方天气拿不到实况：旧解析器假设 `extensions=all` 回 `lives`，"
+            "实测 `all` 只回 forecasts、不回 lives，无 lives 即 raise「没有实况数据」；"
+            "改为 `base`(实况) + `all`(预报) 两次取数合并，实测拿到「多云 18℃ + 4 段预报」。\n"
+            "③**实测产出**：逆地理 → `中国/北京市/北京市/东城区/东华门街道`"
+            "（township 首次可得）+ `formatted_address` 含门牌；官方 regeo 的"
+            "`extensions=all` 还直接带**周边 POI 列表**（POI 检索封堵实质解除，"
+            "待补独立的 `place` 检索方法）。\n"
+            "**合规**：官方端点 `official=True`，不再标拟人化；POI 使用仍须遵守"
+            "高德服务条款（QPS/配额）。"),
+        references=(),
+        license_note="人工授权（用户 2026-10-26 提供官方 key）；高德 Web 服务条款仍适用",
+        code_reuse="n/a",
+    ),
 )
 
 

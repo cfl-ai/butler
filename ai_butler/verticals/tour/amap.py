@@ -53,6 +53,7 @@ __all__ = [
     "AmapSource",
     "AmapWeather",
     "Road",
+    "make_amap_source",
 ]
 
 #: 拟人化端点（www.amap.com 自用）
@@ -281,18 +282,26 @@ class AmapSource:
         """
         if datum_of_input not in ("wgs84", "gcj02"):
             raise AmapError(f"未知坐标基准：{datum_of_input!r}")
-        lon, lat = ((wgs84_to_gcj02(longitude, latitude))
-                    if datum_of_input == "wgs84" else (longitude, latitude))
-        params: dict[str, Any] = {"longitude": f"{lon:.6f}",
-                                  "latitude": f"{lat:.6f}"}
+        glon, glat = ((wgs84_to_gcj02(longitude, latitude))
+                      if datum_of_input == "wgs84" else (longitude, latitude))
         if self._key:
-            params["key"] = self._key
-            params["extensions"] = "all"
-        else:
-            params["extensions"] = "all"
+            # 官方 Web 服务：location=经度,纬度（经度在前）+ coordsys 标明原始基准。
+            # 输入是 wgs84 就交高德用 coordsys=gps 转换；已是 gcj02 则原样发
+            # （高德默认按自有基准，不再二次偏移——本机实测天安门吻合）。
+            params: dict[str, Any] = {
+                "key": self._key, "extensions": "all",
+                "location": f"{longitude:.6f},{latitude:.6f}",
+            }
+            if datum_of_input == "wgs84":
+                params["coordsys"] = "gps"
+            data = await self._get(self._regeo_url, params)
+            return self._parse_place(data, longitude=longitude, latitude=latitude,
+                                     query_lon=longitude, query_lat=latitude)
+        params = {"longitude": f"{glon:.6f}", "latitude": f"{glat:.6f}",
+                  "extensions": "all"}
         data = await self._get(self._regeo_url, params)
         return self._parse_place(data, longitude=longitude, latitude=latitude,
-                                 query_lon=lon, query_lat=lat)
+                                 query_lon=glon, query_lat=glat)
 
     def _parse_place(self, data: Mapping[str, Any], *, longitude: float,
                      latitude: float, query_lon: float,
@@ -361,39 +370,22 @@ class AmapSource:
         code = str(adcode or "").strip()
         if not code:
             raise AmapError("adcode 为空：天气要挂在行政区划上，先做逆地理")
-        params: dict[str, Any] = ({"key": self._key, "city": code,
-                                   "extensions": "all"} if self._key
-                                  else {"adcode": code})
-        data = await self._get(self._weather_url, params)
+        if self._key:
+            # 官方实测：extensions=all 只回 forecasts、**不回 lives 实况**，
+            # 而 extensions=base 才回实况。故分两次取（base 实况 + all 预报）再合并；
+            # 拟人化旁路仍一次取。
+            live_data = await self._get(
+                self._weather_url,
+                {"key": self._key, "city": code, "extensions": "base"})
+            fc_data = await self._get(
+                self._weather_url,
+                {"key": self._key, "city": code, "extensions": "all"})
+            return self._parse_weather_official(live_data, fc_data, adcode=code)
+        data = await self._get(self._weather_url, {"adcode": code})
         return self._parse_weather(data, adcode=code)
 
     def _parse_weather(self, data: Mapping[str, Any], *, adcode: str) -> AmapWeather:
-        if self._key:
-            if str(data.get("status")) != "1":
-                raise AmapError(f"高德天气失败：{data.get('info') or data}")
-            lives = data.get("lives") or []
-            if not lives:
-                raise AmapError(f"高德天气没有实况数据：adcode={adcode}")
-            live = lives[0]
-            forecasts = data.get("forecasts") or []
-            slots: list[AmapForecastSlot] = []
-            for day in forecasts:
-                for cast in day.get("casts") or []:
-                    slots.append(AmapForecastSlot(
-                        daynight=0, weather_name=str(cast.get("weather") or ""),
-                        min_temp_c=_to_float(cast.get("nighttemp")),
-                        max_temp_c=_to_float(cast.get("daytemp")),
-                        wind_direction=str(cast.get("daywind") or ""),
-                        wind_power=str(cast.get("daypower") or "")))
-            report_time = str(live.get("reporttime") or "")
-            return AmapWeather(
-                adcode=adcode, report_time=report_time,
-                weather_name=str(live.get("weather") or ""),
-                weather_code="",
-                temperature_c=_to_float(live.get("temperature")),
-                forecasts=tuple(slots), provider="amap-official",
-                official=True,
-                fetched_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+        """拟人化旁路（www.amap.com）天气响应解析。官方形态见 `_parse_weather_official`。"""
         if str(data.get("status")) != "1":
             raise AmapError(f"高德天气失败：{data.get('data') or data}")
         rows = ((data.get("data") or {}).get("data")) or []
@@ -421,6 +413,42 @@ class AmapSource:
             weather_code=code,
             temperature_c=_to_float(live.get("temperature")),
             forecasts=tuple(slots), provider="amap-web", official=False,
+            fetched_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
+
+    def _parse_weather_official(self, live_data: Mapping[str, Any],
+                               fc_data: Mapping[str, Any], *,
+                               adcode: str) -> AmapWeather:
+        """官方 Web 服务（restapi.amap.com）天气解析：base 实况 + all 预报合并。
+
+        实测：`extensions=all` 只回 forecasts、不回 lives；`extensions=base`
+        才回实况。两路响应在此合并为一条 `AmapWeather`。
+        """
+        if not isinstance(live_data, dict) or str(live_data.get("status")) != "1":
+            info = live_data.get("info") if isinstance(live_data, dict) else live_data
+            raise AmapError(f"高德天气失败：{info or live_data}")
+        lives = live_data.get("lives") or []
+        if not lives:
+            raise AmapError(f"高德天气没有实况数据：adcode={adcode}")
+        live = lives[0]
+        reports = (fc_data.get("forecasts") or []) if isinstance(fc_data, dict) else []
+        slots: list[AmapForecastSlot] = []
+        for day in reports:
+            for cast in day.get("casts") or []:
+                slots.append(AmapForecastSlot(
+                    daynight=0,
+                    weather_name=str(cast.get("dayweather") or
+                                     cast.get("nightweather") or ""),
+                    min_temp_c=_to_float(cast.get("nighttemp")),
+                    max_temp_c=_to_float(cast.get("daytemp")),
+                    wind_direction=str(cast.get("daywind") or ""),
+                    wind_power=str(cast.get("daypower") or "")))
+        return AmapWeather(
+            adcode=adcode,
+            report_time=str(live.get("reporttime") or ""),
+            weather_name=str(live.get("weather") or ""),
+            weather_code="",
+            temperature_c=_to_float(live.get("temperature")),
+            forecasts=tuple(slots), provider="amap-official", official=True,
             fetched_at=datetime.now(timezone.utc).isoformat(timespec="seconds"))
 
     # ------------------------------------------------------------------ #
@@ -472,3 +500,23 @@ def _to_float(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return None if math.isnan(result) else result
+
+
+def make_amap_source(*, key: str | None = None, **kw) -> AmapSource:
+    """从配置装配高德源（U108）。
+
+    空 key → 拟人化旁路（official=False）；非空 → 官方端点（official=True，
+    镇/乡 township / 周边 POI / 官方 SLA 一并可用）。
+
+    `key=None` 时从 `Settings.amap_key`（环境变量 `AMAP_KEY`，存于 .env.*）读取。
+    这是 TourAgent 派发链路未来的**唯一装配点**——调用方不应自己 `AmapSource()`，
+    否则会绕过「官方 key 注入即切官方端点」这条不变量。
+    """
+    if key is None:
+        try:
+            from ai_butler.core.config import get_settings
+
+            key = (get_settings().amap_key or "").strip()
+        except Exception:
+            key = ""
+    return AmapSource(key=(key or "").strip(), **kw)
