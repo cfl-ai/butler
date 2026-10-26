@@ -23,6 +23,7 @@ import asyncio
 import json
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Literal, Sequence
 
@@ -45,6 +46,15 @@ class GatewayRateLimited(GatewayError):
     pass
 
 
+class ToolUnsupportedError(GatewayError):
+    """该模型/供应商**不支持 function calling**（U112）。
+
+    为什么要单独一个错误类：过去本机 `qwen2.5vl:3b` 无 tools 能力时，
+    表现是「供应商都不可用」——排查方向被指到完全相反的地方。
+    现在必须让「不支持工具」与「服务不可用」是两件事。
+    """
+
+
 # --------------------------------------------------------------------------- #
 # 数据结构
 # --------------------------------------------------------------------------- #
@@ -54,6 +64,22 @@ class ChatMessage:
     content: str
 
 
+@dataclass(frozen=True)
+class ModelToolCall:
+    """模型表达的「我要调用某个工具」（function calling 的信封，U112）。
+
+    `arguments` 保持**原始 dict**：由调度层负责校验并交给 `ToolDispatcher`。
+    网关不做业务解释 —— 它只把模型的话原样带回来，漏字改字都由它负责。
+    """
+
+    name: str
+    arguments: Mapping[str, Any] = field(default_factory=dict)
+    call_id: str = ""
+
+    def arguments_json(self) -> str:
+        return json.dumps(dict(self.arguments), ensure_ascii=False)
+
+
 @dataclass
 class ChatResult:
     text: str
@@ -61,6 +87,60 @@ class ChatResult:
     model: str
     latency_ms: int
     usage: dict[str, Any] = field(default_factory=dict)
+    #: 模型本次要求调用的工具（U112）。**空元组 = 模型没有要求调用**，
+    #: 与「不支持工具」是两回事（后者会在下发前抛 `ToolUnsupportedError`）。
+    tool_calls: tuple[ModelToolCall, ...] = ()
+
+
+def parse_openai_tool_calls(message: Mapping[str, Any]) -> tuple[ModelToolCall, ...]:
+    """解析 OpenAI 兼容协议的 `message.tool_calls`。
+
+    `arguments` 在该协议里是 **JSON 字符串**，解析失败就丢弃这一条 ——
+    宁可少一次调用，也不让半截字符串进执行层。同一函数供 deepseek 与
+    openai-compatible 复用：两个就不必各写一套，改一处即两处一致。
+    """
+    out: list[ModelToolCall] = []
+    for raw in (message.get("tool_calls") or ()):
+        if not isinstance(raw, Mapping):
+            continue
+        fn = raw.get("function") or {}
+        name = str(fn.get("name") or "").strip()
+        if not name:
+            continue
+        raw_args = fn.get("arguments")
+        try:
+            args = json.loads(raw_args) if isinstance(raw_args, str) else dict(raw_args or {})
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(args, dict):
+            continue
+        out.append(ModelToolCall(name=name, arguments=args, call_id=str(raw.get("id") or "")))
+    return tuple(out)
+
+
+def _parse_ollama_tool_calls(message: Mapping[str, Any]) -> tuple[ModelToolCall, ...]:
+    """解析 Ollama `/api/chat` 的 `message.tool_calls`。
+
+    与 OpenAI 兼容协议唯一的差别：`arguments` 这里是**已经是对象**，不是 JSON 字符串。
+    写成同一个函数靠 `isinstance` 分支也能收场，但那会让两个协议的差异藏在一句话里 ——
+    宁可两个短函数各自说清楚（这也是 OpenAI 兼容两处**共用同一个** parse 的原因）。
+    """
+    out: list[ModelToolCall] = []
+    for raw in (message.get("tool_calls") or ()):
+        if not isinstance(raw, Mapping):
+            continue
+        fn = raw.get("function") or {}
+        name = str(fn.get("name") or "").strip()
+        if not name:
+            continue
+        args = fn.get("arguments")
+        if isinstance(args, str):                  # 个别版本仍给字符串
+            try:
+                args = json.loads(args)
+            except json.JSONDecodeError:
+                continue
+        out.append(ModelToolCall(name=name, arguments=dict(args or {})))
+    return tuple(out)
 
 
 #: 澄清类别（枚举）。计划书三、P3「是否多意图冲突」+ U15 借 CLINC150 的 out-of-scope 类。
@@ -108,6 +188,30 @@ class JevDecision:
 # --------------------------------------------------------------------------- #
 class Provider:
     name: str = ""
+    #: **协议层**是否支持 function calling（U112）。模型层的收窄见 `_model_supports_tools`。
+    supports_tools: bool = False
+
+    def _model_supports_tools(self, model: str | None) -> bool:
+        """模型层是否具备工具能力。默认「协议支持即支持」。"""
+        return True
+
+    def reject_unsupported_tools(self, tools: Sequence[Mapping[str, Any]] | None,
+                                 model: str | None) -> None:
+        """下发工具清单前的一道闸：不支持就说清楚**为什么不支持**。
+
+        老教训：本机 qwen2.5vl:3b 没有 function calling 能力时，故障只在最后
+        表现为「供应商都不可用」，看不出真因。这里两级判定必须各自给出可诊断的措辞。
+        """
+        if not tools:
+            return
+        if not self.supports_tools:
+            raise ToolUnsupportedError(
+                f"供应商 {self.name!r} 未在协议层支持 function calling（U112）："
+                f"请把带工具的请求路由到支持 tools 的供应商，该 vendor 不支持工具")
+        if not self._model_supports_tools(model):
+            raise ToolUnsupportedError(
+                f"模型 {model!r}（供应商 {self.name}）不具备 function calling 能力："
+                f"请在 function_calling_models 白名单中登记具工具能力的模型后再下发工具")
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -137,8 +241,16 @@ class Provider:
 
 class OllamaProvider(Provider):
     name = "ollama"
+    #: Ollama 新版 `/api/chat` 支持 tools，但**模型**是否具备工具能力是另一回事：
+    #: 本机 qwen2.5vl:3b 明确不支持。协议支持 ≠ 模型支持，两级不能合并。
+    supports_tools = True
 
-    def _payload(self, messages, model, max_tokens, stream):
+    def _model_supports_tools(self, model: str | None) -> bool:
+        """只认白名单：本机可用的小模型大多不带工具能力，默认保守。"""
+        target = model or self.settings.ollama_model
+        return target in tuple(getattr(self.settings, "function_calling_models", ()) or ())
+
+    def _payload(self, messages, model, max_tokens, stream, tools=None):
         opts: dict[str, Any] = {}
         if max_tokens is not None:
             opts["num_predict"] = max_tokens
@@ -147,12 +259,15 @@ class OllamaProvider(Provider):
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": stream,
             **({"options": opts} if opts else {}),
+            **({"tools": [dict(t) for t in tools]} if tools else {}),
         }
 
     async def chat(self, messages, *, model=None, timeout, max_tokens=None,
-                   api_key=None, base_url=None, temperature=None) -> ChatResult:
+                   api_key=None, base_url=None, temperature=None,
+                   tools=None) -> ChatResult:
+        self.reject_unsupported_tools(tools, model)
         t0 = time.perf_counter()
-        payload = self._payload(messages, model, max_tokens, False)
+        payload = self._payload(messages, model, max_tokens, False, tools=tools)
         if temperature is not None:
             # `_payload` 只在给了 max_tokens 时才带 options，这里必须 setdefault
             payload.setdefault("options", {})["temperature"] = temperature
@@ -161,12 +276,14 @@ class OllamaProvider(Provider):
                                   json=payload)
             r.raise_for_status()
             d = r.json()
+        message = d.get("message") or {}
         return ChatResult(
-            text=d.get("message", {}).get("content", ""),
+            text=message.get("content", ""),
             provider=self.name, model=d.get("model", model or self.settings.ollama_model),
             latency_ms=int((time.perf_counter() - t0) * 1000),
             usage={"prompt_tokens": d.get("prompt_eval_count", 0),
                    "completion_tokens": d.get("eval_count", 0)},
+            tool_calls=_parse_ollama_tool_calls(message),
         )
 
     async def stream(self, messages, *, model=None, timeout, max_tokens=None,
@@ -190,9 +307,12 @@ class DeepSeekProvider(Provider):
     """OpenAI 兼容协议；同一适配可复用于其他兼容厂商（多模型兼容）。"""
 
     name = "deepseek"
+    supports_tools = True
 
     async def chat(self, messages, *, model=None, timeout, max_tokens=None,
-                   api_key=None, base_url=None, temperature=None) -> ChatResult:
+                   api_key=None, base_url=None, temperature=None,
+                   tools=None) -> ChatResult:
+        self.reject_unsupported_tools(tools, model)
         key = api_key or self.settings.deepseek_api_key
         if not key:
             raise GatewayUnavailableError("DEEPSEEK_API_KEY 未配置")
@@ -205,6 +325,8 @@ class DeepSeekProvider(Provider):
             body["max_tokens"] = max_tokens
         if temperature is not None:
             body["temperature"] = temperature
+        if tools:
+            body["tools"] = [dict(t) for t in tools]
         t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(
@@ -214,11 +336,13 @@ class DeepSeekProvider(Provider):
             )
             r.raise_for_status()
             d = r.json()
+        bundle = d["choices"][0]["message"] or {}
         return ChatResult(
-            text=d["choices"][0]["message"]["content"],
+            text=bundle.get("content") or "",
             provider=self.name, model=d.get("model", body["model"]),
             latency_ms=int((time.perf_counter() - t0) * 1000),
             usage=d.get("usage", {}),
+            tool_calls=parse_openai_tool_calls(bundle),
         )
 
     async def stream(self, messages, *, model=None, timeout, max_tokens=None,
@@ -262,6 +386,7 @@ class OpenAICompatProvider(Provider):
     """
 
     name = "openai-compatible"
+    supports_tools = True
 
     def _require(self, api_key: str | None, base_url: str | None) -> tuple[str, str]:
         if not api_key or not base_url:
@@ -271,7 +396,9 @@ class OpenAICompatProvider(Provider):
         return api_key, base_url.rstrip("/")
 
     async def chat(self, messages, *, model=None, timeout, max_tokens=None,
-                   api_key=None, base_url=None, temperature=None) -> ChatResult:
+                   api_key=None, base_url=None, temperature=None,
+                   tools=None) -> ChatResult:
+        self.reject_unsupported_tools(tools, model)
         key, base = self._require(api_key, base_url)
         if not model:
             raise GatewayUnavailableError("openai-compatible 必须显式给出 model")
@@ -284,17 +411,21 @@ class OpenAICompatProvider(Provider):
             body["max_tokens"] = max_tokens
         if temperature is not None:
             body["temperature"] = temperature
+        if tools:
+            body["tools"] = [dict(t) for t in tools]
         t0 = time.perf_counter()
         async with httpx.AsyncClient(timeout=timeout) as client:
             r = await client.post(f"{base}/chat/completions",
                                   headers={"Authorization": f"Bearer {key}"}, json=body)
             r.raise_for_status()
             d = r.json()
+        bundle = d["choices"][0]["message"] or {}
         return ChatResult(
-            text=d["choices"][0]["message"]["content"],
+            text=bundle.get("content") or "",
             provider=self.name, model=d.get("model", model),
             latency_ms=int((time.perf_counter() - t0) * 1000),
             usage=d.get("usage", {}),
+            tool_calls=parse_openai_tool_calls(bundle),
         )
 
     async def stream(self, messages, *, model=None, timeout, max_tokens=None,
@@ -386,12 +517,18 @@ class LLMGateway:
                    provider: str | None = None,
                    api_key: str | None = None,
                    base_url: str | None = None,
-                   temperature: float | None = None) -> ChatResult:
+                   temperature: float | None = None,
+                   tools: Sequence[Mapping[str, Any]] | None = None) -> ChatResult:
         """`provider` / `api_key` / `base_url` 来自 `ModelAccess.resolve()`。
 
         三者一旦显式给出，就**只走这一个供应商、不做降级**：
         用户选了"我的模型"，出故障时悄悄换到平台模型，费用与数据去向都变了 ——
         那属于"未经允许"。宁可报错让用户自己换。
+
+        `tools` 为 models 的工具清单（U112，来自 `ToolRegistry.as_openai_tools()`）。
+        带工具的请求在**不支持工具的模型上是明确失败**，不会被降级到"换个供应商
+        接着试"这条路径上：降级后的模型可能同样不支持，级联一圈最后只会抛出
+        「全部供应商不可用」—— 那正是本机 qwen2.5vl:3b 踩过的坑（真因被淹没）。
         """
         uid = self._require_user(user_id)
         # bucket 可切换：计划书三、P3 要求「Jev 调用独立配额统计」，
@@ -399,21 +536,31 @@ class LLMGateway:
         await self._check_rate(uid, bucket=rate_bucket,
                                limit=rate_limit or self.settings.llm_rate_limit_per_minute)
         errors: list[str] = []
+        tool_unsupported: list[str] = []
         for name in self._targets(provider):            # 负载均衡 / 故障降级
             provider_impl = self._provider(name)
 
             async def _invoke(p=provider_impl):
+                kwargs: dict[str, Any] = {"temperature": temperature}
+                # **只在真有工具时才加 tools 关键字**：第三方 Provider 实现（含测试替身）
+                # 不一定接受该参数 —— 不带工具的请求必须与接线前逐字一致，
+                # 否则「换个供应商实现」这件最常见的扩展行为会被无谓地打破。
+                if tools:
+                    kwargs["tools"] = tools
                 return await p.chat(messages, model=model,
                                     timeout=self.settings.llm_timeout_seconds,
                                     max_tokens=max_tokens,
-                                    api_key=api_key, base_url=base_url,
-                                    temperature=temperature)
+                                    api_key=api_key, base_url=base_url, **kwargs)
 
             for attempt in range(self.settings.llm_max_retries + 1):
                 try:
                     # 防雪崩 → 熔断 → 超时（降级见下方 CircuitOpenError 分支）
                     return await self.resilience.call(
                         f"llm.{name}", _invoke, timeout=self.settings.llm_timeout_seconds)
+                except ToolUnsupportedError as exc:     # 不支持工具：重试也没用
+                    tool_unsupported.append(str(exc))
+                    errors.append(f"{name}: {exc}")
+                    break
                 except CircuitOpenError as exc:         # 熔断打开 → 不重试，直接换供应商
                     errors.append(f"{name}: 熔断打开 {exc}")
                     break
@@ -421,6 +568,11 @@ class LLMGateway:
                     errors.append(f"{name}#{attempt}: {type(exc).__name__}: {exc}")
                     if attempt < self.settings.llm_max_retries:
                         await asyncio.sleep(0.4 * (attempt + 1))
+        # **按真因分类报错**：是「没有支持工具的供应商」，就说「没有支持工具的供应商」，
+        # 绝不说「全部供应商不可用」。真因不能被降级日志淹没 —— 这是 U112 立项的直接原因。
+        if tool_unsupported and len(tool_unsupported) >= len(errors):
+            raise ToolUnsupportedError(
+                "没有可用于 function calling 的模型供应商 → " + " | ".join(tool_unsupported))
         raise GatewayUnavailableError("全部模型供应商不可用 → " + " | ".join(errors))
 
     # ---- 流式转发 ----

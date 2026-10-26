@@ -2712,6 +2712,44 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="文档推导（P3 主状态机的装配缺口），无外部代码复用",
         code_reuse="n/a",
     ),
+    # ---- U112：Function Calling 全项目接入（2026-10-27，用户明确要求） ----
+    Decision(
+        key="U112",
+        phase="P3",
+        title="Function Calling 贯穿全项目 + 模型能力协商（大模型可更换）",
+        plan_quote="三、P3「工具统一调度、重复调用拦截、无增量终止」；"
+                   "用户明确要求「大模型可更换、function calling 要运用到整个项目中」"
+                   "——计划书未定义具体工具协议形态",
+        status=RESOLVED,
+        source="开源借鉴",
+        decided_at=_D10,
+        resolution=(
+            "**为什么立项**：全项目此前一处 function calling 都没有 —— "
+            "`infra/llm_gateway.py` 内连 tool/function 关键词都不存在，工具调用全部是"
+            "Python 内部直调（`ToolDispatcher` + `capabilities.grant`），"
+            "模型**无从**表达「我要调某个工具」。这与用户「运用到整个项目」的要求不符。\n"
+            "**协议形态**（借鉴 OpenAI Chat Completions `tools` / MCP 的工具声明惯例，"
+            "二者已是业界事实标准，MCP 现由 Linux Foundation 治理）：\n"
+            "1. `ToolSpec` 增补 `params_schema`（JSON Schema）作为**参数契约**；\n"
+            "2. `ToolRegistry.as_openai_tools()` 把注册表导出为模型可消费的 tools 数组；\n"
+            "3. 网关 `chat(..., tools=...)` 下发工具清单，`ChatResult.tool_calls` 回收模型的调用意图；\n"
+            "4. `FunctionCallLoop` 把 `tool_calls` 交给**既有** `ToolDispatcher` 执行 —— "
+            "**关键不变量**：模型发起的调用与 Python 直调走同一套护栏（权限三层求值、"
+            "U45 审批、重复拦截、无增量终止、U60 超时），function calling 不是绕过闸门的后门。\n"
+            "**能力协商（大模型可更换的落点）**：`Provider.supports_tools` + "
+            "`tool_capable_models` 白名单双层判定。本机 `qwen2.5vl:3b` **无 function calling**，"
+            "过去表现为「供应商都不可用」看不出真因；现在必须报出"
+            "`ToolUnsupportedError(provider=..., reason='model not tool-capable')`，"
+            "并把「不可用」与「未装配」区分开。\n"
+            "**稳定策略**：`function_calling_enable` 默认 False；既有链路零行为变化，"
+            "打开才生效。`max_tool_rounds` 硬上限防模型陷入调用循环。"),
+        references=("https://platform.openai.com/docs/guides/function-calling",
+                    "https://modelcontextprotocol.io/specification/latest"),
+        license_note="开源借鉴：OpenAI tools 协议为公开接口惯例；MCP 为开放标准。",
+        excluded_note="未采用任何厂商 SDK 实现；也不引入 langchain 等框架依赖 —— "
+                      "本项目的工具护栏（ToolDispatcher 权限/审批/重复拦截）已有且必须保持唯一真值源",
+        code_reuse="design_only",
+    ),
 )
 
 

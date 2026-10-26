@@ -149,6 +149,25 @@ class ToolSpec:
     #: 注意语义：超时只保证**调用方不再等待**，不保证执行体已停止——
     #  handler 若是纯计算，残留线程会在后台跑完；副作用类工具应自行幂等。
     timeout_seconds: float | None = None
+    #: 参数契约（JSON Schema / object），供 **function calling** 向模型声明入参（U112）。
+    #: None = 本工具不向模型暴露（仍是 Python 内可调的内部工具）。
+    #: 这里是「能不能被模型调用」的开关，也是参数的唯一真值源 ——
+    #: 模型看到的 schema 与执行侧的解释必须是同一份，否则必漂移（E-44 家族）。
+    params_schema: Mapping[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        if self.params_schema is not None:
+            if not isinstance(self.params_schema, Mapping):
+                raise ToolError(f"工具 {self.name!r} 的 params_schema 必须是映射")
+            # JSON Schema 对象形态是业界约定（OpenAI tools / MCP 同源）；
+            # 非 object 会让模型无从组装入参 —— 早失败早发现，别等联调。
+            if self.params_schema.get("type") != "object":
+                raise ToolError(f"工具 {self.name!r} 的 params_schema.type 必须是 'object'")
+
+    @property
+    def exposed_to_model(self) -> bool:
+        """是否向模型暴露（U112）。"""
+        return self.params_schema is not None
 
 
 class ToolRegistry:
@@ -161,7 +180,8 @@ class ToolRegistry:
                  description: str = "",
                  required: CapabilityLevel = CapabilityLevel.L2_SIDE_EFFECT,
                  sensitivity: DataSensitivity | None = None,
-                 timeout_seconds: float | None = None) -> ToolSpec:
+                 timeout_seconds: float | None = None,
+                 params_schema: Mapping[str, Any] | None = None) -> ToolSpec:
         if not name or not str(name).strip():
             raise ToolError("工具必须声明非空的 name")
         if name in self._specs:
@@ -171,9 +191,27 @@ class ToolRegistry:
         spec = ToolSpec(name=name, handler=handler, needs_user_id=needs_user_id,
                         progresses=progresses, description=description,
                         required=required, sensitivity=sensitivity,
-                        timeout_seconds=timeout_seconds)
+                        timeout_seconds=timeout_seconds,
+                        params_schema=params_schema)
         self._specs[name] = spec
         return spec
+
+    def as_openai_tools(self) -> list[dict[str, Any]]:
+        """导出 **function calling** 的工具清单（U112）。
+
+        形态对齐 OpenAI Chat Completions `tools` 数组（MCP 的工具声明同源），
+        这样换模型、换供应商都不用改这一层 —— 「大模型可更换」落在协议上，不落在代码分支上。
+
+        **只导出显式声明了 `params_schema` 的工具**：没写参数契约的工具不会被模型
+        看到。宁可少暴露，也不让模型去猜一个没有契约的工具该怎么调（没契约 = 没护栏）。
+        """
+        return [
+            {"type": "function",
+             "function": {"name": s.name,
+                          "description": s.description or s.name,
+                          "parameters": dict(s.params_schema or {})}}
+            for s in self.specs() if s.exposed_to_model
+        ]
 
     def get(self, name: str) -> ToolSpec:
         try:

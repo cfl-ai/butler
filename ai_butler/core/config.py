@@ -204,6 +204,20 @@ class Settings(BaseSettings):
     # 与 scheduler.router.DEFAULT_VERTICAL_THRESHOLD 对齐；同样**未标定**，可调数字。
     vertical_threshold: float = 0.55
 
+    # ---------- Function Calling（U112）----------
+    # 用户明确要求「大模型可更换、function calling 要运用到整个项目中」。
+    # **默认关闭**：打开后才允许把工具清单下发给模型。既有链路零行为变化 ——
+    # 未打开时，工具仍然只走 Python 直调（ToolDispatcher + capabilities.grant）。
+    function_calling_enable: bool = False
+    # 具备工具能力的模型白名单。**按模型判定，不按供应商判定**：
+    # 同一供应商下有的模型支持 function calling、有的不支持（本机 qwen2.5vl:3b 明确不支持）。
+    # 留空 = 没有模型被认定具备工具能力 → 下发工具会明确报 ToolUnsupportedError，
+    # 而不会退化成「供应商都不可用」那种看不出真因的报错。
+    function_calling_models: tuple[str, ...] = ()
+    # 单次 function calling 的最大轮次（模型→工具→模型→…）。防模型陷入调用循环；
+    # 到上限即停止并如实标注，不假装"已完成"。
+    max_tool_rounds: int = 4
+
     # ---- 账号体系（U67 / U68 / U69）----
     # 账号文件放哪：空则跟 storage_root 走，独立配置是为了让隐私数据能单独挂卷
     account_store_root: str = ""
