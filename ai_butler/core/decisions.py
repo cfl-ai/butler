@@ -2330,7 +2330,11 @@ DECISIONS: tuple[Decision, ...] = (
             "**标定先行**：阈值不是拍脑袋——用一组带标注的样本（旅游/非旅游意图）"
             "跑出分数分布，取两类分布间的最低点，写入 `tests/` 守护。\n"
             "**派发不越权**：TourAgent 的职责边界（表 11 ❌ 清单）由它自己 Declare，"
-            "L4 只回答「这像不像旅游任务」，不回答「该不该它做」。"),
+            "L4 只回答「这像不像旅游任务」，不回答「该不该它做」。\n"
+            "**诚实更正（2026-10-26）**：本条于接管期登记，当时把「已裁定要做」与"
+            "「已实现」混为一谈而标记 RESOLVED——但 `scheduler/vertical.py` 实际"
+            "从未落地（声明≠能力，E-86 家族的反例：有协议、有测试、无装配）。裁定本身"
+            "有效，实现落地推迟至 U110；U110 合入后本条方为真实闭环。"),
         references=(),
         license_note="文档推导（计划书五层路由第 4 层的落地），无外部代码复用",
         code_reuse="n/a",
@@ -2616,6 +2620,65 @@ DECISIONS: tuple[Decision, ...] = (
             "高德服务条款（QPS/配额）。"),
         references=(),
         license_note="人工授权（用户 2026-10-26 提供官方 key）；高德 Web 服务条款仍适用",
+        code_reuse="n/a",
+    ),
+    # ---- U109：高德官方 POI 检索（关键字/分类搜 + 周边搜，与 regeo 周边 POI 不重叠） ----
+    Decision(
+        key="U109",
+        phase="V1",
+        title="高德官方 POI 检索：v3/place/text（关键字/分类搜）与 v3/place/around（周边搜）",
+        plan_quote="「实时信息查询：景区开放状态、天气、交通、门票、排队、导航路线」"
+                   "（五、第二阶段表 11）；U108 实测 `regeo` 的 `extensions=all` 已带周边 POI，"
+                   "但「按关键字/分类主动搜 POI」仍是空白",
+        status=RESOLVED,
+        source="人工授权",
+        decided_at=_D10,
+        resolution=(
+            "**不重叠原则（用户指令「不重复」）**：U108 的 `regeo(extensions=all)` 已能"
+            "反查「某坐标周边有什么」，因此本项**不做第二套周边反查**，只补 regeo 缺的"
+            "两种主动检索能力：①`v3/place/text` 关键字/分类搜（给定城市+关键词+POI 类型"
+            "返回候选点）；②`v3/place/around` 周边搜（给定坐标+半径+关键词）。\n"
+            "**实现形态**（`amap.py`）：新增 `AmapPoi` 数据类（name/address/poi_type/"
+            "location/adcode/tel/distance）+ `AMAP_OFFICIAL_PLACE_TEXT_URL` / "
+            "`AMAP_OFFICIAL_PLACE_AROUND_URL` 两常量；`AmapSource.search_places("
+            "keywords, city, types)` 与 `search_places_around(longitude, latitude, "
+            "radius, keywords, types)`。**无 key 如实抛 `AmapError`**（不降级到拟人化——"
+            "官方 POI 检索端点必须 key，绕过即撞阿里风控，U101 已证不可得）。\n"
+            "**合规**：同 U108，遵守高德 QPS/配额；`official=True` 恒定。"),
+        references=(),
+        license_note="人工授权（用户 2026-10-26 提供官方 key）；高德 Web 服务条款仍适用",
+        code_reuse="n/a",
+    ),
+    # ---- U110：L4 垂类派发落地 + TourAgent 生产装配点（填 E-86） ----
+    Decision(
+        key="U110",
+        phase="P3",
+        title="L4 垂类派发落地 + TourAgent 生产装配点（填 E-86 的「有实现无装配」）",
+        plan_quote="五层路由第 4 层「垂类专用决策模型」（三、P3）；表 11 给 TourAgent 定职责"
+                   "却无派发终点；U98 裁定要做但代码未落地（声明≠能力）",
+        status=RESOLVED,
+        source="文档推导",
+        decided_at=_D10,
+        resolution=(
+            "**B1 — L4 决策器**（`scheduler/vertical.py`，新文件，落地 U98 的协议）："
+            "`VerticalDecisionModel` 实现为「关键词 + 结构特征」轻量标定器，"
+            "`predict(utterance, labels) -> (label, score) | None`；"
+            "`VerticalRegistry`（垂类键 → 元信息：display/threshold/keywords）作为"
+            "L4 的路由表；`build_vertical_model(settings, ...)` 装配并内置**标定样本守护**"
+            "（旅游/非旅游标注样本跑出分布，阈值取两类最低点，非拍脑袋）。\n"
+            "**B2 — TourAgent 生产装配点**（`verticals/tour/wiring.py` 新文件，"
+            "`build_tour_agent()`）：按项目「唯一装配点」范式注入真实端口——"
+            "collector 组合 Open-Meteo(`WeatherCollector`) + `AmapSource.regeo`；"
+            "routing 用 `OSRMRouter`（缺 key 时 `official=False` 降级并如实标注）；"
+            "把 tour 注册进 `VerticalRegistry` 使 L4 可达。`build_tour_agent()` 是"
+            "TourAgent 派发链路的唯一装配点（同 U108 的 `make_amap_source` 范式）。\n"
+            "**默认不激活 L4 进主路由**：`intent_wiring.build_intent_router` 仍只接"
+            "L1/L2/L3（U03 冻结五层顺序，不强行插入），L4 经 `VerticalRegistry` 显式"
+            "可达，待标定守护全绿再考虑接线。\n"
+            "**修 E-86**：`AmapSource`/`OSRMRouter` 此前只在 `tests/` 触达，"
+            "TourAgent 只在测试里实例化；本项把它们接进生产装配，使「机制」真正「装了电」。"),
+        references=(),
+        license_note="文档推导（计划书 P3 与表 11 的组合要求），无外部代码复用",
         code_reuse="n/a",
     ),
 )

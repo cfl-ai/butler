@@ -479,3 +479,147 @@ def test_live_official_where_and_weather():
     assert weather.temperature_c is not None
     assert weather.weather_name
     assert len(weather.forecasts) >= 1
+
+
+# --------------------------------------------------------------------------- #
+#  POI 检索（U109）：官方 Web 服务专属，与 regeo 顺带周边 POI 不重叠
+# --------------------------------------------------------------------------- #
+_POI_TEXT_PAYLOAD = {
+    "status": "1", "count": "2",
+    "pois": [
+        {"name": "故宫博物院", "address": "景山前街4号", "type": "风景名胜;公园广场;",
+         "location": "116.397128,39.918058", "adcode": "110101",
+         "tel": "010-85007421", "distance": ""},
+        {"name": "天安门广场", "address": "长安街", "type": "风景名胜;广场;",
+         "location": "116.397499,39.903179", "adcode": "110101",
+         "tel": "", "distance": ""},
+    ],
+}
+
+_POI_AROUND_PAYLOAD = {
+    "status": "1", "count": "1",
+    "pois": [
+        {"name": "王府井百货", "address": "王府井大街255号", "type": "购物;百货商场;",
+         "location": "116.410886,39.914889", "adcode": "110101",
+         "tel": "010-65228888", "distance": "320"},
+    ],
+}
+
+
+class _PoiRouter:
+    """记录每次 POI 请求的参数与 URL（用于验证端点与参数形态）。"""
+
+    def __init__(self, payload) -> None:
+        self.payload = payload
+        self.params: list[dict] = []
+        self.urls: list[str] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.urls.append(str(request.url))
+        self.params.append(dict(request.url.params))
+        return httpx.Response(200, json=self.payload)
+
+
+def test_search_places_sends_keywords_city_types_and_hits_text_endpoint():
+    """v3/place/text：keywords/city/types/key 都要上参数，且打的是 text 端点。"""
+    router = _PoiRouter(_POI_TEXT_PAYLOAD)
+    src = AmapSource(key="k", transport=httpx.MockTransport(router))
+    pois = asyncio.run(src.search_places(keywords="故宫", city="北京",
+                                        types="风景名胜", offset=10, page=2))
+    assert len(pois) == 2
+    p = router.params[0]
+    assert p["keywords"] == "故宫"
+    assert p["city"] == "北京"
+    assert p["types"] == "风景名胜"
+    assert p["key"] == "k"
+    assert p["offset"] == "10"
+    assert p["page"] == "2"
+    assert "place/text" in router.urls[0]
+
+
+def test_search_places_parses_all_fields_and_marks_official():
+    """解析出 name/address/poi_type/location/adcode/tel，并如实 official=True。"""
+    src = AmapSource(key="k", transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json=_POI_TEXT_PAYLOAD)))
+    pois = asyncio.run(src.search_places(keywords="故宫"))
+    first = pois[0]
+    assert first.name == "故宫博物院"
+    assert first.address == "景山前街4号"
+    assert first.poi_type == "风景名胜;公园广场;"
+    assert first.location == pytest.approx((116.397128, 39.918058))
+    assert first.adcode == "110101"
+    assert first.tel == "010-85007421"
+    assert first.distance_m is None          # text 检索不给距离
+    assert first.official is True
+    assert first.provider == "amap-official"
+    assert "故宫博物院" in first.one_line()
+
+
+def test_search_places_requires_key():
+    """无 key 如实抛错——不降级、不伪装（POI 端点必须 key）。"""
+    async def go():
+        return await AmapSource().search_places(keywords="故宫")
+    with pytest.raises(AmapError, match="key"):
+        asyncio.run(go())
+
+
+def test_search_places_rejects_empty_keywords():
+    async def go():
+        return await AmapSource(key="k").search_places(keywords="   ")
+    with pytest.raises(AmapError, match="keywords"):
+        asyncio.run(go())
+
+
+def test_search_places_status_failure_surfaces_info():
+    async def go():
+        return await AmapSource(key="k", transport=httpx.MockTransport(
+            lambda r: httpx.Response(200, json={"status": "0",
+                                                "info": "INVALID_USER_KEY"})
+        )).search_places(keywords="故宫")
+    with pytest.raises(AmapError, match="INVALID_USER_KEY"):
+        asyncio.run(go())
+
+
+def test_search_places_empty_result_is_empty_tuple():
+    """搜不到返回空元组，不是 None 也不是异常（如实反映「没有」）。"""
+    pois = asyncio.run(AmapSource(key="k", transport=httpx.MockTransport(
+        lambda r: httpx.Response(200, json={"status": "1", "pois": []})
+    )).search_places(keywords="不存在的地名xyz"))
+    assert pois == ()
+
+
+def test_search_places_around_sends_location_radius_and_parses_distance():
+    """v3/place/around：location=经度,纬度 + radius，并能解析周边距离。"""
+    router = _PoiRouter(_POI_AROUND_PAYLOAD)
+    src = AmapSource(key="k", transport=httpx.MockTransport(router))
+    pois = asyncio.run(src.search_places_around(longitude=116.4, latitude=39.91,
+                                               radius=500, keywords="商场"))
+    assert len(pois) == 1
+    poi = pois[0]
+    assert poi.name == "王府井百货"
+    assert poi.distance_m == pytest.approx(320.0)
+    assert poi.location == pytest.approx((116.410886, 39.914889))
+    p = router.params[0]
+    assert p["location"] == "116.400000,39.910000"
+    assert p["radius"] == "500"
+    assert p["keywords"] == "商场"
+    assert "place/around" in router.urls[0]
+
+
+def test_search_places_around_requires_key():
+    async def go():
+        return await AmapSource().search_places_around(longitude=116.4,
+                                                      latitude=39.91)
+    with pytest.raises(AmapError, match="key"):
+        asyncio.run(go())
+
+
+@pytest.mark.skipif(not LIVE_OFFICIAL,
+                    reason="未设置 LIVE_AMAP=1 与 AMAP_KEY（官方 POI 冒烟）")
+def test_live_search_places_text():
+    """真 key 官方 POI 冒烟：关键字搜「故宫」应至少命中一条。"""
+    pois = asyncio.run(make_amap_source().search_places(keywords="故宫",
+                                                        city="北京"))
+    assert len(pois) >= 1
+    assert any("故宫" in p.name for p in pois)
+    assert all(p.official is True for p in pois)

@@ -25,6 +25,9 @@
 - 天气：以 adcode 查询，返回 `report_time`（高德服务器时间）+ `live`
   实测 + 逐时段预报。这就是「天气在该地图事实之上实时刷新」的接法：
   先定位拿到 adcode，再用 adcode 取天气，两步串成一条链。
+- POI 检索（**官方 key 专属**）：`search_places`（v3/place/text 关键字/分类搜）
+  与 `search_places_around`（v3/place/around 周边搜）。这是 regeo 顺带周边 POI
+  之外的「主动检索」能力，需 key，无 key 照实抛错，不降级。
 
 **坐标基准**：高德用 GCJ-02。进来是 WGS-84 的（设备 GPS）要先过
 `datum.wgs84_to_gcj02`，否则点位偏移数百米。
@@ -47,9 +50,12 @@ __all__ = [
     "AMAP_WEATHER_URL",
     "AMAP_OFFICIAL_REGEO_URL",
     "AMAP_OFFICIAL_WEATHER_URL",
+    "AMAP_OFFICIAL_PLACE_TEXT_URL",
+    "AMAP_OFFICIAL_PLACE_AROUND_URL",
     "AmapError",
     "AmapForecastSlot",
     "AmapPlace",
+    "AmapPoi",
     "AmapSource",
     "AmapWeather",
     "Road",
@@ -62,6 +68,9 @@ AMAP_WEATHER_URL = "https://www.amap.com/service/weather"
 #: 官方 Web 服务端点（需 key；有 key 时优先）
 AMAP_OFFICIAL_REGEO_URL = "https://restapi.amap.com/v3/geocode/regeo"
 AMAP_OFFICIAL_WEATHER_URL = "https://restapi.amap.com/v3/weather/weatherInfo"
+#: 官方 POI 检索端点（需 key；关键字/分类搜与周边搜）——拟人化旁路撞阿里风控，不可用
+AMAP_OFFICIAL_PLACE_TEXT_URL = "https://restapi.amap.com/v3/place/text"
+AMAP_OFFICIAL_PLACE_AROUND_URL = "https://restapi.amap.com/v3/place/around"
 
 _BROWSER_HEADERS = {
     "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -172,6 +181,46 @@ class AmapPlace:
         road = self.nearest_road
         road_text = f"，最近道路 {road.name}（{road.distance_m:.0f}m）" if road else ""
         return f"{where}{road_text}"
+
+
+@dataclass(frozen=True)
+class AmapPoi:
+    """一个 POI（兴趣点）主动检索结果（与 `AmapPlace` 逆地理结果区分开）。
+
+    来自 `v3/place/text`（关键字/分类搜）或 `v3/place/around`（周边搜），
+    **官方 Web 服务专属**：拟人化旁路撞阿里风控，POI 检索不可用（U101），
+    故本结构 `official` 恒定 True，无 key 时根本不会产出。
+    """
+
+    name: str
+    address: str = ""
+    #: 高德分类串，如 "餐饮服务;中餐厅;特色餐厅"
+    poi_type: str = ""
+    #: (经度, 纬度) GCJ-02；解析不出就 None，不当成 (0,0)
+    location: tuple[float, float] | None = None
+    adcode: str = ""
+    tel: str = ""
+    #: 周边搜时相对查询点的距离（米）；关键字搜时为 None
+    distance_m: float | None = None
+    provider: str = "amap-official"
+    official: bool = True
+    fetched_at: str = ""
+
+    def as_payload(self) -> dict[str, Any]:
+        lon, lat = (self.location or (None, None))
+        return {
+            "name": self.name, "address": self.address, "poi_type": self.poi_type,
+            "longitude": lon, "latitude": lat, "adcode": self.adcode,
+            "tel": self.tel, "distance_m": self.distance_m,
+            "provider": self.provider, "official": self.official,
+            "datum": "GCJ-02",
+            "fetched_at": self.fetched_at,
+        }
+
+    def one_line(self) -> str:
+        """「名字 +（距离）+ 地址 + 类型」的一句话答案。"""
+        dist = (f"（{self.distance_m:.0f}m）" if self.distance_m is not None else "")
+        return f"{self.name}{dist} — {self.address or '地址未知'}（{self.poi_type or '类型未知'}）"
 
 
 @dataclass(frozen=True)
@@ -470,6 +519,86 @@ class AmapSource:
         return place, weather
 
     # ------------------------------------------------------------------ #
+    #  POI 检索（官方 Web 服务，需 key；与 regeo 顺带周边 POI 不重叠：主动搜）
+    # ------------------------------------------------------------------ #
+    async def search_places(self, *, keywords: str, city: str = "",
+                           types: str = "", offset: int = 25,
+                           page: int = 1) -> tuple[AmapPoi, ...]:
+        """关键字/分类主动搜 POI（v3/place/text）。
+
+        与 `regeo(extensions=all)` 顺带列出的周边 POI 是两种用法——本方法是
+        「按关键字或分类主动找点」，可加城市过滤、分页；regeo 只是逆地理时
+        顺手给的邻近点列表，无法按关键字/分类检索。两处能力不重叠。
+
+        **官方 Web 服务专属**：无 key 如实抛 `AmapError`，不降级到拟人化
+        （POI 检索端点必须 key，绕过即撞阿里风控，U101 已证不可得）。
+        """
+        if not self._key:
+            raise AmapError("POI 检索需要高德官方 key：无 key 无法检索（不降级、不伪装）")
+        kw = (keywords or "").strip()
+        if not kw:
+            raise AmapError("keywords 为空：POI 检索至少要有关键字或分类")
+        params: dict[str, Any] = {
+            "key": self._key, "keywords": kw,
+            "offset": max(1, min(int(offset), 25)), "page": max(1, int(page)),
+        }
+        city_v = (city or "").strip()
+        if city_v:
+            params["city"] = city_v
+        types_v = (types or "").strip()
+        if types_v:
+            params["types"] = types_v
+        data = await self._get(AMAP_OFFICIAL_PLACE_TEXT_URL, params)
+        return self._parse_pois(data)
+
+    async def search_places_around(self, *, longitude: float, latitude: float,
+                                   radius: float = 1000, keywords: str = "",
+                                   types: str = "") -> tuple[AmapPoi, ...]:
+        """周边搜 POI（v3/place/around）：给定坐标 + 半径 + 可选关键字/分类。
+
+        这是「主动按半径周边搜」，与 `regeo(extensions=all)` 顺带列出的周边 POI
+        是两种用法——前者可加关键字/分类/半径过滤（找「我 1km 内的加油站」），
+        后者只是逆地理顺手列邻近点，无法过滤。**官方 Web 服务专属**：无 key
+        如实抛 `AmapError`。
+        """
+        if not self._key:
+            raise AmapError("POI 检索需要高德官方 key：无 key 无法检索（不降级、不伪装）")
+        params: dict[str, Any] = {
+            "key": self._key,
+            "location": f"{longitude:.6f},{latitude:.6f}",
+            "radius": max(1, int(radius)),
+        }
+        kw = (keywords or "").strip()
+        if kw:
+            params["keywords"] = kw
+        types_v = (types or "").strip()
+        if types_v:
+            params["types"] = types_v
+        data = await self._get(AMAP_OFFICIAL_PLACE_AROUND_URL, params)
+        return self._parse_pois(data)
+
+    def _parse_pois(self, data: Mapping[str, Any]) -> tuple[AmapPoi, ...]:
+        if not isinstance(data, dict) or str(data.get("status")) != "1":
+            info = data.get("info") if isinstance(data, dict) else data
+            raise AmapError(f"高德 POI 检索失败：{info or data}")
+        pois_raw = data.get("pois") or []
+        fetched = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        out: list[AmapPoi] = []
+        for p in pois_raw:
+            dist = _to_float(p.get("distance"))
+            out.append(AmapPoi(
+                name=str(p.get("name") or ""),
+                address=str(p.get("address") or ""),
+                poi_type=str(p.get("type") or ""),
+                location=_split_location(p.get("location")),
+                adcode=str(p.get("adcode") or ""),
+                tel=str(p.get("tel") or ""),
+                distance_m=dist,
+                provider="amap-official", official=True, fetched_at=fetched,
+            ))
+        return tuple(out)
+
+    # ------------------------------------------------------------------ #
     async def _get(self, url: str, params: Mapping[str, Any]) -> Mapping[str, Any]:
         try:
             async with httpx.AsyncClient(timeout=self._timeout,
@@ -486,6 +615,19 @@ class AmapSource:
         if not isinstance(payload, dict):
             raise AmapError(f"高德返回结构异常：{type(payload).__name__}")
         return payload
+
+
+def _split_location(value: Any) -> tuple[float, float] | None:
+    """把高德 "经度,纬度" 字符串拆成 (lon, lat)；拆不出就 None，不当成 (0,0)。"""
+    if not value:
+        return None
+    parts = str(value).split(",")
+    if len(parts) != 2:
+        return None
+    try:
+        return (float(parts[0]), float(parts[1]))
+    except (TypeError, ValueError):
+        return None
 
 
 def _to_float(value: Any) -> float | None:
