@@ -105,7 +105,9 @@ def test_p9_decisions_are_registered_and_resolved():
     # 但必须逐条点名：安静地多出一条 PENDING，等于有人在偷偷记假账。
     # U111 = P3 主状态机（SceneScheduler）没有生产装配点，HTTP 入口形态计划书未定义，
     #        裁定「不擅自新增 API」之后仍待裁定入口语义 —— 详见 decisions.get("U111")。
-    assert {d.key for d in decisions.pending()} == {"U111"}, decisions.pending()
+    # U116 = 常规入口界面形态（用户裁定「dsh 形态的 Web 对话页」），后端接线已落地，
+    #        页面本身未实现 —— 详见 decisions.get("U116")。
+    assert {d.key for d in decisions.pending()} == {"U111", "U116"}, decisions.pending()
 
 
 # ============================== 脱敏（U30 / 三、P9）============================== #

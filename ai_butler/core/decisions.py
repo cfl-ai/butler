@@ -68,6 +68,8 @@ _D8 = "2026-10-25"
 #: （同日第五批：端到端接通——「继续入口往下推，以本地这台机器作为有权改源码」）
 _D9 = "2026-10-25"
 _D10 = "2026-10-26"
+#: U115 Wiki 编译流水线与 wiki_digest 的生产装配（用户追问「llm wiki 是否跑通」后核实并补上）
+_D27 = "2026-10-27"
 
 DECISIONS: tuple[Decision, ...] = (
     Decision(
@@ -2816,6 +2818,14 @@ DECISIONS: tuple[Decision, ...] = (
             "所以接通层必须装在调度器上：`function_calling_enable=True` 且装了网关时，"
             "分发前先跑离散单元的回路，结论落进 State 的 `intake` 通道并交给下游 Agent；"
             "开关关闭或没装网关时**整层不存在**（不写空壳冒充「处理过」）。\n"
+            "**入口侧第二个装配点**：`/api/chat/stream` 走的是 `ChatOrchestrator` 而非主状态机，"
+            "所以对话入口单独承接一层（`scheduler/chat_intake.py:answer_with_tools`）："
+            "复用**同一个回路与同一套分发器语义**，但每次提问新建 `ToolDispatcher` —— "
+            "调度器带本次任务的调用计数与无增量判定，而 `ChatOrchestrator` 是无状态、"
+            "并发复用的，共享实例会让不同用户的计数互相污染。装配点收在 "
+            "`app.build_entry_tool_answer`；**开关关闭时返回 None**（该路径在生产里"
+            "根本不存在，而不是「装了但没开」）。事件顺序固定 `tools` → `chunk` → `done`："
+            "过程先于答案，端侧才能显示这次调了哪些工具。\n"
             "**接线纪律：两套词表不许混用**（E-107）。路由给的意图标签是 `DispatchPlan` 的"
             "分派名（`book_hotel`），`assign()` 要的是 `QueryCategory`（`procedure`）。"
             "把分派名当分类用，查表会**静默全空**：每个单元都变成 `unassigned`，"
@@ -2837,6 +2847,73 @@ DECISIONS: tuple[Decision, ...] = (
             "本机 `qwen2.5vl:3b` 属后者，过去只表现为「供应商都不可用」。"),
         references=(),
         license_note="文档推导（P3 分发路由 + P4 职责边界的组合要求），无外部代码复用",
+        code_reuse="n/a",
+    ),
+    # ---- U115：Wiki 编译流水线与 wiki_digest 的生产装配（2026-10-27） ----
+    Decision(
+        key="U115",
+        phase="P3",
+        title="Agent-Wiki 编译流水线与 wiki_digest 接入生产链路（编译时机/缓存/注入）",
+        plan_quote="八、wiki_compile_auto_run = true；"
+                   "三、P0-1「提供编译流水线，输入 Markdown 页面输出机器可读缓存」；"
+                   "三、P3「下发任务携带 user_id、wiki_digest」；"
+                   "计划书未定义编译的触发时机、缓存策略与 digest 注入格式",
+        status=RESOLVED,
+        source="文档推导",
+        decided_at=_D27,
+        resolution=(
+            "**发现的缺口**：`compiler.py` / `workspace.py` 早就有实现、有 19 项守护，"
+            "但生产里**没有一个调用点** —— `WikiCompiler` 只在 `scripts/smoke_p0.py` 里被构造过。"
+            "于是 `wiki_compile_auto_run=true` 是空转的：`pages.json` / `claims.jsonl` / "
+            "`agent-digest.json` 在生产里从不生成，计划书三、P3 要求的 State 必填字段 "
+            "`wiki_digest` 也从没人产出。机制在、链路空（E-86 的老形状）。\n"
+            "**装配点**（`agent_wiki/wiring.py`）：\n"
+            "1. `build_wiki_store(settings)` —— 存储唯一装配点；\n"
+            "2. `compile_on_startup(settings)` —— 启动时编译**公共 Workspace**；"
+            "失败只记录不阻断启动。**只编译公共库**：启动时遍历所有账号的私有 Vault "
+            "既慢又踩行级隔离边界；\n"
+            "3. `WikiDigestProvider(user_id)` —— 合并「公共 Workspace + 本人 Vault」的声明，"
+            "产出受 `wiki_max_digest_size` 约束的 digest。访客（user_id 为空）只读公共域。\n"
+            "**缓存**：每次提问都重编译是不可接受的。按各类型子目录的 `mtime_ns` 组成签名，"
+            "签名不变就复用上次 digest（页面写在 `<type>/*.md` 下，父目录 mtime 不会跟着变，"
+            "所以签名必须取到类型子目录这一层）。\n"
+            "**注入**（`retrieval/chat.py`）：digest 进两处 —— `plan` 事件（第一屏就要能显示"
+            "「带了几条已知事实」）与提示词的【已知事实】段。位置必须在【资料】**之前**且注明"
+            "「编译自知识库、可能过期，具体数值以资料为准」：否则模型会把编译缓存当证据引用，"
+            "把过期声明说成事实。digest 为空时整段消失，**不留占位**（占位会被当成一条事实）。\n"
+            "**如实口径**：未装配、读失败、库为空三种情况都以 `notes` 说明写清，"
+            "不混成一句「没有已知事实」—— 那会把「没接上」伪装成「本来就没有」。"),
+        references=(),
+        license_note="文档推导（计划书八的 auto_run 开关 + 三、P3 的 wiki_digest 契约），无外部代码复用",
+        code_reuse="n/a",
+    ),
+    # ---- U116：常规入口界面形态（用户裁定 2026-10-27，实现未开始） ----
+    Decision(
+        key="U116",
+        phase="P7",
+        title="常规入口界面采用带过程面板的 Web 对话页（dsh 形态），与计划书「纯客户端、非网页」并存",
+        plan_quote="三、P7「搭建独立手机 App 底层框架（纯客户端、非网页）」；"
+                   "用户 2026-10-27 明确要求「常规入口界面采取 dsh 界面的模式」，"
+                   "并在两个选项中选定「新增 Web 对话页」——计划书未定义该形态",
+        status=PENDING,
+        source="人工授权",
+        decided_at=_D27,
+        resolution=(
+            "**用户裁定**（2026-10-27，选项确认）：「常规入口界面采取 dsh 界面的模式」，"
+            "落点选「新增 Web 对话页」：左边会话列表、中间对话流、右边过程面板，"
+            "把 `plan` / `tools` / `notes` 这些已有事件渲染成可见步骤。\n"
+            "**与计划书的关系**：计划书三、P7 明写「纯客户端、非网页」，指的是**移动端技术栈**；"
+            "本项新增的 Web 页是**常规入口的另一种形态**，不替代 P7 的 App。"
+            "两者共用同一套后端接口（`/api/chat/stream`），不复制业务逻辑。\n"
+            "**为什么登记为 PENDING**：入口形态是产品决策，配套的后端接线"
+            "（wiki digest 注入、`tools` 过程事件）已在 U114/U115 落地并有守护，"
+            "但**页面本身尚未实现**。按铁律不写成「已交付」——"
+            "声明与能力要能对上，页面没做就是没做。\n"
+            "**实现待办**：`/` 静态页（单文件，无构建链）；消费 SSE 的 `plan` / `tools` / "
+            "`chunk` / `revise` / `clarify` / `done`；过程面板只读展示，不参与决策；"
+            "移动端 `chat_page` 保持现状（未知事件类型已被 `default: break` 吃掉，不受影响）。"),
+        references=(),
+        license_note="人工授权（用户裁定入口形态），无外部代码复用",
         code_reuse="n/a",
     ),
 )

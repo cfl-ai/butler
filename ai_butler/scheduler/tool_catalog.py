@@ -37,6 +37,22 @@ def _truncate(text: str, limit: int = HIT_TEXT_MAX_CHARS) -> str:
     return text if len(text) <= limit else text[:limit] + "…（已截断）"
 
 
+def _resolve_service(candidate: Any) -> Any:
+    """把「服务本体」或「返回服务的零参函数」统一成服务本体。
+
+    线上检索是**懒装配**的（`SearchWiring.service()` 首次调用才建向量库，
+    缺权重时抛 `SearchUnavailable`）。启动时强建会把「模型没下载」升级成
+    「服务起不来」。所以允许传工厂：真正用到工具时才建，失败只影响那一次工具调用。
+    """
+    if candidate is None:
+        return None
+    if hasattr(candidate, "search"):
+        return candidate
+    if callable(candidate):
+        return candidate()
+    raise TypeError(f"search_service 既不是服务也不是工厂：{type(candidate)!r}")
+
+
 def build_tool_registry(*, search_service: Any = None, wiki_store: Any = None) -> ToolRegistry:
     """装配真实工具清单。**唯一装配点**。
 
@@ -55,7 +71,7 @@ def build_tool_registry(*, search_service: Any = None, wiki_store: Any = None) -
                 limit = max(1, min(int(top_k), MAX_HITS))
             except (TypeError, ValueError):
                 limit = 5
-            resp = search_service.search(q, user_id=user_id, top_k=limit)
+            resp = _resolve_service(search_service).search(q, user_id=user_id, top_k=limit)
             hits = [{"doc_id": h.doc_id, "text": _truncate(h.text),
                      "score": round(float(h.score), 4),
                      "evidence_ids": list(h.evidence_ids)}

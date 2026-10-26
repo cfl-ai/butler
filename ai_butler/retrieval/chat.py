@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Callable, Protocol, Sequence
+from typing import Any, AsyncIterator, Callable, Mapping, Protocol, Sequence
 
 from ai_butler.core import access
 from ai_butler.core.input_guard import InputGuardError
@@ -129,7 +129,9 @@ class ChatOrchestrator:
                  context_manager: ContextManager | None = None,
                  history_enable: bool = True,
                  intent_router: IntentRouter | None = None,
-                 intent_labels: Sequence[str] | None = None) -> None:
+                 intent_labels: Sequence[str] | None = None,
+                 wiki_digest: Callable[[str], Any] | None = None,
+                 tool_answer: Callable[..., Any] | None = None) -> None:
         self.gateway = gateway
         self.search = search
         self.top_k = top_k
@@ -143,6 +145,10 @@ class ChatOrchestrator:
         #: U74：五层意图路由。None 表示没接（会如实记账，不假装「判不出」）。
         self.intent_router = intent_router
         self.intent_labels = tuple(intent_labels or INTENT_LABELS_FROM_TAXONOMY)
+        #: U115：wiki 编译产物的注入源。None = 没装（会如实记账，不假装「没有已知事实」）。
+        self.wiki_digest = wiki_digest
+        #: U114：对话入口的 function calling 承接层（异步可调用）。None = 未装。
+        self.tool_answer = tool_answer
 
     # ---------------- 上下文（U73） ----------------
     def _history(self, user_id: str, conversation_id: str | None,
@@ -255,16 +261,35 @@ class ChatOrchestrator:
             return [], f"检索失败（{type(exc).__name__}: {exc}）：本次回答未引用任何资料"
 
     @staticmethod
-    def _render_prompt(query: str, hits: Sequence[dict], history: str = "") -> str:
-        """拼提示词。**顺序固定**：历史 → 资料 → 当前问题。
+    def _render_prompt(query: str, hits: Sequence[dict], history: str = "",
+                       digest: Mapping[str, Any] | None = None) -> str:
+        """拼提示词。**顺序固定**：历史 → 已知事实 → 资料 → 当前问题。
 
         历史放在资料之前，是因为它只负责消解指代（「第二个」指什么），
         权威性低于资料；放在后面会让模型把历史当最近证据来引用。
         历史为空时整段消失，不留「（无历史）」占位 —— 占位会被当成一条事实。
+
+        「已知事实」是 wiki 编译产出的高置信声明（U115）。它排在**资料之前**、
+        并明确标注「编译自知识库、可能已过期」—— 让模型把它当先验而非证据，
+        具体参数仍以 `[E*]` 资料为准。digest 为空时整段消失（同上：不留占位）。
         """
         blocks: list[str] = []
         if history.strip():
             blocks.append(f"{_HISTORY_HEAD}\n{history.strip()}")
+        claims = list((digest or {}).get("claims") or ())
+        if claims:
+            lines = []
+            for row in claims:
+                conf = row.get("confidence")
+                conf_text = f"{float(conf):.2f}" if isinstance(conf, (int, float)) else "未知"
+                lines.append(
+                    f"- {row.get('claim_id')}：{row.get('subject_id') or '—'}"
+                    f" → {row.get('object_id') or '—'}"
+                    f"（状态 {row.get('status') or '—'}，置信 {conf_text}）")
+            tail = "；已按体积裁剪" if digest and digest.get("truncated") else ""
+            blocks.append(
+                "【已知事实】编译自 Agent-Wiki 的既有声明（可能过期，"
+                f"具体数值以【资料】为准{tail}）\n" + "\n".join(lines))
         if not hits:
             blocks.append("【资料】\n（无）")
         else:
@@ -293,6 +318,27 @@ class ChatOrchestrator:
 
     def _can_speak(self, tier: access.AccessTier) -> bool:
         return access.authorize(tier, access.Capability.VOICE_OUTPUT).allowed
+
+    def _wiki(self, user_id: str, tier: access.AccessTier
+              ) -> tuple[dict[str, Any], str]:
+        """取注入对话的 `wiki_digest`。返回 `(digest, 说明)`。
+
+        **访客只给公共 Workspace 的声明**（计划书三、P2：私有 Vault 需登录，
+        且不得加载他人私有页面）。没装配、读失败、库为空都**返回说明**：
+        「没有已知事实」与「Wiki 没接上」是两件事，混在一起就再也查不出来。
+        """
+        if self.wiki_digest is None:
+            return {}, "Wiki 未装配：本次回答未注入已知事实"
+        uid = user_id if tier is access.AccessTier.MEMBER else ""
+        try:
+            snapshot = self.wiki_digest(uid)
+        except Exception as exc:                  # noqa: BLE001 —— 取事实失败不阻断回答
+            return {}, f"Wiki 事实不可用（{type(exc).__name__}）：本次未注入已知事实"
+        digest = dict(getattr(snapshot, "digest", {}) or {})
+        note = str(getattr(snapshot, "note", "") or "")
+        if not digest.get("claims") and not note:
+            note = "Wiki 中没有可用声明：本次未注入已知事实"
+        return digest, note
 
     def _model_kwargs(self, user_id: str) -> dict[str, str]:
         """按用户解析出本次调用要用的模型与凭据（U70）。
@@ -373,6 +419,16 @@ class ChatOrchestrator:
 
         plan_payload = retrieval_plan.as_dict()
         plan_payload["intent"] = self._intent_view(intent_decision, intent_note)
+        # 已知事实（U115）：先取 digest 再发 plan，端侧才能在第一屏就显示
+        # 「这次带了 N 条已知事实」——事后补发的事件，用户已经看过答案了。
+        digest, wiki_note = self._wiki(user_id, resolved_tier)
+        early_notes: list[str] = [wiki_note] if wiki_note else []
+        plan_payload["wiki"] = {
+            "claims": len(digest.get("claims") or ()),
+            "truncated": bool(digest.get("truncated")),
+            "scopes": list(digest.get("scopes") or ()),
+            "wired": self.wiki_digest is not None,
+        }
         yield ChatEvent("plan", data=plan_payload)
 
         # 多意图：计划书要求「不自动选择优先级，必须向用户确认」（JEV-003）
@@ -391,6 +447,55 @@ class ChatOrchestrator:
                                           "conversation_id": conversation_id})
             return
 
+        # ---- function calling 回路（U114/U115 的入口落点）----
+        # 装配了才走；没装配 / 开关关闭 / 模型无工具能力 / 回路答不出，
+        # 一律**安静退回**下面的常规链路，并把原因带进 notes。
+        # 为什么在检索之前：回路自己会用工具取数，先检索一遍再让它取一遍是双倍开销。
+        model_kwargs: dict[str, Any] | None = None
+        if self.tool_answer is not None:
+            try:
+                model_kwargs = self._model_kwargs(user_id)
+            except ModelAccessError as exc:
+                yield ChatEvent("error", text=exc.message, data={"code": exc.code})
+                return
+            try:
+                tool_outcome = await self.tool_answer(
+                    user_id=user_id, utterance=query,
+                    intent_label=intent_decision.label if intent_decision else "",
+                    model_kwargs=model_kwargs)
+            except Exception as exc:              # noqa: BLE001 —— 回路故障不阻断回答
+                early_notes.append(f"工具回路失败（{type(exc).__name__}）：已退回常规问答")
+                tool_outcome = None
+            if tool_outcome is not None and getattr(tool_outcome, "ran", False):
+                tool_text = getattr(tool_outcome, "text", "") or ""
+                tool_payload = tool_outcome.report.as_dict()
+                # 工具过程先发，答案后发：端侧要能先显示「调了哪些工具」，
+                # 而不是等答案出来了才补过程（那样过程就只是装饰）。
+                yield ChatEvent("tools", data=tool_payload)
+                if tool_text.strip():
+                    remember_note = self._remember(
+                        user_id, conversation_id, question=query, answer=tool_text,
+                        category=retrieval_plan.category.value)
+                    tool_notes = (list(retrieval_plan.notes) + intent_notes + early_notes
+                                  + ([remember_note] if remember_note else []))
+                    yield ChatEvent("chunk", text=tool_text,
+                                    speech=tool_text if self._can_speak(resolved_tier) else "")
+                    yield ChatEvent("done", data={
+                        "category": retrieval_plan.category.value,
+                        "source": "function_call",
+                        "units": tool_payload,
+                        "intent_layer": intent_decision.layer if intent_decision else None,
+                        "intent_label": intent_decision.label if intent_decision else None,
+                        "notes": tool_notes,
+                        "history": bool(history.strip()),
+                        "conversation_id": conversation_id})
+                    return
+                early_notes.append("工具回路未产出答案：已退回常规问答")
+            else:
+                skipped = getattr(tool_outcome, "skipped", "") if tool_outcome else ""
+                if skipped:
+                    early_notes.append(skipped)
+
         # 闲聊不检索：检索只会捞出无关条文，浪费一次检索又污染上下文
         skip_retrieval = retrieval_plan.category is QueryCategory.SMALL_TALK
         search_text, expansion = self._search_text(query, last_question)
@@ -398,7 +503,7 @@ class ChatOrchestrator:
             self._retrieve(search_text,
                            user_id if resolved_tier is access.AccessTier.MEMBER else None)
 
-        notes = list(retrieval_plan.notes) + intent_notes
+        notes = list(retrieval_plan.notes) + intent_notes + early_notes
         if degraded:
             notes.append(degraded)
         if expansion:
@@ -429,16 +534,17 @@ class ChatOrchestrator:
             return
 
         messages = [ChatMessage("system", _SYSTEM),
-                    ChatMessage("user", self._render_prompt(query, hits, history))]
+                    ChatMessage("user", self._render_prompt(query, hits, history, digest))]
 
-        try:
-            model_kwargs = self._model_kwargs(user_id)
-        except ModelAccessError as exc:
-            # 额度用完 / 凭据缺失 / 归属不符，都在这里变成**可读的错误事件**。
-            # 不退化成"随便找个模型回答"：那等于替用户改了选择（U70）。
-            yield ChatEvent("error", text=exc.message,
-                            data={"code": exc.code})
-            return
+        if model_kwargs is None:
+            try:
+                model_kwargs = self._model_kwargs(user_id)
+            except ModelAccessError as exc:
+                # 额度用完 / 凭据缺失 / 归属不符，都在这里变成**可读的错误事件**。
+                # 不退化成"随便找个模型回答"：那等于替用户改了选择（U70）。
+                yield ChatEvent("error", text=exc.message,
+                                data={"code": exc.code})
+                return
 
         collected: list[str] = []
         try:
@@ -508,6 +614,8 @@ class ChatOrchestrator:
             "intent_layer": intent_decision.layer if intent_decision else None,
             "intent_label": intent_decision.label if intent_decision else None,
             "intent_wired": self.intent_router is not None,
+            "wiki": plan_payload["wiki"],
+            "tool_entry": self.tool_answer is not None,
             "remembered": self.context_manager is not None and bool(conversation_id)
                           and not remember_note and bool(final_answer.strip()),
         })

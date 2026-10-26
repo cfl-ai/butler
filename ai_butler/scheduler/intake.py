@@ -469,7 +469,8 @@ async def run_units(*, gateway: Any, dispatcher: Any, registry: Any,
                     context: IntakeContext | None = None,
                     settings: Any = None,
                     intent_label: str | None = None,
-                    max_rounds: int | None = None) -> IntakeReport:
+                    max_rounds: int | None = None,
+                    chat_kwargs: Mapping[str, Any] | None = None) -> IntakeReport:
     """接通：输入 → 离散单元 → 裁剪工具 → 每个单元一条 function calling 回路。
 
     `intent_label` 是**五层意图路由（U74）已经给出的结论**。本层不取代路由：
@@ -481,6 +482,10 @@ async def run_units(*, gateway: Any, dispatcher: Any, registry: Any,
 
     **开关关闭时返回 disabled=True 且不消费任何模型调用**：
     行为与接通前逐字一致，调用方据此走既有路径。
+
+    `chat_kwargs` 原样转给网关（模型 / 凭据 / 供应商）。**必须能穿过这一层**：
+    用户选的模型在 `model_access` 里，回路若丢掉它，就会用默认模型回答一个
+    由另一个模型选出来的工具结果 —— 那是两个模型拼出来的答案。
     """
     from ai_butler.scheduler.tool_loop import FunctionCallLoop, mention_tools_available
 
@@ -510,7 +515,7 @@ async def run_units(*, gateway: Any, dispatcher: Any, registry: Any,
         result = await loop.run(
             user_id=user_id,
             messages=[m for m in messages if m is not None],
-            tools=tools)
+            tools=tools, **dict(chat_kwargs or {}))
         outcomes.append(UnitOutcome(unit=unit, assignment=assignment,
                                     tools=tuple(tools), result=result))
     return IntakeReport(outcomes=tuple(outcomes))

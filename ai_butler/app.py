@@ -123,6 +123,8 @@ def build_chat_orchestrator(*, gateway, search, settings: Settings,
                             model_access=None,
                             context_manager: ContextManager | None = None,
                             intent_router=None,
+                            wiki_digest=None,
+                            tool_answer=None,
                             ) -> ChatOrchestrator:
     """文字查询链路的**唯一装配点**（U73 / U74）。
 
@@ -151,7 +153,57 @@ def build_chat_orchestrator(*, gateway, search, settings: Settings,
         history_enable=settings.chat_history_enable,
         intent_router=intent_router,
         intent_labels=intent_wiring.INTENT_LABELS,
+        # U115：wiki 编译产物注入源（None = 没装，对话会如实说明未注入）
+        wiki_digest=wiki_digest,
+        # U114：对话入口的 function calling 承接层（None = 未装，走既有链路）
+        tool_answer=tool_answer,
     )
+
+
+def build_entry_wiki_digest(settings: Settings):
+    """装配对话链路的 `wiki_digest` 供给器（U115）。**唯一装配点**。
+
+    与 `build_chat_orchestrator` 同样的理由（E-77）：构造收成可导入的函数，
+    「有没有插电」才能被一条断言钉住。
+    """
+    from ai_butler.agent_wiki.wiring import WikiDigestProvider
+
+    try:
+        return WikiDigestProvider(settings)
+    except Exception as exc:                      # noqa: BLE001 —— 装配失败不连坐聊天
+        logger.error("Wiki digest 供给器装配失败：本次对话不会注入已知事实", exc)
+        return None
+
+
+def build_entry_tool_answer(settings: Settings, *, gateway, wiki_store):
+    """装配对话入口的 function calling 承接层（U114）。**唯一装配点**。
+
+    **开关关闭时返回 None**：不装配 = 该路径在生产里根本不存在。
+    这与「装了但开关关了」不同 —— 后者在排障时会让人以为链路是好的。
+    """
+    if not settings.function_calling_enable:
+        return None
+    from ai_butler.retrieval.wiring import SearchWiring
+    from ai_butler.scheduler.chat_intake import answer_with_tools
+    from ai_butler.scheduler.tool_catalog import build_tool_registry
+
+    # 检索是懒装配的：传工厂而不是现成 service，缺 embedding 权重时
+    # 只让「这一次工具调用」失败，不会把整个入口装配打断。
+    registry = build_tool_registry(
+        search_service=SearchWiring(settings).service, wiki_store=wiki_store)
+    if not registry.names():
+        logger.error("工具清单为空：function_calling_enable=true 但没有任何工具"
+                     "（检索/知识库都没装配）")
+        return None
+
+    async def _tool_answer(*, user_id: str, utterance: str,
+                           intent_label: str = "", model_kwargs=None):
+        return await answer_with_tools(
+            gateway=gateway, registry=registry, user_id=user_id,
+            utterance=utterance, intent_label=intent_label, settings=settings,
+            model_kwargs=model_kwargs)
+
+    return _tool_answer
 
 
 def create_app(settings: Settings, redis, *, chat_gateway=None,
@@ -1062,10 +1114,38 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
     intent_router = intent_wiring.build_intent_router(settings, gateway=gateway)
     if intent_router is None and settings.intent_router_enable:
         logger.error("意图路由装配为空，文字查询将退化为纯正则分类", None)
+
+    # ---- Agent-Wiki 生产装配（U115）----
+    # 编译流水线此前**只在 smoke 脚本里跑过**：`wiki_compile_auto_run=true` 是空转，
+    # 机器缓存与 `wiki_digest` 在生产里从来没生成过。这里补上生产者与消费者。
+    wiki_store = None
+    try:
+        from ai_butler.agent_wiki.wiring import build_wiki_store, compile_on_startup
+
+        wiki_store = build_wiki_store(settings)
+        startup_wiki = compile_on_startup(settings, wiki_store)
+        if startup_wiki.get("error"):
+            logger.error("Wiki 启动编译失败（公共库机器缓存可能过期）：%s",
+                         startup_wiki["error"])
+        elif startup_wiki.get("skipped"):
+            logger.info("Wiki 启动编译跳过：%s", startup_wiki["skipped"])
+        else:
+            logger.info("Wiki 启动编译完成：页面 %s / 声明 %s / digest %s 字节",
+                        startup_wiki.get("page_count"), startup_wiki.get("claim_count"),
+                        startup_wiki.get("digest_bytes"))
+    except Exception as exc:                    # noqa: BLE001 —— 不连坐聊天
+        logger.error("Wiki 存储装配失败：本次启动不提供已编译事实", exc)
+    wiki_digest = build_entry_wiki_digest(settings)
+
+    # ---- 对话入口的 function calling（U114）----
+    # 开关关闭时返回 None：该路径在生产里**根本不存在**，而不是「装了但没开」。
+    tool_answer = build_entry_tool_answer(settings, gateway=gateway, wiki_store=wiki_store)
+
     orchestrator = build_chat_orchestrator(
         gateway=gateway, search=search, settings=settings,
         model_access=model_access, context_manager=context_manager,
-        intent_router=intent_router)
+        intent_router=intent_router, wiki_digest=wiki_digest,
+        tool_answer=tool_answer)
 
     # ---- 会话痕迹埋点（U91）：每次运行结束折一条 AgentTrace 写进事件账本 ----
     # 这是 `evaluation/journal_source.py` 声言的「线上链路每次运行结束时（埋点）」

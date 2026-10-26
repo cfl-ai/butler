@@ -393,6 +393,22 @@ async def main() -> int:
            f"真实工具 {[t['function']['name'] for t in exposed]} 可执行，"
            f"检索命中 {hit.output['count']} 条")
         print(f"        工具能力：{'可用' if capable else '不可用'} —— {why}")
+
+        # Wiki 编译流水线（U115）：此前只在 scripts/smoke_p0.py 跑过，生产里没人调。
+        # 这里走**生产装配点**编译一次，并产出真正要注入对话的 digest。
+        from ai_butler.agent_wiki.wiring import WikiDigestProvider, compile_on_startup
+
+        wiki_report = compile_on_startup(s, wiki)
+        assert wiki_report.get("page_count", 0) >= 1, f"编译没读到页面：{wiki_report}"
+        assert (WIKI_COMPILED_OK := (WORK / "wiki" / "workspace" / "_compiled"
+                                     / "agent-digest.json")).is_file(), "机器缓存未落盘"
+        wiki_snapshot = WikiDigestProvider(s, store=wiki)(USER)
+        ok(f"Wiki 编译：页面 {wiki_report['page_count']} / 声明 "
+           f"{wiki_report['claim_count']}；digest 注入 "
+           f"{wiki_snapshot.digest.get('claim_count', 0)} 条"
+           f"（作用域 {wiki_snapshot.digest.get('scopes')}）")
+        if wiki_snapshot.note:
+            print(f"        实情：{wiki_snapshot.note}")
     except Exception as exc:                          # noqa: BLE001
         fail("主状态机", exc)
 
