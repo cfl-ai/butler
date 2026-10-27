@@ -38,6 +38,7 @@ function calling 拿到的输入常常是**有状态的**：
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from enum import Enum
@@ -45,6 +46,7 @@ from typing import Any, Mapping, Sequence
 
 from ai_butler.agents.capabilities import (
     CAP_DATA_READ,
+    CAP_EXTERNAL_READ,
     CAP_JEV,
     CAP_RETRIEVAL,
     CAP_WIKI_READ,
@@ -151,6 +153,8 @@ class Assignment:
     agent: str                        # 阶段 Agent 名，或 `vertical:<key>` 形态的垂类
     capabilities: tuple[str, ...]     # 工具能力（真值源：agents.capabilities）
     note: str = ""
+    #: U118：是否来自「未命中调配表」的只读兜底。命中表时恒为 False。
+    fallback: bool = False
 
     @property
     def is_vertical(self) -> bool:
@@ -162,10 +166,18 @@ class Assignment:
 # --------------------------------------------------------------------------- #
 #: (任务类型, 信息类型) → (Agent, 工具能力)
 #: 不给「大概归它管」留默认值：查不到就是查不到，宁可走兜底也不要猜着派。
+#:
+#: 只读能力集（U118）——**绝不含 `CAP_WIKI_WRITE` / `CAP_PAYMENT`**：
+#: 兜底可以「多给一个只读工具」，绝不能「顺手给一个写权限」。
+#: 定义在表之前：表里的条目要引用它，放着后面会 NameError（模块级求值顺序）。
+READ_ONLY_CAPABILITIES: tuple[str, ...] = (CAP_RETRIEVAL, CAP_WIKI_READ,
+                                           CAP_EXTERNAL_READ)
+
 ASSIGNMENTS: dict[tuple[str, str], Assignment] = {
     # 事实问答：按信息种类分派给不同的感知/规划单元
     (QueryCategory.FACT_QUESTION.value, SlotKind.LOCATION.value): Assignment(
-        "planner_agent", (CAP_RETRIEVAL, CAP_WIKI_READ), "地点类事实：检索权威素材"),
+        "planner_agent", (CAP_RETRIEVAL, CAP_WIKI_READ, CAP_EXTERNAL_READ),
+        "地点类事实：检索权威素材 + 外部实时信息（天气/POI）"),
     (QueryCategory.FACT_QUESTION.value, SlotKind.TIME.value): Assignment(
         "time_progress_agent", (CAP_DATA_READ,), "时间类事实：读会话时间上下文"),
     (QueryCategory.FACT_QUESTION.value, SlotKind.ENTITY_ID.value): Assignment(
@@ -184,7 +196,8 @@ ASSIGNMENTS: dict[tuple[str, str], Assignment] = {
     (QueryCategory.RECOMMENDATION.value, SlotKind.TOPIC.value): Assignment(
         "planner_agent", (CAP_RETRIEVAL, CAP_WIKI_READ), "推荐方案：先检索再生成"),
     (QueryCategory.RECOMMENDATION.value, SlotKind.LOCATION.value): Assignment(
-        "planner_agent", (CAP_RETRIEVAL, CAP_WIKI_READ), "地点类推荐"),
+        "planner_agent", (CAP_RETRIEVAL, CAP_WIKI_READ, CAP_EXTERNAL_READ),
+        "地点类推荐：检索素材 + 外部 POI/天气"),
 
     # 操作步骤 / 规则政策
     (QueryCategory.PROCEDURE.value, SlotKind.TOPIC.value): Assignment(
@@ -207,17 +220,52 @@ ASSIGNMENTS: dict[tuple[str, str], Assignment] = {
         "incremental_extraction_agent", (CAP_RETRIEVAL, CAP_WIKI_WRITE),
         "偏好：转成绑定证据的事实写入本人 Vault"),
 
-    # 判不出来：按 QueryCategory.UNKNOWN 的既有约定「走最稳的一条路」——
-    # 只给检索，不给写权限。**只兜这一种组合**：未知任务 + 未知信息类型，
-    # 其余组合查不到就是查不到。
+    # 判不出来：走**最宽的只读集合**，不是最窄的。
+    # 原先是只给检索 —— 结果是「杭州明天会下雨吗」这类句子（unknown + none）
+    # 拿到一份只有 `search_materials` 的清单，模型据此如实回答
+    # 「我没有天气查询工具」。工具明明注册着，只是被裁剪掉了（E-108 同族）。
+    # 判不出的语义本来就是「不知道该归谁」，此时把只读全集给出去才对；
+    # 命中具体格子的组合**仍然按最小权限**给。
     (QueryCategory.UNKNOWN.value, SlotKind.NONE.value): Assignment(
-        "planner_agent", (CAP_RETRIEVAL,), "判不出：检索兜底，不授予任何写能力"),
+        "planner_agent", READ_ONLY_CAPABILITIES,
+        "判不出：给只读全集（检索 + 知识库 + 外部只读），不授予任何写能力"),
 }
 
 
+#: 只读兜底能力集见上方 `READ_ONLY_CAPABILITIES`（定义在表之前，表里要引用它）。
+
+#: 不参与兜底的类别：闲聊不该调工具；多意图要先反问（JEV-003），
+#: 拿只读工具去硬跑一个「其实要先澄清」的输入，只会得到一个自信的错答案。
+_NO_FALLBACK_CATEGORIES: frozenset[str] = frozenset({
+    QueryCategory.SMALL_TALK.value, QueryCategory.MULTI_INTENT.value})
+
+
 def assign(unit: InformationUnit) -> Assignment | None:
-    """查调配表。**查不到返回 None**（= 不派发），不提供兜底猜测。"""
-    return ASSIGNMENTS.get((unit.category, unit.slot_kind.value))
+    """查调配表。返回 None = **不派发**。
+
+    U118 起有第二段：表上查不到时给**只读兜底**（`fallback=True`）。
+
+    为什么要兜底（如实记录动机）
+    ---------------------------
+    表上只有 15 个组合，而真实口语几乎都落在格子外面：
+    「杭州天气怎么样」判成 `unknown + location`、「报销流程是什么」判成
+    `procedure + none` —— 两者都不在表里。结果就是 function calling 开关
+    打开了也**一个单元都进不了回路**，开关变成装饰。这不是「猜着派」，
+    而是「查不到具体归属时，交给通用规划单元，且只给只读工具」：
+
+    - 兜底**不含任何写能力**，最坏结果是「多调了一次只读工具」；
+    - 兜底**留痕**（`fallback=True` 会出现在 `IntakeReport` 里），
+      事后能统计「兜底率」，据此补表 —— 而不是让盲区永远看不见。
+    """
+    hit = ASSIGNMENTS.get((unit.category, unit.slot_kind.value))
+    if hit is not None:
+        return hit
+    if unit.category in _NO_FALLBACK_CATEGORIES:
+        return None
+    return Assignment(
+        "planner_agent", READ_ONLY_CAPABILITIES,
+        f"未命中调配表（{unit.category}/{unit.slot_kind.value}）：只读兜底，不含写能力",
+        fallback=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -418,6 +466,68 @@ class UnitOutcome:
         return self.result is not None
 
 
+#: 工具调用明细里「结果摘要」的字数上限。面板是给人扫一眼的，不是日志文件。
+CALL_BRIEF_MAX_CHARS = 160
+
+
+def _clip(text: str, limit: int) -> str:
+    text = (text or "").strip()
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _brief(value: Any, limit: int = CALL_BRIEF_MAX_CHARS) -> str:
+    """把工具入参/结果压成一行人话。**不做智能解析**：只按结构取长度与首项。"""
+    if value is None:
+        return ""
+    if isinstance(value, Mapping):
+        parts: list[str] = []
+        for key, item in value.items():
+            if isinstance(item, (list, tuple)):
+                parts.append(f"{key}={len(item)} 项" if item else f"{key}=空")
+            elif isinstance(item, Mapping):
+                parts.append(f"{key}=…")
+            elif isinstance(item, str):
+                parts.append(f"{key}={_clip(item, 24)}")
+            else:
+                parts.append(f"{key}={item}")
+        return _clip("，".join(parts), limit)
+    if isinstance(value, (list, tuple)):
+        text = f"{len(value)} 项"
+        if value and isinstance(value[0], Mapping):
+            text += "：" + _clip(json.dumps(value[0], ensure_ascii=False, default=str), 80)
+        return _clip(text, limit)
+    return _clip(str(value), limit)
+
+
+def _is_empty_result(output: Any) -> bool:
+    """工具「跑成功了，但什么都没查到」。
+
+    **必须与「调用失败」分开**：`ok=True` 且 `count=0` 是最容易被当成
+    「有依据」的情况 —— 它其实意味着答案没有数据支撑（E-92 同族）。
+    """
+    if not isinstance(output, Mapping):
+        return False
+    if output.get("found") is False:
+        return True
+    count = output.get("count")
+    return isinstance(count, int) and count == 0
+
+
+def _call_view(result: Any) -> dict[str, Any]:
+    """一次工具调用的对外视图：谁、带了什么参数、成没成、拿回了什么。"""
+    call = getattr(result, "call", None)
+    payload = getattr(call, "payload", None) or {}
+    output = getattr(result, "output", None)
+    return {
+        "tool": str(getattr(call, "name", "") or ""),
+        "args": _brief(payload, 100),
+        "ok": bool(getattr(result, "ok", False)),
+        "empty": _is_empty_result(output),
+        "note": str(getattr(result, "note", "") or getattr(result, "error_code", "") or ""),
+        "result": _brief(output),
+    }
+
+
 @dataclass
 class IntakeReport:
     outcomes: tuple[UnitOutcome, ...] = ()
@@ -431,6 +541,12 @@ class IntakeReport:
     @property
     def unassigned(self) -> tuple[InformationUnit, ...]:
         return tuple(o.unit for o in self.outcomes if o.skipped == "unassigned")
+
+    @property
+    def fallback_count(self) -> int:
+        """走过只读兜底的单元数（U118）。命中调配表的不计。"""
+        return sum(1 for o in self.outcomes if o.assignment is not None
+                   and o.assignment.fallback)
 
     def as_dict(self) -> dict[str, Any]:
         """落成可进 State 的普通字典。
@@ -450,6 +566,9 @@ class IntakeReport:
                 "unresolved": list(o.unit.unresolved),
                 "self_contained": o.unit.self_contained,
                 "agent": o.assignment.agent if o.assignment else "",
+                #: U118：这个单元是「命中调配表」还是「只读兜底」——兜底率高
+                #: 说明表该补了。不暴露这个标记，盲区就永远是盲区（E-87 同族）。
+                "assignment_fallback": bool(o.assignment.fallback) if o.assignment else False,
                 "tools": [t["function"]["name"] for t in o.tools],
                 "skipped": o.skipped,
                 "ran": o.ran,
@@ -458,8 +577,12 @@ class IntakeReport:
                 "truncated": bool(res.truncated) if res else False,
                 "tool_calls": len(res.tool_results) if res else 0,
                 "degradation": list(res.degradation) if res else [],
+                #: U119：每次调用的明细（工具名 / 入参 / 成败 / 结果摘要）。
+                #: 只报「调了 3 次」等于让用户看不见过程 —— 而过程正是他要的。
+                "calls": [_call_view(r) for r in (res.tool_results if res else ())],
             })
         return {"disabled": self.disabled, "ran_count": self.ran_count,
+                "fallback_count": self.fallback_count,
                 "units": units,
                 "unassigned": [u.text for u in self.unassigned]}
 
@@ -487,7 +610,7 @@ async def run_units(*, gateway: Any, dispatcher: Any, registry: Any,
     用户选的模型在 `model_access` 里，回路若丢掉它，就会用默认模型回答一个
     由另一个模型选出来的工具结果 —— 那是两个模型拼出来的答案。
     """
-    from ai_butler.scheduler.tool_loop import FunctionCallLoop, mention_tools_available
+    from ai_butler.scheduler.tool_loop import FunctionCallLoop, loop_system_prompt
 
     cfg = settings or get_settings()
     if not getattr(cfg, "function_calling_enable", False):
@@ -507,9 +630,12 @@ async def run_units(*, gateway: Any, dispatcher: Any, registry: Any,
                                         skipped="no_tools_for_capabilities"))
             continue
         loop = FunctionCallLoop(gateway, dispatcher, settings=cfg, max_rounds=max_rounds)
-        hint = mention_tools_available(tools)
+        # 系统提示必须写清「什么时候用哪个工具」（U119）：只列名字时，
+        # 模型会把天气问题交给素材检索，然后如实答「我没有天气能力」——
+        # 工具明明在清单里，只是没被选中。
+        system = loop_system_prompt(tools)
         messages = [
-            ChatMessage(role="system", content=hint) if hint else None,
+            ChatMessage(role="system", content=system) if system else None,
             ChatMessage(role="user", content=unit.text),
         ]
         result = await loop.run(

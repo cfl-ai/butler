@@ -359,26 +359,35 @@ async def main() -> int:
         ok(f"垂类派发：意图={vres.intent} 执行者={vres.dispatched}；"
            f"垂类如实要求补参数（未回退、未假装成功）")
 
-        # 输入接通（U114）：网关装上了，但**先问能力再谈跑不跑**。
-        # 本机 qwen2.5vl:3b 没有工具能力，所以这里既不能用假网关演一遍，
-        # 也不能假装跑通 —— 只断言两件真事：能力结论可诊断、开关关闭时零行为变化。
+        # 输入接通（U114/U117）：function calling 现在**默认打开**，且工具请求有专用
+        # 供应商路由（本机 Ollama 无 tools → 工具请求走具备能力的供应商）。
+        # 这里断言的全是真事：开关默认值、能力结论可诊断、关闭时零行为变化、
+        # 以及**真跑一次**工具回路。
         from ai_butler.infra.llm_gateway import LLMGateway
+        from ai_butler.scheduler.chat_intake import answer_with_tools
         from ai_butler.scheduler.tool_catalog import build_tool_registry
         from ai_butler.scheduler.tools import ToolCall
 
         gw = LLMGateway(s)
         capable, why = gw.tool_capability()
+        assert s.function_calling_enable is True, "function calling 应默认打开（U117）"
+
+        # ① 开关显式关闭时：回路整体不存在（返回 disabled，不消耗任何模型调用）
+        off_settings = s.model_copy(update={"function_calling_enable": False})
+        off_out = await answer_with_tools(
+            gateway=gw, registry=build_tool_registry(search_service=service, wiki_store=wiki,
+                                                     settings=s),
+            user_id=USER, utterance="杭州天气怎么样", settings=off_settings)
+        assert off_out.ran is False and "function_calling_enable" in off_out.skipped, (
+            f"开关关闭时不该跑回路：ran={off_out.ran} skipped={off_out.skipped}")
+
         intake_scheduler = SceneScheduler(
             router=IntentRouter([HardRuleLayer([HardRule(r"订.*酒店", "book_hotel")])]),
             agents={"planner_agent": planner},
             plan=DispatchPlan(chains={"book_hotel": ("planner_agent",)}),
-            tool_registry=build_tool_registry(search_service=service, wiki_store=wiki),
+            tool_registry=build_tool_registry(search_service=service, wiki_store=wiki,
+                                              settings=s),
             gateway=gw)
-        ires = await intake_scheduler.run(
-            user_id=USER, session_id="smoke-intake",
-            utterance="帮我订个酒店", labels=LABELS)
-        assert ires.intake == {}, (
-            f"function_calling_enable 默认关闭时，接通层不得写入任何通道：{ires.intake}")
 
         # 注册表不能是空的：空清单会让接通层永远走 no_tools_for_capabilities
         exposed = intake_scheduler.dispatcher.registry.as_openai_tools()
@@ -389,10 +398,32 @@ async def main() -> int:
             user_id=USER)
         assert hit.ok, f"工具调用失败：{hit.note} / {hit.error_code}"
         assert hit.output["count"] >= 1, f"检索没拿到素材：{hit.output}"
-        ok(f"接通层装配就绪（开关关闭 → intake 未写入）；"
+        ok(f"接通层装配就绪（开关关闭 → 回路不跑）；"
            f"真实工具 {[t['function']['name'] for t in exposed]} 可执行，"
            f"检索命中 {hit.output['count']} 条")
         print(f"        工具能力：{'可用' if capable else '不可用'} —— {why}")
+
+        # ② 真跑一次完整回路（U117）：离散化 → 调配 → 裁剪工具 → 模型调工具 → 回答。
+        #    这是「开关不是装饰」的唯一证据 —— 能力可用就必须真跑出答案，
+        #    不可用就如实打印原因（不假装跑过）。
+        fc_out = await answer_with_tools(
+            gateway=gw,
+            registry=build_tool_registry(search_service=service, wiki_store=wiki,
+                                         settings=s),
+            user_id=USER, utterance="杭州天气怎么样", settings=s,
+            model_kwargs={"provider": "ollama", "model": s.ollama_model})
+        if capable:
+            assert fc_out.ran, f"能力可用却没跑出回路：{fc_out.skipped}"
+            calls = sum(len(u.result.tool_results) for u in fc_out.report.outcomes
+                        if u.result is not None)
+            assert calls >= 1, "回路没真的调用工具"
+            ok(f"function calling 真跑通：单元 {len(fc_out.report.outcomes)} 个 / "
+               f"工具调用 {calls} 次 / 轮次 "
+               f"{[u.result.rounds for u in fc_out.report.outcomes if u.result]}")
+            print(f"        改道说明：{fc_out.note[:70]}")
+            print(f"        答案：{fc_out.text.strip().splitlines()[0][:80]}")
+        else:
+            ok(f"function calling 未启用（如实）：{fc_out.skipped[:60]}")
 
         # Wiki 编译流水线（U115）：此前只在 scripts/smoke_p0.py 跑过，生产里没人调。
         # 这里走**生产装配点**编译一次，并产出真正要注入对话的 digest。

@@ -154,6 +154,36 @@ def mention_tools_available(tools: Sequence[Mapping[str, Any]]) -> str | None:
     return "可用工具：" + "、".join(names) if names else None
 
 
+#: 回路系统提示（U119）。**这决定了模型会不会用对工具**。
+#: 只写「可用工具：A、B」时，模型遇到「明天会下雨吗」会判定天气工具查不到预报，
+#: 转去调素材检索，最后答「我没有实时天气能力」—— 实测如此（能力有，但没被选中，
+#: 等于没有，E-108 同族）。
+_LOOP_SYSTEM = (
+    "你是「AI 管家」的助手，可以调用工具取真实数据后再回答。\n"
+    "选工具（按重要性排序）：\n"
+    "1. 问天气（今天/明天/这周、下不下雨、多少度）→ 调 get_weather；"
+    "问地点、商户、景区、在哪 → 调 search_poi；这两类**不要**用检索工具代替。\n"
+    "2. 问内部资料、制度、流程、标准、条款 → 调 search_materials。\n"
+    "3. 需要读某个知识库页面 → 调 read_wiki_page。\n"
+    "4. 一个工具没查到，换另一个可能合适的工具再试一次，不要只调一个就说没有。\n"
+    "回答要求：\n"
+    "- 只用工具返回的数据作答；工具没有的信息就说没有，不要猜。\n"
+    "- **纯文本**：不要用 Markdown，不要出现 *、#、-、|、加粗、表格、分点符号；"
+    "需要分句就用短句或分号。\n"
+    "- 中文，简洁直接，不超过 200 字。\n"
+    "- 说明数据是哪来的（例如「据 Open-Meteo 数据」），不要编造出处。"
+)
+
+
+def loop_system_prompt(tools: Sequence[Mapping[str, Any]]) -> str | None:
+    """拼一次回路的系统提示。没有可暴露的工具时返回 None（不下发空提示）。"""
+    hint = mention_tools_available(tools)
+    if hint is None:
+        return None
+    return _LOOP_SYSTEM + "\n" + hint
+
+
+
 def _stringify(value: Any) -> str:
     import json
 
@@ -171,5 +201,6 @@ __all__ = [
     "TOOL_RESULT_MAX_CHARS",
     "ToolLoopResult",
     "ToolUnsupportedError",
+    "loop_system_prompt",
     "mention_tools_available",
 ]

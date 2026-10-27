@@ -149,6 +149,41 @@ CLARIFY_OUT_OF_SCOPE = "out_of_scope"
 CLARIFICATION_CATEGORIES: tuple[str, ...] = (CLARIFY_MULTI_INTENT, CLARIFY_OUT_OF_SCOPE)
 
 
+#: 能力探针：只用于**过闸判定**，绝不真的下发。名字带下划线前缀，
+#: 与真实工具名不可能撞车，误发出去也只会被模型当成陌生人。
+_CAPABILITY_PROBE: tuple[dict[str, Any], ...] = (
+    {"type": "function", "function": {"name": "_capability_probe"}},)
+
+
+def _model_family(model: str) -> str:
+    """取模型族名：`qwen3:8b` → `qwen3`，`gpt-4o-mini` 保持原样。
+
+    只剥**冒号标签**（Ollama 的量化/尺寸标签），不剥连字符 ——
+    `gpt-4o-mini` 与 `gpt-4o` 是两个不同的模型名，剥了就连支持与否一起搞错。
+    """
+    return (model or "").strip().lower().split(":", 1)[0]
+
+
+def model_supports_tools(model: str | None, whitelist: Sequence[str] | None) -> bool:
+    """按**模型族**判定工具能力（U117）。
+
+    相等即命中；否则看白名单项是不是该模型族的**前缀加分隔符**
+    （`deepseek` → `deepseek-chat`）。刻意不用裸 `startswith`：
+    那样 `qwen2.5` 会把 `qwen2.5vl` 也算成支持 —— 而带 vl 的视觉模型恰恰
+    没有任何工具能力，这正是本项目实测踩过的坑（本机 qwen2.5vl:3b）。
+    """
+    target = _model_family(model or "")
+    if not target:
+        return False
+    for entry in (whitelist or ()):
+        want = _model_family(entry)
+        if not want:
+            continue
+        if target == want or target.startswith(want + "-") or target.startswith(want + "."):
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class JevStructured:
     """Jev 输出的结构化内容。
@@ -192,7 +227,11 @@ class Provider:
     supports_tools: bool = False
 
     def _model_supports_tools(self, model: str | None) -> bool:
-        """模型层是否具备工具能力。默认「协议支持即支持」。"""
+        """模型层是否具备工具能力。默认「协议支持即支持」。
+
+        默认放行的理由是**协议层面已确认**（供应商只提供支持 tools 的模型）；
+        需要收窄的供应商（本机 Ollama）自行覆盖为白名单判定。
+        """
         return True
 
     def reject_unsupported_tools(self, tools: Sequence[Mapping[str, Any]] | None,
@@ -248,7 +287,8 @@ class OllamaProvider(Provider):
     def _model_supports_tools(self, model: str | None) -> bool:
         """只认白名单：本机可用的小模型大多不带工具能力，默认保守。"""
         target = model or self.settings.ollama_model
-        return target in tuple(getattr(self.settings, "function_calling_models", ()) or ())
+        return model_supports_tools(
+            target, getattr(self.settings, "function_calling_models", ()) or ())
 
     def _payload(self, messages, model, max_tokens, stream, tools=None):
         opts: dict[str, Any] = {}
@@ -509,7 +549,54 @@ class LLMGateway:
         order = [p for p in self.settings.provider_order if p in self._providers]
         return order or list(self._providers)
 
-    # ---- 能力协商的可观测出口（U112）----
+    # ---- 工具请求的专用路由（U117）----
+    def _tool_model(self, name: str, model: str | None) -> str | None:
+        """该供应商在**工具请求**里实际会用的模型名；None = 用它自己的默认模型。
+
+        `function_calling_model` **只作用于** `function_calling_provider`：
+        否则会出现「拿 deepseek 的模型名去问 ollama」这种自相矛盾的请求。
+        """
+        if model:
+            return model
+        preferred = str(getattr(self.settings, "function_calling_provider", "") or "").strip()
+        pinned = str(getattr(self.settings, "function_calling_model", "") or "").strip()
+        if pinned and name == preferred:
+            return pinned
+        return None
+
+    def _tool_capable(self, name: str, model: str | None,
+                      probe: Sequence[Mapping[str, Any]]) -> tuple[bool, str]:
+        """用**真正会跑的那道闸**探测某个供应商能否承载工具请求。"""
+        try:
+            provider_impl = self._provider(name)
+        except Exception as exc:                     # noqa: BLE001 —— 未知供应商名
+            return False, f"供应商 {name!r} 不可用：{exc}"
+        try:
+            provider_impl.reject_unsupported_tools(probe, self._tool_model(name, model))
+        except ToolUnsupportedError as exc:
+            return False, str(exc)
+        return True, ""
+
+    def _tool_order(self, model: str | None = None) -> list[str]:
+        """工具请求的候选顺序：**具备工具能力的排前面**，不支持的留作最后。
+
+        这一段就是「开关不是装饰」的落点：本机 Ollama 只有 qwen2.5vl:3b（无 tools），
+        若不做这一步排队，带工具的请求会先撞一次必然失败的本机模型。
+        指定 `function_calling_provider` 时它排第一（可不在 provider_order 里，
+        `_provider()` 会按需构造），**普通对话的供应商顺序不受任何影响**。
+        """
+        preferred = str(getattr(self.settings, "function_calling_provider", "") or "").strip()
+        base = self._order()
+        ranked = ([preferred] if preferred else []) + [n for n in base if n != preferred]
+        probe = _CAPABILITY_PROBE
+        capable: list[str] = []
+        rest: list[str] = []
+        for name in ranked:
+            ok, _why = self._tool_capable(name, model, probe)
+            (capable if ok else rest).append(name)
+        return capable + rest
+
+    # ---- 能力协商的可观测出口（U112 / U117）----
     def tool_capability(self, model: str | None = None,
                         provider: str | None = None) -> tuple[bool, str]:
         """本网关当前能否下发工具清单；不可用时给出**可诊断的原因**。
@@ -519,18 +606,25 @@ class LLMGateway:
         - 模型不在 `function_calling_models` 白名单 → 登记模型或换模型。
 
         只在**不真的发起请求**的前提下探测：探针工具名不会被下发出去。
+        **报告的是工具请求真实会走的那个供应商**，不是 provider_order 的第一位 ——
+        两者在生产里可以不同（本机 ollama 不支持工具、工具请求走 deepseek）。
         """
-        order = [provider] if provider else self._order()
-        if not order or order[0] not in self._providers:
+        if provider:
+            ok, why = self._tool_capable(provider, model, _CAPABILITY_PROBE)
+            target = self._tool_model(provider, model) or "默认模型"
+            return (True, f"供应商 {provider} / 模型 {target} 可下发工具调用") if ok else (False, why)
+
+        order = self._tool_order(model)
+        if not order:
             return False, "没有可用的供应商（provider_order 为空或未注册）"
-        name = order[0]
-        target = model or getattr(self.settings, f"{name}_model", "") or ""
-        probe = [{"type": "function", "function": {"name": "_capability_probe"}}]
-        try:
-            self._providers[name].reject_unsupported_tools(probe, target)
-        except ToolUnsupportedError as exc:
-            return False, str(exc)
-        return True, f"供应商 {name} / 模型 {target or '默认'} 可下发工具调用"
+        first = order[0]
+        ok, _why = self._tool_capable(first, model, _CAPABILITY_PROBE)
+        if ok:
+            target = self._tool_model(first, model) or f"{first} 默认模型"
+            return True, f"工具请求将由 {first} / {target} 执行"
+        details = "；".join(f"{n}: {self._tool_capable(n, model, _CAPABILITY_PROBE)[1]}"
+                            for n in order)
+        return False, "没有可用于 function calling 的供应商 → " + details
 
     # ---- 非流式 ----
     async def chat(self, *, user_id: str, messages: Sequence[ChatMessage],
@@ -549,9 +643,10 @@ class LLMGateway:
         那属于"未经允许"。宁可报错让用户自己换。
 
         `tools` 为 models 的工具清单（U112，来自 `ToolRegistry.as_openai_tools()`）。
-        带工具的请求在**不支持工具的模型上是明确失败**，不会被降级到"换个供应商
-        接着试"这条路径上：降级后的模型可能同样不支持，级联一圈最后只会抛出
-        「全部供应商不可用」—— 那正是本机 qwen2.5vl:3b 踩过的坑（真因被淹没）。
+        带工具的请求按 `_tool_order()` 排队（U117）：**具备工具能力的供应商先走**，
+        本机 Ollama 那类无工具能力的留在后面 —— 否则每次工具请求都要先撞一次
+        必然失败的模型，还把真因埋在降级日志里。
+        用户显式指定了供应商（BYOK）时**不改道**：费用与数据去向都不许悄悄变。
         """
         uid = self._require_user(user_id)
         # bucket 可切换：计划书三、P3 要求「Jev 调用独立配额统计」，
@@ -560,17 +655,20 @@ class LLMGateway:
                                limit=rate_limit or self.settings.llm_rate_limit_per_minute)
         errors: list[str] = []
         tool_unsupported: list[str] = []
-        for name in self._targets(provider):            # 负载均衡 / 故障降级
+        # 工具请求走能力排序；普通请求与接线前完全一致（U117 只动带工具这一条路）
+        order = self._targets(provider) if (provider or not tools) else self._tool_order(model)
+        for name in order:                              # 负载均衡 / 故障降级
             provider_impl = self._provider(name)
+            call_model = self._tool_model(name, model) if tools else model
 
-            async def _invoke(p=provider_impl):
+            async def _invoke(p=provider_impl, m=call_model):
                 kwargs: dict[str, Any] = {"temperature": temperature}
                 # **只在真有工具时才加 tools 关键字**：第三方 Provider 实现（含测试替身）
                 # 不一定接受该参数 —— 不带工具的请求必须与接线前逐字一致，
                 # 否则「换个供应商实现」这件最常见的扩展行为会被无谓地打破。
                 if tools:
                     kwargs["tools"] = tools
-                return await p.chat(messages, model=model,
+                return await p.chat(messages, model=m,
                                     timeout=self.settings.llm_timeout_seconds,
                                     max_tokens=max_tokens,
                                     api_key=api_key, base_url=base_url, **kwargs)

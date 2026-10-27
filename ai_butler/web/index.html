@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 管家 · 对话工作台</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#151a21; --panel2:#1b222b; --line:#252d38;
+    --text:#e6edf3; --muted:#8b98a8; --accent:#4c9aff; --ok:#3fb950;
+    --warn:#d29922; --err:#f85149; --user:#1f2a37;
+    --mono:"SF Mono",Menlo,Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    background:var(--bg);color:var(--text);
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    display:grid;grid-template-columns:248px 1fr 340px;grid-template-rows:100%;
+  }
+  /* ---------- 左：会话列表 ---------- */
+  aside{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  .brand{padding:16px 16px 10px;font-weight:600;letter-spacing:.4px;display:flex;align-items:center;gap:8px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+  .newchat{margin:6px 12px 12px;padding:9px 12px;border-radius:8px;border:1px dashed var(--line);
+    background:transparent;color:var(--text);cursor:pointer;font-size:13px}
+  .newchat:hover{border-color:var(--accent);color:var(--accent)}
+  .convs{flex:1;overflow:auto;padding:0 8px 12px}
+  .conv{padding:9px 10px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:13px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;justify-content:space-between;gap:6px}
+  .conv:hover{background:var(--panel2);color:var(--text)}
+  .conv.active{background:var(--panel2);color:var(--text);box-shadow:inset 2px 0 0 var(--accent)}
+  .conv .del{opacity:0;color:var(--muted);font-size:12px}
+  .conv:hover .del{opacity:1}
+  .who{padding:10px 14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);
+    display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .who b{color:var(--text);font-weight:500;font-family:var(--mono);font-size:11px}
+  .who button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px}
+  .who button:hover{color:var(--err)}
+  /* ---------- 中：对话流 ---------- */
+  main{display:flex;flex-direction:column;min-height:0;min-width:0}
+  .stream{flex:1;overflow:auto;padding:24px 28px 8px;display:flex;flex-direction:column;gap:16px}
+  .empty{margin:auto;text-align:center;color:var(--muted);max-width:520px}
+  .empty h2{color:var(--text);font-weight:600;margin:0 0 8px}
+  .empty code{font-family:var(--mono);font-size:12px;background:var(--panel2);padding:2px 6px;border-radius:4px}
+  .msg{display:flex;gap:12px;max-width:860px;width:100%;margin:0 auto}
+  .msg .avatar{width:26px;height:26px;border-radius:6px;flex:none;display:grid;place-items:center;
+    font-size:11px;font-family:var(--mono);background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
+  .msg.user .avatar{background:var(--user);color:var(--accent)}
+  .bubble{flex:1;min-width:0}
+  .bubble .text{white-space:pre-wrap;word-break:break-word}
+  .msg.user .text{background:var(--user);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+  .meta{font-size:11px;color:var(--muted);margin-top:6px;font-family:var(--mono);display:flex;gap:10px;flex-wrap:wrap}
+  .meta .badge{border:1px solid var(--line);border-radius:4px;padding:0 5px}
+  .cursor{display:inline-block;width:7px;height:14px;background:var(--accent);
+    vertical-align:-2px;animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .composer{border-top:1px solid var(--line);padding:12px 20px 16px;background:var(--panel)}
+  .box{max-width:860px;margin:0 auto;display:flex;gap:10px;align-items:flex-end}
+  textarea{flex:1;resize:none;min-height:44px;max-height:180px;padding:11px 12px;border-radius:10px;
+    background:var(--panel2);border:1px solid var(--line);color:var(--text);font:inherit;outline:none}
+  textarea:focus{border-color:var(--accent)}
+  .send{padding:11px 18px;border-radius:10px;border:1px solid var(--accent);background:var(--accent);
+    color:#fff;font-weight:600;cursor:pointer}
+  .send:disabled{opacity:.45;cursor:not-allowed}
+  .hint{max-width:860px;margin:8px auto 0;font-size:11px;color:var(--muted);display:flex;gap:12px}
+  /* ---------- 右：过程面板 ---------- */
+  .panel{background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  .panel h3{margin:0;padding:14px 16px 10px;font-size:12px;letter-spacing:1px;color:var(--muted);font-weight:600}
+  .panel .body{flex:1;overflow:auto;padding:0 14px 16px;font-family:var(--mono);font-size:12px}
+  .step{border:1px solid var(--line);border-radius:8px;padding:9px 10px;margin-bottom:9px;background:var(--panel2)}
+  .step .k{color:var(--muted);font-size:11px;letter-spacing:.5px}
+  .step .v{margin-top:4px;word-break:break-word;color:var(--text)}
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)} .dim{color:var(--muted)}
+  .tool{border-left:2px solid var(--accent);padding-left:8px;margin-top:7px}
+  .tool .nm{color:var(--accent)}
+  .none{color:var(--muted);font-size:12px;padding:2px 0}
+  /* 数据来源：答案下方的小字（U119）。**必须是次要视觉层级** ——
+     它是佐证，不是答案的一部分。 */
+  .sources{margin-top:7px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;
+    font-size:11px;color:var(--muted);line-height:1.5}
+  .sources .lbl{opacity:.7;letter-spacing:.5px}
+  .sources .s{border:1px solid var(--line);border-radius:4px;padding:0 6px;
+    font-family:var(--mono);font-size:10.5px;background:var(--panel2)}
+  /* 工具调用：与「思考」同一种呈现，逐次可见 */
+  .call{border-left:2px solid var(--accent);padding:0 0 0 8px;margin-top:6px}
+  .call .hd{display:flex;gap:6px;align-items:baseline;flex-wrap:wrap}
+  .call .nm{color:var(--accent);font-weight:600}
+  .call .ar{color:var(--muted)}
+  .call .rs{color:var(--muted);margin-top:2px;word-break:break-all}
+  /* ---------- 登录遮罩 ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(8,10,14,.92);display:grid;place-items:center;z-index:9}
+  .overlay.hide{display:none}
+  .card{width:340px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+  .card h1{font-size:16px;margin:0 0 4px;font-weight:600}
+  .card p{font-size:12px;color:var(--muted);margin:0 0 16px}
+  .card input{width:100%;padding:10px 11px;margin-bottom:9px;border-radius:8px;background:var(--panel2);
+    border:1px solid var(--line);color:var(--text);font:inherit;outline:none}
+  .card input:focus{border-color:var(--accent)}
+  .card button{width:100%;padding:10px;border-radius:8px;border:none;cursor:pointer;font:inherit;font-weight:600}
+  .card .primary{background:var(--accent);color:#fff;margin-bottom:8px}
+  .card .ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
+  .card .err{min-height:16px;font-size:12px;margin:8px 0 0}
+  @media (max-width:1100px){ body{grid-template-columns:200px 1fr} .panel{display:none} }
+  @media (max-width:720px){ body{grid-template-columns:1fr} aside{display:none} }
+</style>
+</head>
+<body>
+
+<aside>
+  <div class="brand"><span class="dot"></span>AI 管家</div>
+  <button class="newchat" id="newChat">＋ 新对话</button>
+  <div class="convs" id="convs"></div>
+  <div class="who">
+    <span id="whoami">未登录</span>
+    <button id="logout">退出</button>
+  </div>
+</aside>
+
+<main>
+  <div class="stream" id="stream">
+    <div class="empty" id="empty">
+      <h2>问点什么</h2>
+      <p>输入框里试：<code>杭州天气怎么样</code> · <code>帮我查一下西湖附近的酒店</code> · <code>报销流程是什么</code></p>
+      <p>右侧会实时显示这颗输入经过了哪些步骤、调用了哪些工具。</p>
+    </div>
+  </div>
+  <div class="composer">
+    <div class="box">
+      <textarea id="input" rows="1" placeholder="说点什么…（Enter 发送，Shift+Enter 换行）"></textarea>
+      <button class="send" id="send">发送</button>
+    </div>
+    <div class="hint">
+      <span id="statusLine">就绪</span>
+      <span id="engine"></span>
+    </div>
+  </div>
+</main>
+
+<div class="panel">
+  <h3>过程</h3>
+  <div class="body" id="panel">
+    <div class="none">还没有提问。</div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="card">
+    <h1>登录 AI 管家</h1>
+    <p>访客可直接进入，只能文字问答、有次数限制。</p>
+    <input id="acc" placeholder="手机号 / 邮箱 / 用户名" autocomplete="username">
+    <input id="pwd" type="password" placeholder="密码" autocomplete="current-password">
+    <button class="primary" id="doLogin">登录</button>
+    <button class="ghost" id="doGuest">以访客身份进入</button>
+    <div class="err" id="loginErr"></div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const stream = $("stream"), panel = $("panel"), input = $("input"), sendBtn = $("send");
+  const overlay = $("overlay"), loginErr = $("loginErr");
+
+  const state = {
+    token: localStorage.getItem("ab.token") || "",
+    userId: localStorage.getItem("ab.user") || "",
+    deviceId: (() => {
+      let d = localStorage.getItem("ab.device");
+      if (!d) { d = "web-" + Math.random().toString(36).slice(2, 10); localStorage.setItem("ab.device", d); }
+      return d;
+    })(),
+    conversationId: "",
+    convs: JSON.parse(localStorage.getItem("ab.convs") || "[]"),
+    busy: false,
+  };
+
+  // ---------------- 通用请求 ----------------
+  async function api(path, body, method = "POST") {
+    const res = await fetch(path, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(state.token ? { Authorization: "Bearer " + state.token } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    let data = null;
+    try { data = await res.json(); } catch (_) { data = {}; }
+    if (!res.ok) {
+      // 404 且响应体没有本项目的 code/message → 说明这个源上根本没有这个接口：
+      // 典型是「把 index.html 当静态文件打开/预览」，同源的静态服务器不认识 /api/*。
+      // 直接抛 "HTTP 404" 会让人以为是登录逻辑错了，必须说清楚是**服务没连上**。
+      let msg = data && (data.message || data.code);
+      if (!msg) {
+        msg = res.status === 404
+          ? "接口不存在（404）：当前页面不是从后端打开的。请先启动服务，再用 http://<主机>:<端口>/ui 访问；直接打开文件或走静态预览时，/api 接口不在这个源上"
+          : "HTTP " + res.status;
+      }
+      const err = new Error(msg);
+      err.status = res.status; err.code = data && data.code;
+      throw err;
+    }
+    return data;
+  }
+
+  /* 启动自检：/health 是公开探活，能答才有后端可用。
+     不做这一步，页面在「静态打开」时会先让人输账号密码，再在提交时
+     回一句语焉不详的 HTTP 404 —— 排错方向全错。 */
+  async function checkBackend() {
+    try {
+      const res = await fetch("/health", { headers: { Accept: "application/json" } });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data && data.ecosystem) return true;
+    } catch (_) { /* 落到下面的兜底 */ }
+    overlay.classList.remove("hide");
+    loginErr.textContent = "连不上后端服务（/health 不可用）：请先启动 ai_butler 服务，再用 http://<主机>:<端口>/ui 打开本页。";
+    return false;
+  }
+
+  function setWho() {
+    $("whoami").textContent = state.userId ? state.userId.slice(0, 14) : "未登录";
+  }
+
+  // ---------------- 会话列表 ----------------
+  function renderConvs() {
+    const box = $("convs");
+    box.innerHTML = "";
+    state.convs.forEach((c) => {
+      const el = document.createElement("div");
+      el.className = "conv" + (c.id === state.conversationId ? " active" : "");
+      const t = document.createElement("span");
+      t.textContent = c.title || "新对话";
+      t.style.overflow = "hidden"; t.style.textOverflow = "ellipsis";
+      const del = document.createElement("span");
+      del.className = "del"; del.textContent = "✕";
+      del.onclick = (ev) => {
+        ev.stopPropagation();
+        state.convs = state.convs.filter((x) => x.id !== c.id);
+        localStorage.setItem("ab.convs", JSON.stringify(state.convs));
+        if (state.conversationId === c.id) { state.conversationId = ""; clearStream(); }
+        renderConvs();
+      };
+      el.append(t, del);
+      el.onclick = () => switchConv(c);
+      box.appendChild(el);
+    });
+  }
+
+  function ensureConv(title) {
+    if (!state.conversationId) {
+      state.conversationId = "local-" + Date.now().toString(36);
+      state.convs.unshift({ id: state.conversationId, title: title.slice(0, 24), turns: [] });
+    } else {
+      const c = state.convs.find((x) => x.id === state.conversationId);
+      if (c && !c.turns.length) c.title = title.slice(0, 24);
+    }
+    localStorage.setItem("ab.convs", JSON.stringify(state.convs));
+    renderConvs();
+  }
+
+  function currentConv() {
+    return state.convs.find((x) => x.id === state.conversationId) || null;
+  }
+
+  function persistTurn(turn) {
+    const c = currentConv();
+    if (!c) return;
+    c.turns.push(turn);
+    localStorage.setItem("ab.convs", JSON.stringify(state.convs));
+  }
+
+  function clearStream() {
+    stream.innerHTML = "";
+    hideEmpty();
+  }
+  function hideEmpty() {
+    const e = $("empty"); if (e) e.remove();
+  }
+
+  function switchConv(c) {
+    state.conversationId = c.id;
+    renderConvs();
+    clearStream();
+    (c.turns || []).forEach((t) => {
+      addUser(t.q);
+      const node = addAssistant("");
+      node.textContent = t.a || "";
+      const src = sourcesLine(t.sources || (t.panel && t.panel.sources));
+      if (src) node.parentElement.appendChild(src);
+      renderPanel(t.panel || {});
+    });
+    if (!c.turns.length) $("panel").innerHTML = '<div class="none">还没有提问。</div>';
+    $("statusLine").textContent = "就绪";
+  }
+
+  // ---------------- 消息渲染 ----------------
+  function addUser(text) {
+    hideEmpty();
+    const wrap = document.createElement("div");
+    wrap.className = "msg user";
+    wrap.innerHTML = '<div class="avatar">你</div><div class="bubble"><div class="text"></div></div>';
+    wrap.querySelector(".text").textContent = text;
+    stream.appendChild(wrap);
+    scrollDown();
+    return wrap;
+  }
+
+  function addAssistant(text) {
+    hideEmpty();
+    const wrap = document.createElement("div");
+    wrap.className = "msg bot";
+    wrap.innerHTML = '<div class="avatar">AI</div><div class="bubble"><div class="text"></div></div>';
+    const t = wrap.querySelector(".text");
+    t.textContent = text || "";
+    stream.appendChild(wrap);
+    scrollDown();
+    return t;
+  }
+
+  // ---------------- 展示用词表 ----------------
+  // 页面**不显示内部词**（U119）：`unknown`、`function_call`、`planner_agent`
+  // 这些是系统内部标识，用户看到只会困惑。真值仍由后端给，这里只做展示映射；
+  // 映射不到的一律退回「通用」类描述，绝不把原始标识漏到界面上。
+  const CAT_TEXT = {
+    small_talk: "闲聊", fact_question: "事实问答", recommendation: "建议方案",
+    procedure: "操作步骤", policy_rule: "规则条款", comparison: "对比",
+    personal_recall: "个人记录", identity_lookup: "标识查询",
+    multi_intent: "多件事", unknown: "通用问答",
+  };
+  const LAYER_TEXT = {
+    hard_rule: "规则命中", jev: "语义规则", vector: "语义相似",
+    vertical: "垂直场景", llm_fallback: "模型判定",
+  };
+  const TOOL_TEXT = {
+    get_weather: "天气", search_poi: "地点", search_materials: "资料检索",
+    read_wiki_page: "知识库",
+  };
+  const AGENT_TEXT = {
+    planner_agent: "规划单元", time_progress_agent: "时间上下文",
+    incremental_extraction_agent: "偏好提炼", vertical: "垂直场景", "": "未派发",
+  };
+  const catText = (c) => CAT_TEXT[c] || "通用问答";
+  const toolText = (n) => TOOL_TEXT[n] || "工具";
+  const agentText = (a) => AGENT_TEXT[a] || "处理单元";
+
+  function sourcesLine(list) {
+    if (!list || !list.length) return null;
+    const el = document.createElement("div");
+    el.className = "sources";
+    const lbl = document.createElement("span");
+    lbl.className = "lbl"; lbl.textContent = "数据来源";
+    el.appendChild(lbl);
+    list.forEach((s) => {
+      const b = document.createElement("span");
+      b.className = "s"; b.textContent = s.label || s;
+      el.appendChild(b);
+    });
+    return el;
+  }
+
+  function scrollDown() { stream.scrollTop = stream.scrollHeight; }
+
+  // ---------------- 过程面板 ----------------
+  // 三块：思考过程 / 工具调用 / 说明。
+  // 思考**不进答案气泡**（U119）：用户要的是结论，过程放在右边随手可查；
+  // 混在一起会让一条 200 字的答案变成一篇报告。
+  const MET_TEXT = {
+    hybrid_rerank: "混合检索（关键词 + 语义）", model_direct: "直接由模型回答",
+    vector_only: "语义检索", bm25: "关键词检索",
+  };
+
+  function renderPanel(info) {
+    panel.innerHTML = "";
+    const box = (title) => {
+      const d = document.createElement("div");
+      d.className = "step";
+      const k = document.createElement("div"); k.className = "k"; k.textContent = title;
+      const v = document.createElement("div"); v.className = "v";
+      d.append(k, v); panel.appendChild(d);
+      return v;
+    };
+    const line = (text, cls) => {
+      const p = document.createElement("div");
+      if (cls) p.className = cls;
+      p.textContent = text;
+      return p;
+    };
+
+    // ---- 思考过程 ----
+    const think = box("思考过程");
+    let thought = 0;
+    if (info.plan) {
+      const p = info.plan, i = p.intent || {};
+      if (p.category) { think.appendChild(line("判断：" + catText(p.category))); thought++; }
+      if (i.layer) {
+        const lab = CAT_TEXT[i.label] ? "（" + CAT_TEXT[i.label] + "）" : "";
+        think.appendChild(line("识别：" + (LAYER_TEXT[i.layer] || "模型判定") + lab));
+        thought++;
+      }
+      if (p.method) {
+        think.appendChild(line("策略：" + (MET_TEXT[p.method] || "按需检索")));
+        thought++;
+      }
+      if (p.wiki && (p.wiki.claims || 0) > 0) {
+        think.appendChild(line("已知事实：" + p.wiki.claims + " 条"));
+        thought++;
+      }
+    }
+    if (info.tools && !info.tools.disabled) {
+      const units = info.tools.units || [];
+      const ran = units.reduce((s, u) => s + (u.tool_calls || 0), 0);
+      const visible = units.reduce((s, u) => s + (u.tools || []).length, 0);
+      if (visible) {
+        think.appendChild(line("可选用工具：" + visible + " 个，实际调用 " + ran + " 次"));
+        thought++;
+      }
+    }
+    if (!thought) think.appendChild(line("（这次没有留下思考记录）", "dim"));
+
+    // ---- 工具调用 ----
+    if (info.tools) {
+      const t = info.tools;
+      const v = box("工具调用");
+      if (t.disabled) {
+        v.appendChild(line("这次没有走工具", "dim"));
+      } else {
+        let shown = 0;
+        (t.units || []).forEach((u) => {
+          if ((u.calls || []).length) {
+            const uh = document.createElement("div");
+            uh.className = "rs";
+            uh.textContent = "「" + String(u.text || "").slice(0, 20) + "」交给"
+              + agentText(u.agent) + (u.assignment_fallback ? "（启发式兜底）" : "")
+              + "，" + (u.rounds || 0) + " 轮";
+            v.appendChild(uh);
+          }
+          (u.calls || []).forEach((c) => {
+            const wrap = document.createElement("div");
+            wrap.className = "call";
+            const hd = document.createElement("div"); hd.className = "hd";
+            const nm = document.createElement("span"); nm.className = "nm";
+            nm.textContent = toolText(c.tool) + (TOOL_TEXT[c.tool] ? "" : " " + c.tool);
+            const ar = document.createElement("span"); ar.className = "ar";
+            ar.textContent = c.args ? "（" + c.args + "）" : "";
+            const st = document.createElement("span");
+            // 「成功但 0 命中」要单独说：写成「成功」会让人以为查到了依据
+            if (!c.ok) { st.className = "err"; st.textContent = "失败"; }
+            else if (c.empty) { st.className = "warn"; st.textContent = "未命中"; }
+            else { st.className = "ok"; st.textContent = "成功"; }
+            hd.append(nm, ar, st);
+            wrap.appendChild(hd);
+            if (c.result) wrap.appendChild(line(c.result, "rs"));
+            if (!c.ok && c.note) wrap.appendChild(line(c.note, "err"));
+            v.appendChild(wrap);
+            shown++;
+          });
+          (u.degradation || []).forEach((d) => v.appendChild(line(d, "warn")));
+          if (u.skipped) v.appendChild(line("跳过：" + u.skipped, "dim"));
+        });
+        (t.unassigned || []).forEach((x) => v.appendChild(line("没有派发：" + x, "dim")));
+        if (!shown && !(t.unassigned || []).length) {
+          v.appendChild(line("这次没有调用工具", "dim"));
+        }
+      }
+    }
+
+    if (info.notes && info.notes.length) {
+      const v = box("说明");
+      info.notes.forEach((n) => v.appendChild(line(n, "dim")));
+    }
+    if (!panel.children.length) panel.innerHTML = '<div class="none">还没有提问。</div>';
+  }
+
+  // ---------------- SSE ----------------
+  async function ask(utterance) {
+    if (state.busy) return;
+    if (!state.token) { overlay.classList.remove("hide"); return; }
+    state.busy = true;
+    sendBtn.disabled = true;
+    $("statusLine").textContent = "思考中…";
+
+    ensureConv(utterance);
+    addUser(utterance);
+    const textNode = addAssistant("");
+    const cursor = document.createElement("span");
+    cursor.className = "cursor";
+    textNode.appendChild(cursor);
+
+    const info = { plan: null, tools: null, notes: [], sources: [] };
+
+    try {
+      const res = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer " + state.token },
+        body: JSON.stringify({ utterance, conversation_id: state.conversationId }),
+      });
+      if (res.status === 401) { logout(true); throw new Error("会话已过期，请重新登录"); }
+      if (!res.ok || !res.body) throw new Error("HTTP " + res.status);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buf = "", answer = "";
+
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf("\n\n")) >= 0) {
+          const frame = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 2);
+          if (!frame.startsWith("data:")) continue;
+          let evt;
+          try { evt = JSON.parse(frame.slice(5).trim()); } catch (_) { continue; }
+          if (evt.type === "plan") {
+            info.plan = evt.data || {};
+            renderPanel(info);
+          } else if (evt.type === "tools") {
+            info.tools = evt.data || {};
+            if (info.tools.sources) info.sources = info.tools.sources;
+            renderPanel(info);
+            $("statusLine").textContent = "已调用工具，整理答案…";
+          } else if (evt.type === "chunk") {
+            answer += evt.text || "";
+            textNode.textContent = answer;
+            textNode.appendChild(cursor);
+            scrollDown();
+          } else if (evt.type === "revise") {
+            answer = evt.text || "";
+            textNode.textContent = answer;
+            textNode.appendChild(cursor);
+          } else if (evt.type === "clarify") {
+            answer += (answer ? "\n" : "") + (evt.text || "");
+            textNode.textContent = answer;
+            textNode.appendChild(cursor);
+          } else if (evt.type === "error") {
+            const msg = evt.text || "出错了";
+            info.notes.push("error: " + msg);
+            textNode.textContent = answer || msg;
+            textNode.classList.add("err");
+            renderPanel(info);
+          } else if (evt.type === "done") {
+            const d = evt.data || {};
+            if (d.conversation_id) state.conversationId = d.conversation_id;
+            if (d.notes && d.notes.length) { info.notes = info.notes.concat(d.notes); }
+            if (d.units) info.tools = d.units;
+            if (d.sources) info.sources = d.sources;
+            renderPanel(info);
+          }
+        }
+      }
+
+      cursor.remove();
+      if (!answer.trim()) textNode.textContent = answer || "（没有回答内容）";
+      // 数据来源：答案**之后**的一行小字（U119）。放在气泡里面，
+      // 但字号与颜色都退到次要层级 —— 它是佐证，不是答案。
+      const src = sourcesLine(info.sources);
+      if (src) textNode.parentElement.appendChild(src);
+      persistTurn({ q: utterance, a: answer, sources: info.sources, panel: info });
+      $("statusLine").textContent = "就绪";
+    } catch (err) {
+      cursor.remove();
+      textNode.classList.add("err");
+      textNode.textContent = err.message || "请求失败";
+      $("statusLine").textContent = "出错";
+    } finally {
+      state.busy = false;
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+
+  // ---------------- 登录 ----------------
+  function saveSession(userId, token, tier) {
+    state.token = token; state.userId = userId;
+    localStorage.setItem("ab.token", token);
+    localStorage.setItem("ab.user", userId);
+    localStorage.setItem("ab.tier", tier || "");
+    overlay.classList.add("hide");
+    setWho();
+  }
+
+  function logout(expired) {
+    state.token = ""; state.userId = "";
+    localStorage.removeItem("ab.token"); localStorage.removeItem("ab.user");
+    setWho();
+    overlay.classList.remove("hide");
+    if (expired) loginErr.textContent = "会话已过期，请重新登录";
+  }
+
+  $("doLogin").onclick = async () => {
+    loginErr.textContent = "";
+    const account = $("acc").value.trim(), password = $("pwd").value;
+    if (!account || !password) { loginErr.textContent = "账号与密码都要填"; return; }
+    const kind = account.includes("@") ? "email" : (/^\d{11}$/.test(account) ? "phone" : "");
+    try {
+      const body = { account, password, device_id: state.deviceId };
+      if (kind) body.kind = kind;
+      const d = await api("/api/session/login", body);
+      saveSession(d.user_id, d.token, "member");
+      $("engine").textContent = "";
+    } catch (e) {
+      loginErr.textContent = e.message || "登录失败";
+    }
+  };
+
+  $("doGuest").onclick = async () => {
+    loginErr.textContent = "";
+    try {
+      const d = await api("/api/session/guest", { device_id: state.deviceId });
+      saveSession(d.user_id, d.token, "guest");
+      $("engine").textContent = "访客 · 文字问答 " + (d.text_query_budget ?? "?") + " 次额度";
+    } catch (e) {
+      loginErr.textContent = e.message || "访客入口不可用";
+    }
+  };
+
+  $("logout").onclick = () => logout(false);
+
+  // ---------------- 交互 ----------------
+  $("newChat").onclick = () => {
+    state.conversationId = "";
+    clearStream();
+    $("panel").innerHTML = '<div class="none">还没有提问。</div>';
+    renderConvs();
+    input.focus();
+  };
+
+  input.addEventListener("input", () => {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 180) + "px";
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+  });
+  sendBtn.onclick = submit;
+
+  function submit() {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = ""; input.style.height = "auto";
+    ask(text);
+  }
+
+  // ---------------- 启动 ----------------
+  renderConvs();
+  setWho();
+  checkBackend().then((ok) => {
+    if (!ok) return;
+    if (state.token) {
+      overlay.classList.add("hide");
+      api("/api/accounts/me", undefined, "GET")
+        .then((me) => { if (me && me.user_id) { state.userId = me.user_id; setWho(); } })
+        .catch((e) => { if (e.status === 401) logout(true); });
+    }
+  });
+  input.focus();
+})();
+</script>
+</body>
+</html>

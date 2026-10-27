@@ -13,6 +13,7 @@ import pytest
 
 from ai_butler.agents.capabilities import (
     CAP_DATA_READ,
+    CAP_EXTERNAL_READ,
     CAP_RETRIEVAL,
     CAP_WIKI_READ,
     CAP_WIKI_WRITE,
@@ -151,14 +152,22 @@ def test_unknown_combination_is_not_dispatched():
     assert assign(unit) is None
 
 
-def test_unknown_category_has_one_safe_fallback():
-    """只给「未知任务 + 未知信息」一条兜底，且**不授予任何写能力**。"""
+def test_unknown_category_gets_the_full_read_only_set():
+    """「未知任务 + 未知信息」给**只读全集**，且**不授予任何写能力**。
+
+    口径在 U119 改过一次，原因如实写在这里：原先只给 `CAP_RETRIEVAL`，
+    于是「杭州明天会下雨吗」（判成 unknown/none）拿到一份只有素材检索的清单，
+    模型据此回答「我没有天气查询工具」—— 工具注册着、能力也有，被裁剪掉了。
+    判不出的语义本来就是「不知道该归谁」，这时给只读全集才对；
+    命中具体格子的组合仍然按最小权限给（见其他用例）。
+    """
     unit = InformationUnit(text="嗯", origin="", slot_kind=SlotKind.NONE,
                            category="unknown")
     got = assign(unit)
     assert got is not None
-    assert got.capabilities == (CAP_RETRIEVAL,)
+    assert set(got.capabilities) == {CAP_RETRIEVAL, CAP_WIKI_READ, CAP_EXTERNAL_READ}
     assert CAP_WIKI_WRITE not in got.capabilities
+    assert "payment" not in got.capabilities
 
 
 def test_private_recall_never_gets_public_write():

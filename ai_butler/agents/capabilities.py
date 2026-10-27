@@ -27,11 +27,15 @@ CAP_LLM = "llm"                    # LLM 网关（慢思考）
 CAP_JEV = "jev"                    # Jev 高速结构化决策（快思考）
 CAP_DATA_READ = "data_read"        # 数据 SDK 只读（P1「所有 Agent 只读」）
 CAP_PAYMENT = "payment"            # 支付执行能力（垂类 Agent 不得直接持有）
+#: 外部只读（U118）：天气（Open-Meteo）、POI（高德）。计划书表 11「公共数据：
+#: 天气 API、景区公开信息」的读侧。与 `data_read` 分开，是因为数据源与配额
+#: 完全在项目之外（外部服务），出故障时排障路径不同。
+CAP_EXTERNAL_READ = "external_read"
 
 # Jev 单列一项能力：计划书三、P3 要求「Jev 调用独立配额统计」，
 # 它与普通大模型调用是两条独立受管的路径（各自的限流桶与配额）。
 CAPABILITIES: tuple[str, ...] = (CAP_RETRIEVAL, CAP_WIKI_READ, CAP_WIKI_WRITE, CAP_LLM,
-                                 CAP_JEV, CAP_DATA_READ, CAP_PAYMENT)
+                                 CAP_JEV, CAP_DATA_READ, CAP_PAYMENT, CAP_EXTERNAL_READ)
 
 #: 任何垂类子 Agent 都不得声明的能力（统一架构规范 10.11）
 FORBIDDEN_FOR_SUBAGENTS: tuple[str, ...] = (CAP_PAYMENT,)
@@ -52,6 +56,9 @@ class AgentTools:
     llm: Any = None
     jev: Any = None
     data_read: Any = None
+    #: 外部只读（U118）：天气 / POI 这类项目外部数据源。**只读**，与 `data_read`
+    #: 分开是因为故障域不同（外部 SLA vs 自家数据中台），排障路径完全不同。
+    external_read: Any = None
     payment: Any = None
 
     def has(self, capability: str) -> bool:

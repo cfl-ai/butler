@@ -43,6 +43,8 @@ class ToolAnswer:
 
     report: IntakeReport
     skipped: str = ""
+    #: 改道说明（U117）：用户所选模型无工具能力、工具请求被改到专用供应商时记在这里。
+    note: str = ""
 
     @property
     def ran(self) -> bool:
@@ -87,22 +89,63 @@ async def answer_with_tools(*, gateway: Any, registry: ToolRegistry,
         # 空注册表是最容易被忽略的失效形态：回路能跑，却一个工具都看不见
         return ToolAnswer(IntakeReport(), skipped="工具清单为空：未装配任何可下发给模型的工具")
 
-    capable, why = (gateway.tool_capability() if hasattr(gateway, "tool_capability")
-                    else (True, ""))
-    if not capable:
-        return ToolAnswer(IntakeReport(), skipped=f"模型不具备工具能力：{why}")
+    # 用户所选模型能否承载工具请求 —— 这一步不做，工具请求会带着
+    # `provider="ollama"` 进去，被明确拒绝（本机模型无 tools），
+    # 结果就是「开关打开了、每次都在退回」，开关等于装饰（U117）。
+    kwargs, route_note = _route_for_tools(gateway, cfg, model_kwargs)
+    if kwargs is None:
+        return ToolAnswer(IntakeReport(), skipped=f"模型不具备工具能力：{route_note}")
 
     dispatcher = build_tool_dispatcher(registry, role=role)
-    kwargs = dict(model_kwargs or {})
     report = await run_units(
         gateway=gateway, dispatcher=dispatcher, registry=registry,
         user_id=user_id, utterance=utterance, intent_label=intent_label or None,
         settings=cfg, chat_kwargs=kwargs)
     if report.ran_count == 0:
-        # 回路没产出答案（多为调配表查不到）：退回普通问答，原因如实带出去
+        # 回路没产出答案（多为闲聊/多意图不派发）：退回普通问答，原因如实带出去
         reasons = sorted({o.skipped for o in report.outcomes if o.skipped})
-        return ToolAnswer(report, skipped="回路未产出答案：" + "、".join(reasons or ["未知"]))
-    return ToolAnswer(report)
+        return ToolAnswer(report, skipped="回路未产出答案：" + "、".join(reasons or ["未知"]),
+                          note=route_note)
+    return ToolAnswer(report, note=route_note)
+
+
+def _route_for_tools(gateway: Any, cfg: Any,
+                     model_kwargs: dict[str, Any] | None) -> tuple[dict[str, Any] | None, str]:
+    """决定工具请求走哪个模型。返回 `(可用的调用参数, 说明)`；参数为 None = 不能走。
+
+    **为什么不能照抄用户所选模型**：对话链路会先按用户解析出
+    `provider + model + 凭据`（U70），而平台默认模型是**本机 Ollama**
+    （`qwen2.5vl:3b`，无 tools）。把这组参数原样带进工具请求，
+    网关会按「显式指定供应商」处理并直接拒绝 —— 每次提问都退回，
+    function calling 就成了摆设。所以：
+
+    1. 用户所选模型**确实**具备工具能力 → 原样用它（尊重用户选择，含 BYOK）；
+    2. 不具备、且配置了 `function_calling_provider` → **改道**到该供应商，
+       并把原因回给调用方（不悄悄换模型，要让用户知道这次是哪个模型答的）；
+    3. 不具备、且没配置专用供应商 → 如实跳过，退回普通问答。
+    """
+    kwargs = dict(model_kwargs or {})
+    model = kwargs.get("model") or None
+    provider = str(kwargs.get("provider") or "").strip() or None
+    if not hasattr(gateway, "tool_capability"):
+        return kwargs, ""
+    try:
+        capable, why = gateway.tool_capability(model=model, provider=provider)
+    except TypeError:
+        # 只带零参能力的网关实现（含测试替身）：**扩展接口不得打破既有实现**
+        # （E-102 同族）。拿不到精细判定就退化成「按默认路由判定」。
+        capable, why = gateway.tool_capability()
+    if capable:
+        return kwargs, ""
+
+    designated = str(getattr(cfg, "function_calling_provider", "") or "").strip()
+    if not designated:
+        return None, why
+    # 去掉 pin 住的供应商/模型/凭据：三者要么都属于所选模型，要么都不该带
+    for key in ("provider", "model", "api_key", "base_url"):
+        kwargs.pop(key, None)
+    return kwargs, (f"所选模型（{provider or '默认'}/{model or '默认'}）不具备工具能力，"
+                    f"工具请求已改道 {designated}：{why}")
 
 
 __all__ = ["CHAT_AGENT_KEY", "ToolAnswer", "answer_with_tools", "build_tool_dispatcher"]

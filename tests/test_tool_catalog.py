@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from ai_butler.agents.capabilities import CAP_EXTERNAL_READ
 from ai_butler.scheduler.tool_catalog import (
     HIT_TEXT_MAX_CHARS,
     MAX_HITS,
@@ -54,7 +55,7 @@ def _dispatcher(registry: ToolRegistry) -> ToolDispatcher:
 # --------------------------------------------------------------------------- #
 def test_catalog_tools_are_exposed_with_schema_and_capability():
     registry = build_tool_registry(search_service=StubSearchService(),
-                                   wiki_store=None)
+                                   wiki_store=None, external_tools=False)
     exposed = registry.as_openai_tools()
     assert [t["function"]["name"] for t in exposed] == ["search_materials"]
     assert exposed[0]["function"]["parameters"]["required"] == ["query"]
@@ -64,7 +65,122 @@ def test_catalog_tools_are_exposed_with_schema_and_capability():
 
 def test_missing_dependency_registers_nothing_instead_of_a_broken_shell():
     """缺依赖就少注册，不是注册一个调用必炸的空壳。"""
-    assert build_tool_registry().names() == ()
+    assert build_tool_registry(external_tools=False).names() == ()
+
+
+# --------------------------------------------------------------------------- #
+# 1b. 外部只读工具（U118）
+# --------------------------------------------------------------------------- #
+class StubWeatherPort:
+    """假天气端口：不发网络请求，但走真实的 WeatherCollector 解析路径。"""
+
+    def __init__(self) -> None:
+        self.seen: list[str] = []
+
+    async def geocode(self, name):
+        self.seen.append(name)
+        from ai_butler.verticals.tour.weather import GeoPoint
+        return GeoPoint(name=name, latitude=30.25, longitude=120.16,
+                        country="中国", admin1="浙江", ambiguous=False)
+
+    async def current(self, *, latitude, longitude):
+        from ai_butler.verticals.tour.weather import WeatherFact
+        return WeatherFact(latitude=latitude, longitude=longitude,
+                           temperature_c=21.5, weather_code=0, weather_text="晴",
+                           wind_kmh=8.0, fetched_at="2026-10-27T00:00:00+00:00",
+                           provider="stub-weather")
+
+
+def test_weather_tool_is_registered_by_default_and_readable():
+    """天气是「默认打开就有用」的那个工具：无 key、只读、能落到模型手里。"""
+    port = StubWeatherPort()
+    registry = build_tool_registry(search_service=StubSearchService(),
+                                   weather_port=port, settings=None)
+    assert "get_weather" in registry.names()
+    spec = registry.get("get_weather")
+    assert spec.capability == CAP_EXTERNAL_READ
+    assert spec.exposed_to_model is True
+    assert spec.params_schema["required"] == ["city"]
+
+    result = _dispatcher(registry).dispatch(
+        ToolCall(name="get_weather", payload={"city": "杭州"}), user_id="user-A")
+    assert result.ok, result.note
+    assert result.output["weather"] == "晴"
+    assert result.output["temperature_c"] == 21.5
+    assert port.seen == ["杭州"], "地名要真的交给端口解析"
+
+
+def test_weather_tool_carries_forecast_when_the_port_supports_it():
+    """问「明天会下雨吗」要有预报（U119）：只有实况时模型会判定查不到天气。
+
+    这条守的是「能力有就要给到模型」：`get_weather` 的返回里必须带
+    未来几天的日期/天气/温度/降水概率，而不是只给一个当前气温。
+    """
+    from ai_butler.verticals.tour.weather import DailyForecast
+
+    class ForecastPort(StubWeatherPort):
+        async def forecast(self, *, latitude, longitude, days=3):
+            return tuple(
+                DailyForecast(date=f"2026-10-{27 + i}", weather_code=61,
+                              weather_text="小雨", temp_max_c=21.0 + i,
+                              temp_min_c=12.0 + i, precip_prob_max=60, precip_mm=3.2)
+                for i in range(days))
+
+    registry = build_tool_registry(weather_port=ForecastPort())
+    result = _dispatcher(registry).dispatch(
+        ToolCall(name="get_weather", payload={"city": "杭州", "days": 2}),
+        user_id="user-A")
+    assert result.ok, result.note
+    forecast = result.output["forecast"]
+    assert len(forecast) == 2, "days 要真的传下去"
+    assert forecast[0]["weather_text"] == "小雨"
+    assert "%" in forecast[0]["text"], "现成的一句话要带单位，免得模型念成「降水概率60」"
+    assert result.output["forecast_error"] == ""
+
+
+def test_weather_tool_still_answers_when_forecast_is_unavailable():
+    """源不支持预报时：实况照给，预报缺席的原因如实写出来（不整体失败）。"""
+    registry = build_tool_registry(weather_port=StubWeatherPort())
+    result = _dispatcher(registry).dispatch(
+        ToolCall(name="get_weather", payload={"city": "杭州"}), user_id="user-A")
+    assert result.ok, result.note
+    assert result.output["temperature_c"] == 21.5
+    assert result.output["forecast"] == []
+    assert "预报不可用" in result.output["forecast_error"]
+
+
+def test_weather_tool_fails_honestly_when_place_cannot_be_resolved():
+    class Broken(StubWeatherPort):
+        async def geocode(self, name):
+            return None
+
+    registry = build_tool_registry(weather_port=Broken())
+    result = _dispatcher(registry).dispatch(
+        ToolCall(name="get_weather", payload={"city": "不存在的地方"}), user_id="user-A")
+    assert result.ok is False, "解析不到地名必须失败，不能编一个坐标"
+    assert "解析" in (result.note or "") or "取不到" in (result.note or "")
+
+
+def test_poi_tool_is_registered_only_when_a_key_exists():
+    """没有高德 key 就不注册 search_poi：模型不该看见必然失败的工具。"""
+    assert "search_poi" not in build_tool_registry().names()
+
+    class NoKeySettings:
+        amap_key = ""
+
+    assert "search_poi" not in build_tool_registry(settings=NoKeySettings()).names()
+
+    class WithKeySettings:
+        amap_key = "fake-key"
+
+    registry = build_tool_registry(settings=WithKeySettings())
+    assert "search_poi" in registry.names()
+    assert registry.get("search_poi").capability == CAP_EXTERNAL_READ
+
+
+def test_external_tools_can_be_switched_off_for_offline_assembly():
+    """离线装配/测试不该被外部网络绑架：`external_tools=False` 一个都不注册。"""
+    assert build_tool_registry(external_tools=False).names() == ()
 
 
 # --------------------------------------------------------------------------- #

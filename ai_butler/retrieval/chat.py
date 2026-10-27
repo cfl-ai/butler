@@ -61,7 +61,9 @@ _SYSTEM = (
     "3. 回答用中文，简洁直接，不超过 200 字。\n"
     "4. 【资料】为空时，仅可作通用常识性说明，并说明「未引用资料」。\n"
     "5. 【对话历史】只用于理解指代（「它」「第二个」「刚才那个」）；"
-    "历史里的事实不算证据，与资料冲突时以资料为准。"
+    "历史里的事实不算证据，与资料冲突时以资料为准。\n"
+    "6. **纯文本输出**：不要用 Markdown，不要出现 *、#、-、| 这些符号，"
+    "不要加粗、不要表格、不要分点符号；要分句就用短句或分号。"
 )
 
 #: 历史段的标题。**空历史时整段不出现**，绝不下发「（无）」这种占位。
@@ -72,6 +74,160 @@ _ANAPHORA = re.compile(r"(它|这个|那个|这些|那些|上面|前面|刚才|�
 
 #: 只在短句上做检索扩展：长句自带足够语义，拼上一轮反而稀释
 ANAPHORA_MAX_CHARS = 24
+
+
+# --------------------------------------------------------------------------- #
+# 答案纯文本化（U119）
+# --------------------------------------------------------------------------- #
+#: 从答案里**逐字符丢弃**的 Markdown 记号。用丢弃而不是成对匹配：
+#: 流式文本很可能在 `**` 中间被切开，成对匹配会漏出半个标记，逐字符丢弃不会。
+#: 只收中文答案里没有正常用途的字符 —— `_`、`#` 会出现在标识符与「C#」里，
+#: 所以不整类丢弃，只按「行首」判定（见 `PlainText.feed`）。
+_DROP_CHARS = frozenset("*|`")
+
+
+class PlainText:
+    """把模型输出洗成纯文本。**逐字安全**，可以边流边洗。
+
+    为什么在服务端做：端侧可能是网页、可能是 TTS、可能是手机原生列表。
+    让每个端各写一遍清洗，必然三套口径（E-44）；而且 TTS 会把 `**` 念出来。
+
+    行首列表符（`- `、`•`、`·`）整段丢弃，但**行中的连字符保留** ——
+    「20-30 度」「B-52」这类是正文，不是标记。
+    """
+
+    _BULLETS = frozenset(" \t\u00a0")
+
+    def __init__(self) -> None:
+        self._at_line_start = True
+        #: 行首连续的 `-`。要等后面一个字符才知道它是列表符（`- 项`）、
+        #: 表格分隔行（`---`）还是正文（`--flag`、结尾的 `20-`）。
+        self._dashes = ""
+
+    def feed(self, piece: str) -> str:
+        out: list[str] = []
+        for ch in piece:
+            if self._dashes or (ch == "-" and self._at_line_start):
+                if self._dashes and ch == "|":
+                    # 表格分隔行形如 `|---|---|`：竖线夹在横线中间，
+                    # 丢掉竖线、横线继续累积，整行才能在换行时被识别并丢弃
+                    continue
+                if ch == "-":
+                    self._dashes += ch
+                    continue
+                run = self._dashes
+                self._dashes = ""
+                if len(run) >= 3 and ch in " \t\n\r":
+                    # 表格分隔行 / 水平线：整行丢弃（`| --- | --- |` 去掉竖线后剩的就是它）
+                    if ch in "\n\r":
+                        out.append(ch)
+                        self._at_line_start = True
+                    continue
+                if len(run) == 1 and ch in self._BULLETS:
+                    # 列表符 `- 项`：符号与它后面那个空格一起丢
+                    continue
+                out.append(run)
+                self._at_line_start = False
+                # 不 continue：当前字符还要按正常规则处理
+            if ch in "•·":
+                continue
+            if ch in _DROP_CHARS:
+                continue
+            if ch == "#":
+                # 只丢行首的标题井号；正文里的 `C#` 保留
+                if self._at_line_start:
+                    continue
+                out.append(ch)
+                self._at_line_start = False
+                continue
+            if ch == "-":
+                out.append(ch)
+                self._at_line_start = False
+                continue
+            if ch == "\n":
+                out.append(ch)
+                self._at_line_start = True
+                continue
+            if ch.isspace():
+                # 行首缩进一律吞掉：否则去符号后每行都带着前导空格
+                if self._at_line_start:
+                    continue
+                out.append(ch)
+                continue
+            out.append(ch)
+            self._at_line_start = False
+        return "".join(out)
+
+    def flush(self) -> str:
+        dashes, self._dashes = self._dashes, ""
+        return dashes
+
+
+def plain_text(text: str) -> str:
+    """一次性洗完（非流式场景：工具回路的答案、改写字）。"""
+    cleaner = PlainText()
+    return cleaner.feed(text or "") + cleaner.flush()
+
+
+#: 工具 → 数据来源的人话名称。**前端不自己拼**：来源名属于数据口径，
+#: 页面和后端各维护一份必然漂移（E-44）。
+TOOL_SOURCE_LABELS: dict[str, str] = {
+    "get_weather": "Open-Meteo 气象数据",
+    "search_poi": "高德地图 POI",
+    "search_materials": "素材中心（P2 知识库）",
+    "read_wiki_page": "Agent Wiki",
+}
+
+#: 没登记的工具也要有名字：直接显示工具名，比显示「未知来源」有用。
+UNKNOWN_TOOL_SOURCE = "工具"
+
+
+def _tool_sources(payload: Mapping[str, Any]) -> list[dict[str, str]]:
+    """从工具报告里抽「数据来源」（U119）。
+
+    **只列真的调用成功过的工具**：失败的工具被写成来源，等于给出一个假的出处。
+    同一工具被调多次只列一次 —— 这里回答的是「数据从哪来」，不是调用日志。
+    """
+    out: list[dict[str, str]] = []
+    for unit in payload.get("units") or ():
+        for call in unit.get("calls") or ():
+            if not call.get("ok"):
+                continue
+            name = str(call.get("tool") or "")
+            base = TOOL_SOURCE_LABELS.get(name) or f"{UNKNOWN_TOOL_SOURCE} {name}".strip()
+            # 跑成功但 0 命中：写成「未命中」，不冒充依据
+            label = f"{base}（本次未命中）" if call.get("empty") else base
+            if any(item["label"] == label for item in out):
+                continue
+            out.append({"label": label, "kind": "tool_empty" if call.get("empty") else "tool",
+                        "tool": name})
+    return out
+
+
+def _retrieval_sources(hits: Sequence[Mapping[str, Any]],
+                       wiki: Mapping[str, Any] | None) -> list[dict[str, str]]:
+    """常规链路的来源：素材检索命中 + Wiki 已知事实。
+
+    命中 0 条时**不写「素材库」**：那会让人以为查过且有依据。
+    改为明写「未检索到资料」，把「没有依据」这件事摆到台面上。
+    """
+    out: list[dict[str, str]] = []
+    count = len(hits or ())
+    if count:
+        doc_ids = []
+        for hit in hits:
+            for key in ("source_id", "doc_id"):
+                value = hit.get(key)
+                if value and str(value) not in doc_ids:
+                    doc_ids.append(str(value))
+        label = f"素材中心检索命中 {count} 条"
+        if doc_ids:
+            label += "（" + "、".join(doc_ids[:3]) + ("…" if len(doc_ids) > 3 else "") + "）"
+        out.append({"label": label, "kind": "retrieval"})
+    claims = int((wiki or {}).get("claims") or 0)
+    if claims:
+        out.append({"label": f"Agent Wiki 已知事实 {claims} 条", "kind": "wiki"})
+    return out
 
 
 class SearchUnavailable(RuntimeError):
@@ -467,8 +623,17 @@ class ChatOrchestrator:
                 early_notes.append(f"工具回路失败（{type(exc).__name__}）：已退回常规问答")
                 tool_outcome = None
             if tool_outcome is not None and getattr(tool_outcome, "ran", False):
-                tool_text = getattr(tool_outcome, "text", "") or ""
+                # 纯文本化（U119）：模型即使被提示约束，仍会吐 `**`/`- ` 列表；
+                # 这些记号在网页与 TTS 里都是噪音，统一在这一层洗掉。
+                tool_text = plain_text(getattr(tool_outcome, "text", "") or "")
                 tool_payload = tool_outcome.report.as_dict()
+                tool_sources = _tool_sources(tool_payload)
+                tool_payload["sources"] = tool_sources
+                # 改道说明（U117）：用户所选模型无工具能力时，工具请求被改到专用供应商。
+                # 必须写进 notes —— 否则用户以为答案来自己选的模型，其实换了。
+                route_note = getattr(tool_outcome, "note", "") or ""
+                if route_note:
+                    early_notes.append(route_note)
                 # 工具过程先发，答案后发：端侧要能先显示「调了哪些工具」，
                 # 而不是等答案出来了才补过程（那样过程就只是装饰）。
                 yield ChatEvent("tools", data=tool_payload)
@@ -484,6 +649,8 @@ class ChatOrchestrator:
                         "category": retrieval_plan.category.value,
                         "source": "function_call",
                         "units": tool_payload,
+                        # 数据来源（U119）：网页用小字显示在答案下方；TTS 不读它。
+                        "sources": tool_sources,
                         "intent_layer": intent_decision.layer if intent_decision else None,
                         "intent_label": intent_decision.label if intent_decision else None,
                         "notes": tool_notes,
@@ -546,15 +713,21 @@ class ChatOrchestrator:
                                 data={"code": exc.code})
                 return
 
+        # 边流边洗（U119）：`collected` 收的是**洗完**的文本，复检与落盘
+        # 都基于用户真正看到的那一版，不是带着 `**` 的原始稿。
+        cleaner = PlainText()
         collected: list[str] = []
         try:
             async for piece in self.gateway.stream(user_id=user_id, messages=messages,
                                                    max_tokens=512, **model_kwargs):
                 if not piece:
                     continue
-                collected.append(piece)
-                yield ChatEvent("chunk", text=piece,
-                                speech=piece if self._can_speak(resolved_tier) else "")
+                clean = cleaner.feed(piece)
+                if not clean:
+                    continue
+                collected.append(clean)
+                yield ChatEvent("chunk", text=clean,
+                                speech=clean if self._can_speak(resolved_tier) else "")
         except GatewayError as exc:
             # 已经吐过一部分就保留它，并明确标注「回答被截断」——不假装完整
             yield ChatEvent("error",
@@ -562,6 +735,14 @@ class ChatOrchestrator:
                             data={"code": "llm_failed",
                                   "partial": "".join(collected)})
             return
+
+        # 行尾挂起的那个字符（可能是被当列表符吞掉的 `-`）必须在收尾时决定去留，
+        # 否则「20-」这种结尾会少一个字符
+        tail = cleaner.flush()
+        if tail:
+            collected.append(tail)
+            yield ChatEvent("chunk", text=tail,
+                            speech=tail if self._can_speak(resolved_tier) else "")
 
         answer = "".join(collected)
         verification: VerificationResult | None = None
@@ -576,7 +757,7 @@ class ChatOrchestrator:
 
         final_answer = answer
         if verification is not None and verification.abstained:
-            replacement = render_abstention(verification)
+            replacement = plain_text(render_abstention(verification))
             # 落盘的必须是**用户真正看到的那一版**：把被推翻的初稿写进历史，
             # 下一轮模型会把幻觉当成「自己上次说过的话」继续引用。
             final_answer = replacement
@@ -600,6 +781,9 @@ class ChatOrchestrator:
             "decided_by": retrieval_plan.decided_by,
             "tools": list(retrieval_plan.tools),
             "hits": len(hits),
+            # 数据来源（U119）：检索命中数、Wiki 事实数、用过的外部工具。
+            # 端侧把它渲染成答案下方的小字 —— 用户要能看见「这句凭什么」。
+            "sources": _retrieval_sources(hits, plan_payload["wiki"]),
             # 素材 id 必须吐出来：评测的召回率维度要的是「召回了哪些」，
             # 不是「召回了几个」。只给数量时，复评无法判断漏掉的是哪条，
             # 缺陷只能写成「召回不足」而说不出该补什么。

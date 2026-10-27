@@ -32,7 +32,7 @@ import base64
 import json
 import uuid
 from pathlib import Path
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -102,11 +102,20 @@ PUBLIC_PATHS: frozenset[str] = frozenset({
     "/api/session/reset",
     # 昵称建议（U69）：注册前就要能点"随机一个"，无状态、不落库
     "/api/accounts/nickname/suggest",
+    # 常规入口的 Web 页面（U116）。**页面本身不含任何数据**，
+    # 放行的只是「把这张 HTML 交出去」这个动作；它内部每一个业务请求
+    # 仍然带 Bearer 凭据、仍然走同一套会话校验与能力闸。
+    "/ui",
+    "/ui/",
 })
 
 #: 图文识别的上传上限（base64 字符数），约合 9MB 原始图片。
 #: 手机直出照片 3~8MB，留了余量；再大就该在端上先压缩，而不是让云端硬吃。
 MAX_BASE64_CHARS: int = 12_000_000
+
+#: Web 对话页（U116）的单文件产物。**读文件而不是把 HTML 嵌进 Python 字符串**：
+#: 页面改版不该让后端模块跟着重编译，也不该在 Python 里维护一段转义过的 HTML。
+UI_INDEX_PATH: Path = Path(__file__).with_name("web") / "index.html"
 
 
 def build_chat_context_manager(files, settings: Settings) -> ContextManager:
@@ -189,8 +198,11 @@ def build_entry_tool_answer(settings: Settings, *, gateway, wiki_store):
 
     # 检索是懒装配的：传工厂而不是现成 service，缺 embedding 权重时
     # 只让「这一次工具调用」失败，不会把整个入口装配打断。
+    # `settings` 一并传下去：外部只读工具（天气/POI，U118）要按配置决定是否注册 ——
+    # 没有高德 key 就不注册 search_poi，让模型看不见一个必然失败的工具。
     registry = build_tool_registry(
-        search_service=SearchWiring(settings).service, wiki_store=wiki_store)
+        search_service=SearchWiring(settings).service, wiki_store=wiki_store,
+        settings=settings)
     if not registry.names():
         logger.error("工具清单为空：function_calling_enable=true 但没有任何工具"
                      "（检索/知识库都没装配）")
@@ -272,6 +284,19 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
         redoc_url=None,
         openapi_url=None,
     )
+
+    @app.get("/ui")
+    @app.get("/ui/")
+    async def web_ui() -> Any:
+        """常规入口的 Web 对话页（U116，dsh 形态：左会话 / 中对话 / 右过程）。
+
+        单文件静态页，无构建链 —— 它只消费 `/api/chat/stream` 的 SSE 事件，
+        不引入第二套后端契约。页面在 `PUBLIC_PATHS` 里，但页面里的每个请求
+        仍然要 Bearer 凭据（登录或访客），鉴权没有被绕过。
+        """
+        from fastapi.responses import HTMLResponse
+
+        return HTMLResponse(UI_INDEX_PATH.read_text(encoding="utf-8"))
 
     @app.get("/health")
     async def health() -> JSONResponse:

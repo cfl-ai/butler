@@ -263,3 +263,81 @@ def test_loop_result_renders_failure_with_reason():
     ok_result = ToolResult(call=ToolCall(name="search", payload={}), ok=True,
                            output={"hits": 2})
     assert "search" in FCL._render("search", ok_result)
+
+
+# --------------------------------------------------------------------------- #
+# 5. 工具专用路由（U117）：开关不是装饰
+# --------------------------------------------------------------------------- #
+def test_model_family_matching_does_not_overclaim():
+    """按模型族判定，且**不能**把 qwen2.5vl 误判成支持工具。
+
+    裸 `startswith` 会让白名单项 `qwen2.5` 命中 `qwen2.5vl` —— 而带 vl 的
+    视觉模型恰恰没有任何工具能力（本机实测）。这条守的就是那个坑。
+    """
+    from ai_butler.core.config import DEFAULT_TOOL_CAPABLE_MODELS
+    from ai_butler.infra.llm_gateway import model_supports_tools
+
+    assert model_supports_tools("qwen3:8b", DEFAULT_TOOL_CAPABLE_MODELS)
+    assert model_supports_tools("qwen2.5:7b", DEFAULT_TOOL_CAPABLE_MODELS)
+    assert not model_supports_tools("qwen2.5vl:3b", DEFAULT_TOOL_CAPABLE_MODELS)
+    assert not model_supports_tools("deepseek-chat", ())
+    # 显式登记的完整模型名（带标签）也要能命中：写白名单的人不会总记得去标签
+    assert model_supports_tools("llama3.1:8b", ("llama3.1:8b",))
+
+
+def test_tool_order_prefers_the_designated_provider():
+    """本机 Ollama 无工具能力 → 工具请求必须排到具备能力的供应商上。"""
+    from ai_butler.infra.llm_gateway import LLMGateway
+
+    settings = Settings(provider_order=("ollama",),
+                        function_calling_provider="deepseek",
+                        function_calling_model="deepseek-chat")
+    gateway = LLMGateway(settings, None)
+    assert gateway._tool_order() == ["deepseek", "ollama"], "不支持的留作最后，而不是去掉"
+    capable, why = gateway.tool_capability()
+    assert capable is True and "deepseek" in why
+
+    # 普通请求的顺序**不受影响**：日常问答仍然先走本机模型
+    assert gateway._targets(None) == ["ollama"]
+
+
+def test_tool_capability_reports_the_real_tool_route_not_provider_order_head():
+    from ai_butler.infra.llm_gateway import LLMGateway
+
+    settings = Settings(provider_order=("ollama",), function_calling_models=())
+    capable, why = LLMGateway(settings, None).tool_capability()
+    assert capable is False
+    assert "function_calling_models" in why, "真因不能被淹没（U112 立项原因）"
+
+
+def test_route_for_tools_reroutes_when_the_chosen_model_cannot_call_tools():
+    """对话入口不把「用户所选模型」硬塞进工具请求，否则每次都被拒 → 开关空转。"""
+    from ai_butler.scheduler.chat_intake import _route_for_tools
+    from ai_butler.infra.llm_gateway import LLMGateway
+
+    settings = Settings(provider_order=("ollama",),
+                        function_calling_provider="deepseek",
+                        function_calling_model="deepseek-chat")
+    gateway = LLMGateway(settings, None)
+
+    kwargs, note = _route_for_tools(
+        gateway, settings, {"provider": "ollama", "model": "qwen2.5vl:3b"})
+    assert kwargs == {}, "改道时不能把旧供应商/模型/凭据带过去"
+    assert "改道" in note and "deepseek" in note
+
+    # 用户所选模型本身可用 → 原样尊重，不改道
+    keep = {"provider": "openai-compatible", "model": "glm-4.6"}
+    same, note2 = _route_for_tools(gateway, settings, keep)
+    assert same == keep and note2 == ""
+
+
+def test_route_for_tools_refuses_when_no_tool_provider_is_configured():
+    """既没有可用模型、又没配专用供应商：如实跳过，不硬造一个能用的假象。"""
+    from ai_butler.scheduler.chat_intake import _route_for_tools
+    from ai_butler.infra.llm_gateway import LLMGateway
+
+    settings = Settings(provider_order=("ollama",), function_calling_models=(),
+                        function_calling_provider="")
+    kwargs, why = _route_for_tools(LLMGateway(settings, None), settings, {})
+    assert kwargs is None
+    assert why

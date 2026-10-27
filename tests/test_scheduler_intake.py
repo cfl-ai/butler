@@ -83,7 +83,7 @@ def _bind(scheduler: SceneScheduler) -> None:
 
 @pytest.fixture
 def fc_on(monkeypatch):
-    """打开 function calling 开关（默认关闭，既有链路零变化）。
+    """打开 function calling 开关（U117 起默认即为 True，这里显式写出来）。
 
     graph 里是**函数内** import，取的是模块属性，所以替换模块属性即可生效。
     """
@@ -93,7 +93,9 @@ def fc_on(monkeypatch):
 
 @pytest.fixture
 def fc_off(monkeypatch):
-    monkeypatch.setattr(config_module, "get_settings", lambda: Settings())
+    """关闭开关。U117 起默认值是 True，所以**必须显式关**才谈「关闭时零变化」。"""
+    monkeypatch.setattr(config_module, "get_settings",
+                        lambda: Settings(function_calling_enable=False))
 
 
 # ------------------------------ 关闭时：零变化 ------------------------------ #
@@ -178,12 +180,16 @@ def test_intake_failure_is_recorded_not_crashed(fc_on):
     assert result.dispatched == ["stub_agent"], "接通失败不该阻断既有分发"
 
 
-def test_unassignable_unit_is_visible_not_swallowed(fc_on):
-    """调配表查不到的单元：如实记 unassigned，且不拿全量工具凑数。
+def test_unmatched_unit_gets_read_only_fallback_not_nothing(fc_on):
+    """调配表查不到时走**只读兜底**（U118），不是「什么都不做」。
 
     「怎么申请报销」判得出任务类型（procedure）但判不出信息类型（none），
-    `(procedure, none)` 在调配表里没有 —— 此时正确行为是**不派发**，
-    而不是把注册表里全部工具丢给模型去猜。
+    `(procedure, none)` 不在表里。U117 之前的行为是**不派发** —— 结果是
+    真实口语几乎全落格子外面，function calling 开关打开了也一个单元都进不了回路。
+    现在改成只读兜底，并守住三条底线：
+    1. 真的会发起模型调用（不是空转）；
+    2. 下发的工具里**绝不含**写/支付类工具；
+    3. 兜底留痕（`assignment_fallback` + `fallback_count`），事后能统计兜底率。
     """
     gateway = FakeGateway()
     scheduler = _scheduler(gateway=gateway)
@@ -191,9 +197,42 @@ def test_unassignable_unit_is_visible_not_swallowed(fc_on):
     result = asyncio.run(scheduler.run(
         user_id="user-A", session_id="s1", utterance="怎么申请报销",
         labels=("ask_procedure",)))
-    assert result.intake["ran_count"] == 0
-    assert result.intake["unassigned"], "调配不到的单元必须被点名"
-    assert gateway.seen_tools == [], "没有调配结论就不该发起模型调用"
+
+    assert result.intake["ran_count"] == 1, "兜底单元应该真的跑进回路"
+    assert result.intake["fallback_count"] == 1, "兜底必须留痕"
+    assert result.intake["units"][0]["assignment_fallback"] is True
+    assert gateway.seen_tools, "兜底不等于不调用模型"
+    for names in gateway.seen_tools:
+        assert "pay" not in names, "只读兜底绝不下发支付工具"
+        assert "search" in names
+
+
+def test_small_talk_is_still_not_dispatched():
+    """闲聊与多意图不进回路（U118 兜底**排除**这两类）。
+
+    用单元级断言：走调度器还会被「路由没命中」干扰，
+    而这里要守的只是**调配这一层**的判断，别把两件事混在一起。
+    """
+    from ai_butler.retrieval.planner import QueryCategory
+    from ai_butler.scheduler.intake import InformationUnit, SlotKind, assign
+
+    chat = InformationUnit(text="你好", origin="你好", slot_kind=SlotKind.NONE,
+                           category=QueryCategory.SMALL_TALK.value)
+    assert assign(chat) is None, "闲聊不该被派发"
+
+    # 多意图要先反问（JEV-003）：拿只读工具硬跑只会得到一个自信的错答案
+    multi = InformationUnit(text="查天气并订酒店", origin="查天气并订酒店",
+                            slot_kind=SlotKind.NONE,
+                            category=QueryCategory.MULTI_INTENT.value)
+    assert assign(multi) is None
+
+    # 而「判不出类型的正常问题」是兜底的用途所在
+    vague = InformationUnit(text="杭州天气怎么样", origin="杭州天气怎么样",
+                            slot_kind=SlotKind.LOCATION,
+                            category=QueryCategory.UNKNOWN.value)
+    got = assign(vague)
+    assert got is not None and got.fallback is True
+    assert "wiki_write" not in got.capabilities and "payment" not in got.capabilities
 
 
 def test_tool_registry_is_shared_with_the_dispatcher():

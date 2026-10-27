@@ -36,6 +36,8 @@ from ai_butler.verticals.tour.sources import CollectedFact, CollectError
 OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 #: Open-Meteo 地理编码 API（免费无 key；地名 → 坐标）
 OPEN_METEO_GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
+#: 预报最多取几天。Open-Meteo 免费额度内 7 天足够，再长只会把上下文撑大（U119）
+MAX_FORECAST_DAYS = 7
 
 #: WMO 天气码 → 中文（Open-Meteo `weather_code` 用的就是 WMO 4677 码表）
 WMO_CODE_TEXT: dict[int, str] = {
@@ -128,6 +130,53 @@ class WeatherPort(Protocol):
     async def geocode(self, name: str) -> GeoPoint | None: ...
 
 
+@dataclass(frozen=True)
+class DailyForecast:
+    """一天的预报（U119）。**不是实况**：日最高/最低与降水概率是当日汇总。
+
+    为什么不塞进 `WeatherFact`：「当前 20℃」和「明天 15~24℃、六成概率下雨」
+    是两种事实，混在一个结构里，下游只能靠字段名猜哪个是哪个（E-44 老路）。
+    """
+
+    date: str                   # 当地日期 YYYY-MM-DD
+    weather_code: int
+    weather_text: str
+    temp_max_c: float
+    temp_min_c: float
+    #: 当日最大降水概率（%）；源没给就是 0，不编造
+    precip_prob_max: int
+    precip_mm: float
+
+    def as_payload(self) -> dict[str, Any]:
+        return {
+            "date": self.date,
+            "weather_code": self.weather_code,
+            "weather_text": self.weather_text,
+            "temp_max_c": self.temp_max_c,
+            "temp_min_c": self.temp_min_c,
+            "precip_prob_max": self.precip_prob_max,
+            "precip_mm": self.precip_mm,
+            # 现成的一句话：模型照着说就不会漏单位（实测过「降水概率0」
+            # 这种念法 —— 数字给了，单位没给，读起来像 0 次）
+            "text": (f"{self.date} {self.weather_text} "
+                     f"{self.temp_min_c}~{self.temp_max_c}℃，"
+                     f"降水概率{self.precip_prob_max}%"),
+        }
+
+
+class ForecastPort(Protocol):
+    """**可选**能力：能给未来几天预报的天气源。
+
+    与 `WeatherPort` 分开声明，而不是给它加方法 —— 加方法会让所有既有实现
+    （含测试替身）在协议意义上立刻不合格（E-102 同族）。调用侧用
+    `getattr(port, "forecast", None)` 探测：没有就如实说「这个源不提供预报」，
+    而不是假装查到了。
+    """
+
+    async def forecast(self, *, latitude: float, longitude: float,
+                       days: int = 3) -> tuple[DailyForecast, ...]: ...
+
+
 class OpenMeteoWeather:
     """Open-Meteo 实现：当前天气 + 地名解析（U96）。
 
@@ -139,6 +188,7 @@ class OpenMeteoWeather:
 
     def __init__(self, *, timeout: float = 10.0,
                  timezone_name: str = "UTC",
+                 daily_timezone: str = "auto",
                  forecast_url: str = OPEN_METEO_FORECAST_URL,
                  geocode_url: str = OPEN_METEO_GEOCODE_URL,
                  transport: httpx.BaseTransport | None = None) -> None:
@@ -149,6 +199,10 @@ class OpenMeteoWeather:
         # 固定 UTC：`current.time` 原样进 fetched_at，本地时间会让
         # 「距现在多久」差出整个时区偏移（本模块第一版就踩了这个坑）
         self._timezone = timezone_name
+        # 预报日期必须是**当地日期**（U119）：用 UTC 取 daily，东八区
+        # 早上 8 点前算出来的「今天」会是昨天 —— 用户问「明天」直接错一天。
+        # "auto" 让源按坐标所在时区返回日期。
+        self._daily_timezone = daily_timezone
         self._forecast_url = forecast_url
         self._geocode_url = geocode_url
         self._transport = transport
@@ -191,6 +245,58 @@ class OpenMeteoWeather:
             fetched_at=fetched_at,
             provider=self.name,
         )
+
+    async def forecast(self, *, latitude: float, longitude: float,
+                       days: int = 3) -> tuple[DailyForecast, ...]:
+        """取未来 `days` 天预报（U119）。真实源，不做任何插值/补齐。"""
+        try:
+            count = max(1, min(int(days), MAX_FORECAST_DAYS))
+        except (TypeError, ValueError):
+            count = 3
+        params = {
+            "latitude": latitude,
+            "longitude": longitude,
+            "daily": ("weather_code,temperature_2m_max,temperature_2m_min,"
+                      "precipitation_probability_max,precipitation_sum"),
+            "forecast_days": count,
+            "timezone": self._daily_timezone,
+        }
+        async with httpx.AsyncClient(timeout=self._timeout,
+                                     transport=self._transport) as client:
+            try:
+                response = await client.get(self._forecast_url, params=params)
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise WeatherError(f"Open-Meteo 预报请求失败：{exc}") from exc
+            data: Mapping[str, Any] = response.json()
+        daily = data.get("daily") or {}
+        dates = list(daily.get("time") or ())
+        if not dates:
+            raise WeatherError(
+                f"Open-Meteo 预报响应没有 daily.time（顶层字段：{sorted(data)}）")
+        out: list[DailyForecast] = []
+        for index, day in enumerate(dates[:count]):
+            try:
+                code = int(daily["weather_code"][index])
+                t_max = float(daily["temperature_2m_max"][index])
+                t_min = float(daily["temperature_2m_min"][index])
+            except (KeyError, IndexError, TypeError, ValueError) as exc:
+                # 缺哪天就报哪天，不让整条预报静默变短
+                raise WeatherError(
+                    f"Open-Meteo 预报在第 {index + 1} 天缺字段"
+                    f"（daily 现有：{sorted(daily)}）") from exc
+            prob = daily.get("precipitation_probability_max") or ()
+            rain = daily.get("precipitation_sum") or ()
+            out.append(DailyForecast(
+                date=str(day),
+                weather_code=code,
+                weather_text=WMO_CODE_TEXT.get(code, f"未知天气码 {code}"),
+                temp_max_c=round(t_max, 1),
+                temp_min_c=round(t_min, 1),
+                precip_prob_max=int(round(float(prob[index] or 0))) if index < len(prob) else 0,
+                precip_mm=round(float(rain[index] or 0.0), 1) if index < len(rain) else 0.0,
+            ))
+        return tuple(out)
 
     async def geocode(self, name: str) -> GeoPoint | None:
         query = (name or "").strip()
@@ -238,6 +344,9 @@ class WeatherCache:
         self._ttl = ttl_seconds
         self._facts: dict[tuple[float, float], WeatherFact] = {}
         self._inflight: dict[tuple[float, float], asyncio.Future] = {}
+        #: 预报缓存：(lat, lon, days) → (写入时刻, 预报)
+        self._forecasts: dict[tuple[float, float, int],
+                              tuple[float, tuple[DailyForecast, ...]]] = {}
 
     @staticmethod
     def _key(latitude: float, longitude: float) -> tuple[float, float]:
@@ -265,6 +374,26 @@ class WeatherCache:
                 self._inflight.pop(key, None)
         self._facts[key] = fact
         return fact
+
+    async def forecast(self, *, latitude: float, longitude: float,
+                       days: int = 3) -> tuple[DailyForecast, ...]:
+        """预报缓存（U119）。**按 (坐标, 天数) 缓存**：3 天与 7 天不是一回事，
+        共用一格会让「问明天」拿到按 7 天缓存的长度，或反之。"""
+        inner = getattr(self._port, "forecast", None)
+        if inner is None:
+            raise WeatherError(
+                f"当前天气源 {type(self._port).__name__} 不提供预报能力")
+        try:
+            count = max(1, min(int(days), MAX_FORECAST_DAYS))
+        except (TypeError, ValueError):
+            count = 3
+        key = (*self._key(latitude, longitude), count)
+        cached = self._forecasts.get(key)
+        if cached is not None and (time.time() - cached[0]) <= self._ttl:
+            return cached[1]
+        fresh = await inner(latitude=latitude, longitude=longitude, days=count)
+        self._forecasts[key] = (time.time(), fresh)
+        return fresh
 
     async def geocode(self, name: str) -> GeoPoint | None:
         return await self._port.geocode(name)

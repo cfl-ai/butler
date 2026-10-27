@@ -26,12 +26,29 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import ValidationError, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from ai_butler.core.naming import env as env_name
+
+#: 已知具备 function calling 能力的模型族（U117 默认白名单）。
+#:
+#: 判定用「模型族」而不是完整模型串：同一个模型在不同渠道的写法不一样
+#: （`deepseek-chat` / `deepseek:7b` / `gpt-4o-mini`），按完整串比对会漏。
+#: 匹配规则见 `infra.llm_gateway.model_supports_tools`：族名相等，或以
+#: `族名-` / `族名.` 开头。**故意不收 `qwen2.5vl`** —— 带 vl 的视觉模型
+#: 不具备工具能力（本机实测），族名相等规则也不会把它误判进来。
+#: 这是「已知可用」清单，不是万能清单：新模型出来要显式登记，宁缺勿滥。
+DEFAULT_TOOL_CAPABLE_MODELS: tuple[str, ...] = (
+    "deepseek-chat", "deepseek-reasoner", "deepseek",
+    "gpt-4o", "gpt-4.1", "gpt-5", "o3", "o4",
+    "qwen3", "qwen2.5", "qwen-max", "qwen-plus",
+    "llama3.1", "llama3.2", "llama3.3", "llama4",
+    "glm-4", "glm-4.5", "glm-4.6",
+    "moonshot-v1", "kimi-k2",
+)
 
 #: 计划书未定义、经**人工授权**确定取值的参数登记表。
 #: 用途：任何数值都能回溯到「计划书原文 → 未定义 → 授权来源 → 取值理由」。
@@ -204,16 +221,26 @@ class Settings(BaseSettings):
     # 与 scheduler.router.DEFAULT_VERTICAL_THRESHOLD 对齐；同样**未标定**，可调数字。
     vertical_threshold: float = 0.55
 
-    # ---------- Function Calling（U112）----------
-    # 用户明确要求「大模型可更换、function calling 要运用到整个项目中」。
-    # **默认关闭**：打开后才允许把工具清单下发给模型。既有链路零行为变化 ——
-    # 未打开时，工具仍然只走 Python 直调（ToolDispatcher + capabilities.grant）。
-    function_calling_enable: bool = False
+    # ---------- Function Calling（U112 / U117）----------
+    # 用户明确要求「大模型可更换、function calling 要运用到整个项目中」，
+    # 并要求**默认打开且真的能用**（U117）。默认打开后仍有一条硬边界：
+    # 模型不支持工具时**安静退回**普通问答并留原因，绝不把一次提问变成 500。
+    function_calling_enable: bool = True
     # 具备工具能力的模型白名单。**按模型判定，不按供应商判定**：
     # 同一供应商下有的模型支持 function calling、有的不支持（本机 qwen2.5vl:3b 明确不支持）。
-    # 留空 = 没有模型被认定具备工具能力 → 下发工具会明确报 ToolUnsupportedError，
-    # 而不会退化成「供应商都不可用」那种看不出真因的报错。
-    function_calling_models: tuple[str, ...] = ()
+    # 默认值是「已知具备工具能力的模型族」，不是万能清单；留空 = 一个都不认（显式收紧）。
+    # `NoDecode`：环境变量按**逗号分隔串**写（A,B,C），不走 pydantic-settings 的
+    # JSON 预解码 —— 否则 .env 里写 `A,B,C` 会在启动期直接 SettingsError。
+    function_calling_models: Annotated[tuple[str, ...], NoDecode] = DEFAULT_TOOL_CAPABLE_MODELS
+    # 工具请求的**专用供应商与模型**（U117）。这是「开关不是装饰」的关键一环：
+    # 本机 Ollama 只有 qwen2.5vl:3b（无 tools），若不指定，工具请求永远找不到落点。
+    # - provider 为空 = 按 provider_order 自动挑第一个具备工具能力的供应商；
+    # - provider 非空 = 工具请求优先走它（不在 provider_order 里也能按需构造），
+    #   普通对话的供应商顺序**不受影响**（不悄悄把日常问答改道到付费供应商）。
+    # - model 只作用于该供应商，且仅在调用方未显式指定模型时生效。
+    # 用户显式选定 BYOK 模型时（provider 已指定）不参与改道：费用与数据去向都变了。
+    function_calling_provider: str = ""
+    function_calling_model: str = ""
     # 单次 function calling 的最大轮次（模型→工具→模型→…）。防模型陷入调用循环；
     # 到上限即停止并如实标注，不假装"已完成"。
     max_tool_rounds: int = 4
@@ -310,6 +337,24 @@ class Settings(BaseSettings):
 
         if value not in ENV_NAMES:
             raise ValueError(f"environment 必须是 {ENV_NAMES} 之一，实际 {value!r}")
+        return value
+
+    @field_validator("function_calling_models", mode="before")
+    @classmethod
+    def _tool_models_from_env(cls, value: Any) -> Any:
+        """允许环境变量写逗号分隔串（`A,B,C`）。
+
+        元组型字段在 pydantic-settings 里默认要求 JSON，写成 `A,B,C` 会直接
+        SettingsError 启动失败 —— 而 .env 里写 JSON 数组既难读又容易被引号坑。
+        与本文件 `llm_provider_order` 的口径保持一致：**逗号分隔**。
+        """
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return ()
+            if text.startswith("["):          # 也兼容 JSON 数组写法
+                return value
+            return tuple(p.strip() for p in text.split(",") if p.strip())
         return value
 
     @property

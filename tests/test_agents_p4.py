@@ -92,8 +92,9 @@ class _NoWritesAgent(SubAgent):
 
 # ============================== 能力 ============================== #
 def test_capability_list_is_implementation_named_but_each_traces_to_the_plan():
+    # external_read（U118）= 计划书表 11「公共数据：天气 API、景区公开信息」的读侧
     assert CAPABILITIES == ("retrieval", "wiki_read", "wiki_write", "llm", "jev",
-                            "data_read", "payment")
+                            "data_read", "payment", "external_read")
 
 
 def test_every_capability_constant_has_a_matching_tool_field():
