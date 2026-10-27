@@ -106,7 +106,9 @@ def test_p9_decisions_are_registered_and_resolved():
     # U111 = P3 主状态机（SceneScheduler）没有生产装配点，HTTP 入口形态计划书未定义，
     #        裁定「不擅自新增 API」之后仍待裁定入口语义 —— 详见 decisions.get("U111")。
     # U116（Web 对话页）已于 2026-10-27 交付（`/ui` + 单文件页），不再是 PENDING。
-    assert {d.key for d in decisions.pending()} == {"U111"}, decisions.pending()
+    # U111 已于 2026-10-27 补全：`app.build_entry_scene` 接上主状态机（对话入口顺序
+    #     主状态机 → FC → 常规检索），台账 123 条**全部裁定**，不再有 PENDING。
+    assert {d.key for d in decisions.pending()} == set(), decisions.pending()
 
 
 # ============================== 脱敏（U30 / 三、P9）============================== #

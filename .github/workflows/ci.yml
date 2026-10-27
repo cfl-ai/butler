@@ -60,53 +60,94 @@ jobs:
         with:
           python-version: "3.12"
 
-      # 必须排在「生成 test 环境配置」之前：那一步要 import cryptography。
+      # 必须排在「生成四环境配置文件」之前：那一步要 import cryptography。
       - name: 安装依赖
         run: pip install -r requirements.txt
 
-      - name: 生成 CI 用 test 环境配置
+      - name: 生成四环境配置文件
         run: |
           python - <<'PY'
           import pathlib, secrets
           from cryptography.fernet import Fernet
-          overrides = {
-              "ENVIRONMENT": "test",
-              "DATA_PLANE_INTERNAL": "false",
-              "POSTGRES_USER": "aibutler",
-              "POSTGRES_PASSWORD": "ci-only-password",
-              "POSTGRES_DB": "aibutler_test",
-              "POSTGRES_HOST": "127.0.0.1",
-              "POSTGRES_PORT": "5435",
-              "REDIS_HOST": "127.0.0.1",
-              "REDIS_PORT": "6382",
-              "REDIS_DB": "0",
-              # 路径类字段的默认值是 data/dev/*，CI 必须显式指到 test 目录，
-              # 否则测试会写进 dev 数据目录（跨环境串味）。
-              "WIKI_ROOT": "data/test/agent_wiki",
-              "STORAGE_ROOT": "data/test/storage",
-              "SESSION_TTL_SECONDS": "43200",
-              "SESSION_IDLE_TIMEOUT_SECONDS": "7200",
-              "SESSION_REFRESH_AHEAD_SECONDS": "1800",
-              "SESSION_TOKEN_SECRET": secrets.token_hex(32),
-              "FIELD_ENCRYPTION_KEY": Fernet.generate_key().decode(),
-          }
+          from ai_butler.core.environments import ENVIRONMENTS
+
+          # 真值源是 core/environments.py 的 ENVIRONMENTS：端口 / 库名 / 数据目录 /
+          # 容器前缀 / 是否发布宿主端口全部由它派生，CI 不另写一份（防两处口径分叉）。
+          # 四份文件都要生成：tests/test_environments.py 校验的是**四环境之间的隔离**，
+          # 只给 .env.test 会让 5 个守护报「缺少 .env.dev」。
           tpl = pathlib.Path(".env.example").read_text(encoding="utf-8").splitlines()
-          out, skipped = [], []
-          for line in tpl:
-              if "=" not in line or line.startswith("#"):
-                  out.append(line); continue
-              key, _, tpl_value = line.partition("=")
-              if key in overrides:
-                  out.append(f"{key}={overrides[key]}")
-              elif tpl_value.strip():
-                  out.append(line)
-              else:
-                  # 模板留空 ≠ 「设成空串」：写 `KEY=` 会用空字符串覆盖 Settings 的默认值，
-                  # 带类型的字段（int/bool/float）当场解析失败。留空的键一律不写，
-                  # 让 pydantic 回落到字段默认值。CI 曾在 Settings 上炸 26 个校验错误。
-                  skipped.append(key)
-          pathlib.Path(".env.test").write_text("\n".join(out) + "\n", encoding="utf-8")
-          print(f"跳过 {len(skipped)} 个空值键（回落 Settings 默认值）：{', '.join(skipped)}")
+
+          for name, env in ENVIRONMENTS.items():
+              overrides = {
+                  "ENVIRONMENT": name,
+                  "ENV_FILE_NAME": env.env_file,
+                  "COMPOSE_PROJECT_NAME": env.project_name,
+                  "CONTAINER_PREFIX": env.container_prefix,
+                  "DATA_ROOT": f"../../{env.data_root}",
+                  "DATA_PLANE_INTERNAL": "true" if env.data_plane_internal else "false",
+                  "POSTGRES_USER": "aibutler",
+                  # test 必须与 services.postgres 的密码逐字一致，否则测试连不上库；
+                  # 另外三个环境各用独立随机值（四环境密钥不得复用，守护会逐一比对）。
+                  "POSTGRES_PASSWORD": ("ci-only-password" if name == "test"
+                                        else secrets.token_urlsafe(24)),
+                  "POSTGRES_DB": env.postgres_db,
+                  "POSTGRES_HOST": "127.0.0.1",
+                  "POSTGRES_PORT": str(env.postgres_port),
+                  "API_PORT": str(env.api_port),
+                  "POSTGRES_IMAGE": "pgvector/pgvector:pg16",
+                  "REDIS_HOST": "127.0.0.1",
+                  "REDIS_PORT": str(env.redis_port),
+                  "REDIS_DB": "0",
+                  "REDIS_IMAGE": "redis:7-alpine",
+                  "API_IMAGE": f"aibutler-api:{name}",
+                  # 路径类字段的默认值是 data/dev/*，必须按环境显式派生，
+                  # 否则测试会写进 dev 数据目录（跨环境串味）。
+                  "WIKI_ROOT": f"{env.data_root}/agent_wiki",
+                  "STORAGE_ROOT": f"{env.data_root}/storage",
+                  "PG_CPUS": "1.0", "PG_MEMORY": "512m",
+                  "REDIS_CPUS": "0.5", "REDIS_MEMORY": "256m",
+                  "API_CPUS": "2.0", "API_MEMORY": "1g",
+                  "SESSION_TTL_SECONDS": "43200",
+                  "SESSION_IDLE_TIMEOUT_SECONDS": "7200",
+                  "SESSION_REFRESH_AHEAD_SECONDS": "1800",
+                  "SESSION_TOKEN_SECRET": secrets.token_hex(32),
+                  "FIELD_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+                  # dev/test 持有本地开发凭据；staging/prod 显式留空。
+                  # 空值必须写成 `KEY=` 行（读取侧直接索引，缺行会 KeyError），
+                  # 这与「模板留空因此不写」是两回事 —— 覆盖表里写什么就落什么。
+                  "DEEPSEEK_API_KEY": ("ci-placeholder-not-a-real-key"
+                                       if name in ("dev", "test") else ""),
+                  "LLM_PROVIDER_ORDER": "ollama",
+                  "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+                  "OLLAMA_MODEL": "qwen2.5vl:3b",
+                  "DEEPSEEK_MODEL": "deepseek-chat",
+                  "DASHSCOPE_MODEL": "qwen3.8-flash",
+              }
+              out, skipped = [], []
+              for line in tpl:
+                  if "=" not in line or line.startswith("#"):
+                      out.append(line); continue
+                  key, _, tpl_value = line.partition("=")
+                  if key in overrides:
+                      out.append(f"{key}={overrides[key]}")
+                  elif tpl_value.strip():
+                      out.append(line)
+                  else:
+                      # 模板留空 ≠ 「设成空串」：写 `KEY=` 会用空字符串覆盖 Settings 的默认值，
+                      # 带类型的字段（int/bool/float）当场解析失败。模板留空的键一律不写，
+                      # 让 pydantic 回落到字段默认值。CI 曾因此在 Settings 上炸 26 个校验错误。
+                      skipped.append(key)
+              # 覆盖表里可能有模板**根本没有**的键（API_PORT 就是这样：它由
+              # environments.api_port 派生，.env.example 里没这一行）。只遍历模板
+              # 会让这些键永远进不了文件，而 compose 恰好引用它们。
+              present = {line.partition("=")[0] for line in out
+                         if "=" in line and not line.startswith("#")}
+              for key, value in overrides.items():
+                  if key not in present:
+                      out.append(f"{key}={value}")
+              pathlib.Path(env.env_file).write_text(
+                  "\n".join(out) + "\n", encoding="utf-8")
+              print(f"{env.env_file}: 显式 {len(overrides)} 键，跳过 {len(skipped)} 个模板空键")
           PY
 
       - name: 契约与单元测试（含越权隔离、会话过期、Jev 边界、Wiki 隔离专项）

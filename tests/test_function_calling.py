@@ -126,14 +126,19 @@ def test_gateway_reports_tool_capability_without_calling_out():
     """
     from ai_butler.infra.llm_gateway import LLMGateway
 
-    settings = Settings(provider_order=("ollama",), function_calling_models=())
+    # 模型名必须**显式传入**：默认值来自 .env.* 的 OLLAMA_MODEL，
+    # 而 CI 生成的 .env.test 不保证有这个键（缺失时模型为 None），
+    # 用例就会因为「环境里没配模型」而红 —— 那是环境问题，不是能力协商的问题。
+    settings = Settings(provider_order=("ollama",), function_calling_models=(),
+                        ollama_model="qwen2.5vl:3b")
     gateway = LLMGateway(settings, None)
     capable, why = gateway.tool_capability()
     assert capable is False
     assert "function_calling_models" in why
 
     settings2 = Settings(provider_order=("ollama",),
-                         function_calling_models=("qwen2.5vl:3b",))
+                         function_calling_models=("qwen2.5vl:3b",),
+                         ollama_model="qwen2.5vl:3b")
     capable2, why2 = LLMGateway(settings2, None).tool_capability()
     assert capable2 is True, why2
 
