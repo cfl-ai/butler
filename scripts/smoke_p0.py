@@ -32,7 +32,8 @@ from ai_butler.core.db import Database  # noqa: E402
 from ai_butler.core.security import FieldCipher, hash_password, verify_password  # noqa: E402
 from ai_butler.core.session_store import SessionStore  # noqa: E402
 from ai_butler.middleware.session_auth import login  # noqa: E402
-from ai_butler.infra.llm_gateway import ChatMessage, JevClient, LLMGateway  # noqa: E402
+from ai_butler.infra.llm_gateway import (  # noqa: E402
+    ChatMessage, GatewayUnavailableError, JevClient, LLMGateway)
 
 LABELS = ["旅游", "点餐", "支付"]          # 冒烟占位；真实标签集属【文档未定义项 #1】，须人工补充
 
@@ -68,18 +69,33 @@ async def main() -> int:
     print(f"[4] 安全原语 OK  加盐哈希校验={verify_password('Smoke#2026', h)}  隐私字段解密={c.decrypt(c.encrypt('13800001111'))}")
 
     # --- 统一 LLM 网关 ---
+    # CI 的依赖面里没有模型服务：runner 上不部署 ollama，拉一份权重不现实。
+    # 设 SMOKE_ALLOW_LLM_DOWN=1 时，把「无可用供应商」如实标成 SKIP 并继续跑
+    # 后面不依赖模型的步骤；**未设该开关时保持原行为**（连不上就失败），
+    # 本地真实验收不受影响。SKIP 与 OK 分开打印，不把「判不了」写成「判过了」。
+    allow_llm_down = os.environ.get("SMOKE_ALLOW_LLM_DOWN") == "1"
     gw = LLMGateway(s, redis=r)
-    res = await gw.chat(user_id="smoke-user",
-                        messages=[ChatMessage("user", "只回复两个字：连通")], max_tokens=16)
-    print(f"[5] LLM 网关 OK  provider={res.provider} model={res.model} latency={res.latency_ms}ms text={res.text.strip()!r}")
+    llm_ready = True
+    try:
+        res = await gw.chat(user_id="smoke-user",
+                            messages=[ChatMessage("user", "只回复两个字：连通")], max_tokens=16)
+        print(f"[5] LLM 网关 OK  provider={res.provider} model={res.model} latency={res.latency_ms}ms text={res.text.strip()!r}")
+    except GatewayUnavailableError as exc:
+        if not allow_llm_down:
+            raise
+        llm_ready = False
+        print(f"[5] LLM 网关 SKIP  无可用供应商（SMOKE_ALLOW_LLM_DOWN=1）：{exc}")
 
     # --- Jev 结构化决策（此处关掉影子模式以观察真实决策路径）---
-    s2 = s.model_copy(update={"jev_shadow_mode": False})
-    jev = JevClient(gateway=LLMGateway(s2, redis=r), settings=s2)
-    decision = await jev.decide(user_id="smoke-user", question="帮我安排国庆去杭州的三天行程",
-                                allowed_labels=LABELS)
-    print(f"[6] Jev 决策 OK  accepted={decision.accepted} label={decision.label!r} "
-          f"confidence={decision.confidence} source={decision.source} reason={decision.reason!r}")
+    if not llm_ready:
+        print("[6] Jev 决策 SKIP  该步骤依赖 LLM，本次未验")
+    else:
+        s2 = s.model_copy(update={"jev_shadow_mode": False})
+        jev = JevClient(gateway=LLMGateway(s2, redis=r), settings=s2)
+        decision = await jev.decide(user_id="smoke-user", question="帮我安排国庆去杭州的三天行程",
+                                    allowed_labels=LABELS)
+        print(f"[6] Jev 决策 OK  accepted={decision.accepted} label={decision.label!r} "
+              f"confidence={decision.confidence} source={decision.source} reason={decision.reason!r}")
 
     # --- Agent-Wiki v2 运行时存储层 ---
     from ai_butler.agent_wiki.compiler import WikiCompiler
@@ -115,7 +131,10 @@ async def main() -> int:
     shutil.rmtree(ROOT / s.wiki_root, ignore_errors=True)
 
     await r.aclose()
-    print("\nP0-1 底座端到端冒烟：全部通过")
+    if llm_ready:
+        print("\nP0-1 底座端到端冒烟：全部通过")
+    else:
+        print("\nP0-1 底座端到端冒烟：通过（LLM 相关步骤因无模型服务 SKIP，未验）")
     return 0
 
 
