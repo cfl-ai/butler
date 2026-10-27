@@ -220,6 +220,11 @@ class Settings(BaseSettings):
     vertical_router_enable: bool = False
     # 与 scheduler.router.DEFAULT_VERTICAL_THRESHOLD 对齐；同样**未标定**，可调数字。
     vertical_threshold: float = 0.55
+    # ---------- 主状态机入口（U111）----------
+    # `SceneScheduler` 以前只在脚本/测试里被构造 —— 有实现、有守护，但没有入口
+    # （E-86 完整形态）。打开后对话入口先过主状态机：垂类命中即由垂类执行，
+    # 非垂类命中安静退回既有链路。关掉 = 这条链路在生产里不存在（不是「装了不开」）。
+    scene_scheduler_enable: bool = True
 
     # ---------- Function Calling（U112 / U117）----------
     # 用户明确要求「大模型可更换、function calling 要运用到整个项目中」，

@@ -12,6 +12,10 @@
 计划书点名的公共域内容为「景点、天气、公开资讯」；旅游模块另点名
 「景区开放状态、天气、交通、门票、排队情况」。据此确定分类集合；
 各分类的时效天数计划书未给 → 属**实现参数**，集中登记在 CATEGORY_TTL_DAYS。
+
+**例外（U122，用户裁定）**：带正式文号的**规范性文件**不设到期日。
+TTL 是为易变的运行时事实（天气/票价/公告）设的；制度文件的更新靠新版本
+替代（supersede），靠时间到期会把 2013 年的办法算成 2014-01-30 过期。
 """
 
 from __future__ import annotations
@@ -64,6 +68,10 @@ _BOILERPLATE_RE = re.compile("|".join(BOILERPLATE_PATTERNS))
 _TAG_RE = re.compile(r"<[^>]+>")
 _SCRIPT_RE = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.S | re.I)
 _MULTI_PUNCT_RE = re.compile(r"([。！？；，,.!?;])\1{1,}")
+#: 规范性文件的文号（如 `财行〔2013〕531号`、`国办发[2019]12号`）。
+#: 用它判「这是不是一份**会长期有效**的文件」，而不是一条会过期的资讯（U122）。
+_NORMATIVE_DOC_NO = re.compile(
+    r"[\u4e00-\u9fa5]{1,8}\s*[〔\[（(]\s*(?:19|20)\d{2}\s*[〕\]）)]\s*\d{1,4}\s*号")
 #: 块级标签必须先变成换行再剥离。
 #: 若一律替换成空格，整页会被压成一行，随后**基于行首的样板行剔除全部失效**
 #: （「版权所有…」不在行首就删不掉），切片也会丢掉段落边界。
@@ -111,6 +119,10 @@ class CleanedDocument:
         return self.duplicate_of is not None
 
     def is_stale(self, *, now: datetime | None = None) -> bool:
+        if not self.stale_after:
+            # 空串 = **没有到期日**（规范性文件，U122）。不是「忘了打标」：
+            # 忘打标会表现为「永远不过期」，所以这里只能靠 clean_document 显式置空。
+            return False
         moment = now or utcnow()
         deadline = datetime.fromisoformat(self.stale_after)
         if deadline.tzinfo is None:
@@ -165,6 +177,17 @@ def ttl_days(category: str) -> int:
     return CATEGORY_TTL_DAYS.get(category, CATEGORY_TTL_DAYS[CATEGORY_OTHER])
 
 
+def is_normative_document(text: str) -> bool:
+    """是不是一份**规范性文件**（带正式文号），而不是一条会过期的资讯。
+
+    判据只认文号，不认「办法/通知/规定」这类字眼：字眼在新闻标题里也常见，
+    而文号是发文机关给的正式标识，可核验。计划书 P2 的 TTL 是为「易变的运行时
+    事实」（天气、票价、公告）设的；制度文件的更新靠**新版本替换**（supersede），
+    不靠时间到期，所以对它不设到期日（U122）。
+    """
+    return bool(_NORMATIVE_DOC_NO.search(text or ""))
+
+
 def clean_document(raw: RawDocument, *, now: datetime | None = None) -> CleanedDocument:
     text, removed = clean_text(raw.text)
     if not text:
@@ -175,7 +198,11 @@ def clean_document(raw: RawDocument, *, now: datetime | None = None) -> CleanedD
     base = datetime.fromisoformat(published) if published else moment
     if base.tzinfo is None:
         base = base.replace(tzinfo=timezone.utc)
-    stale_after = (base + timedelta(days=ttl_days(category))).isoformat()
+    # 规范性文件不设到期日（U122）：按「发布日 + 资讯 TTL」会给 2013 年的办法
+    # 算出 2014-01-30 的到期日，入库即过期十年；一旦 archive_stale 被装配，
+    # 这批制度素材会被静默清掉，表现为「明明入过库却答不出来」。
+    stale_after = "" if is_normative_document(text) else (
+        base + timedelta(days=ttl_days(category))).isoformat()
     return CleanedDocument(
         doc_id=raw.doc_id, url=raw.url, title=raw.title or raw.doc_id, text=text,
         publisher=raw.publisher, category=category, content_hash=content_hash(text),

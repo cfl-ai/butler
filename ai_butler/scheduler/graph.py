@@ -549,11 +549,19 @@ class SceneScheduler:
     async def run(self, *, user_id: str, session_id: str, utterance: str,
                   labels: Sequence[str], login_status: bool = True,
                   wiki_digest: Any = None, trace_id: str = "",
-                  role: UserRole | None = None) -> SchedulerResult:
+                  role: UserRole | None = None,
+                  extra_state: Mapping[str, Any] | None = None) -> SchedulerResult:
         """用户发起任意请求的入口（计划书三、P3 触发时机）。
 
         `role` 为本次任务的用户角色（会话鉴权可达时由上层传入）；
         缺省沿用构造时的角色。角色参与每一次工具调用的三层权限求值（U45）。
+
+        `extra_state` 是入口层的**补参**通道（U111）：生产入口从用户原话里抽出的
+        `task_params` / `candidate_stops` 要能进 State，而它们既不是路由结论、
+        也不是工具产出。两条纪律：
+        - 只接受**非受保护字段**（路由、会话、鉴权相关一律拒绝），
+          否则入口就成了改写分发结论的后门；
+        - 缺省 None ⇒ 与接线前逐字一致，既有调用方零变化。
         """
         state = new_state(user_id=user_id, session_id=session_id, login_status=login_status,
                           jev_decision_result=None, wiki_digest=wiki_digest)
@@ -562,6 +570,11 @@ class SceneScheduler:
                       "degradation": [], "route_decision": None, "merged": {}, "input_untrusted": False,
                       "rolled_back": [], "login_required": "",
                       "dispatched": [], "skipped": [], "failed": []})
+        if extra_state:
+            illegal = sorted(key for key in extra_state if key in PROTECTED_STATE_FIELDS)
+            if illegal:
+                raise SchedulerError(f"入口不得注入受保护字段：{illegal}")
+            state.update(dict(extra_state))
         validate_state(state)
 
         # 每次任务重开工具调度计数：重复拦截与无增量判定都以「本次任务」为单位

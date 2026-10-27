@@ -85,6 +85,10 @@ from ai_butler.scheduler.context import ContextManager, ContextPolicy
 from ai_butler.scheduler import intent_wiring
 from ai_butler.verticals.tour.places import load_places
 
+#: 模块级日志通道：给**装配点函数**用（`create_app` 内部自己拿 `setup_logging`
+#: 的实例，那一个是请求期用的；模块级函数没有它，写成 `logger.xxx` 会直接 NameError）。
+logger = get_logger("app")
+
 #: 公开路径白名单：只有基础设施探活 + 登录/访客入口。
 #: **访客凭据不是白名单免鉴权**：它也走同一套中间件校验（U64），
 #: 这里放行的只是「签发凭据」这个动作本身。
@@ -134,6 +138,7 @@ def build_chat_orchestrator(*, gateway, search, settings: Settings,
                             intent_router=None,
                             wiki_digest=None,
                             tool_answer=None,
+                            scene=None,
                             ) -> ChatOrchestrator:
     """文字查询链路的**唯一装配点**（U73 / U74）。
 
@@ -166,6 +171,8 @@ def build_chat_orchestrator(*, gateway, search, settings: Settings,
         wiki_digest=wiki_digest,
         # U114：对话入口的 function calling 承接层（None = 未装，走既有链路）
         tool_answer=tool_answer,
+        # U111：主状态机入口（None = 未装，垂类链路不存在）
+        scene=scene,
     )
 
 
@@ -216,6 +223,96 @@ def build_entry_tool_answer(settings: Settings, *, gateway, wiki_store):
             model_kwargs=model_kwargs)
 
     return _tool_answer
+
+
+def build_entry_scene(settings: Settings):
+    """装配主状态机的对话入口（U111）。**唯一装配点**。
+
+    这补的是一个真实的缺口：`SceneScheduler` 之前全项目只在脚本与测试里被构造，
+    「L4 命中 → 垂类执行」有实现、有守护、能跑，但**没有入口**（E-86 完整形态）。
+
+    装配的三件事
+    ------------
+    - 路由：只装 L4 垂类层。阶段链（`DispatchPlan.chains`）在生产里仍由既有对话
+      链路承担，这里再建一套等于同一句话说两遍；空 `chains` 让非垂类命中
+      直接终止，不会误派给未注册的子 Agent。
+    - 垂类：`VerticalDispatcher()`（惰性解析 `build_tour_agent`，命中才付装配成本）。
+    - 取点：景点候选走高德官方 POI（无 key 时不装配取点，垂类会如实说取不到点）。
+
+    开关关闭时返回 None：**不装** = 这条链路在生产里不存在，而不是「装了但没开」。
+    """
+    if not getattr(settings, "scene_scheduler_enable", False):
+        return None
+
+    from ai_butler.scheduler.graph import DispatchPlan, SceneScheduler
+    from ai_butler.scheduler.router import IntentRouter
+    from ai_butler.scheduler.scene_entry import answer_via_scene
+    from ai_butler.scheduler.vertical import (
+        VerticalDispatchLayer,
+        VerticalDispatcher,
+        build_vertical_model,
+    )
+
+    try:
+        scheduler = SceneScheduler(
+            router=IntentRouter([VerticalDispatchLayer(build_vertical_model())]),
+            agents={}, plan=DispatchPlan(chains={}),
+            verticals=VerticalDispatcher())
+    except Exception as exc:                      # noqa: BLE001 —— 装配失败不连坐聊天
+        logger.error("主状态机装配失败：垂类链路本次不存在", exc)
+        return None
+
+    poi_search = _build_poi_searcher(settings) if _amap_ready(settings) else None
+    if poi_search is None:
+        logger.warning("未配置高德 key：旅游垂类可规划但取不到景点候选，"
+                       "行程会如实报「方案生成失败」而不编景点")
+
+    async def _scene(*, user_id: str, session_id: str = "", utterance: str = "",
+                     labels=()):
+        return await answer_via_scene(
+            scheduler=scheduler, user_id=user_id, session_id=session_id,
+            utterance=utterance, labels=tuple(labels or ()), poi_search=poi_search)
+
+    return _scene
+
+
+def _amap_ready(settings: Settings) -> bool:
+    """有没有高德 key。**读配置，不试探网络**：试探会把启动拖成几十秒。"""
+    return bool((getattr(settings, "amap_key", "") or "").strip())
+
+
+def _build_poi_searcher(settings: Settings):
+    """景点候选检索：高德 `v3/place/text` → `candidate_stops` 行（U111）。
+
+    返回的是 `TourAgent._stops()` 认的行结构，坐标取高德的 `[经度, 纬度]`。
+    票价为 0（高德 POI 不提供票价）：**不填一个编出来的价格**，
+    合计门票因此只反映真实取到的部分。
+    """
+    from ai_butler.scheduler.external_tools import build_amap_source, search_poi
+
+    source = build_amap_source(settings)
+    if source is None:
+        return None
+
+    def _search(city: str, *, limit: int = 6) -> list[dict]:
+        result = search_poi("景点", city=city, limit=limit, source=source)
+        rows: list[dict] = []
+        for index, poi in enumerate(result.get("pois") or (), 1):
+            location = poi.get("location") or []
+            if len(location) != 2:
+                continue                       # 没坐标的点排不进时间轴
+            rows.append({
+                "stop_id": f"poi-{index}",
+                "name": poi.get("name") or f"景点{index}",
+                "latitude": float(location[1]),
+                "longitude": float(location[0]),
+                "dwell_minutes": 90,
+                "ticket_price": 0.0,
+                "evidence_ids": (f"amap:{poi.get('adcode') or ''}",),
+            })
+        return rows
+
+    return _search
 
 
 def create_app(settings: Settings, redis, *, chat_gateway=None,
@@ -1165,12 +1262,15 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
     # ---- 对话入口的 function calling（U114）----
     # 开关关闭时返回 None：该路径在生产里**根本不存在**，而不是「装了但没开」。
     tool_answer = build_entry_tool_answer(settings, gateway=gateway, wiki_store=wiki_store)
+    # ---- 主状态机入口（U111）----
+    # 同样是「关掉就不装」：垂类链路要么有一条真入口，要么整个不存在。
+    scene = build_entry_scene(settings)
 
     orchestrator = build_chat_orchestrator(
         gateway=gateway, search=search, settings=settings,
         model_access=model_access, context_manager=context_manager,
         intent_router=intent_router, wiki_digest=wiki_digest,
-        tool_answer=tool_answer)
+        tool_answer=tool_answer, scene=scene)
 
     # ---- 会话痕迹埋点（U91）：每次运行结束折一条 AgentTrace 写进事件账本 ----
     # 这是 `evaluation/journal_source.py` 声言的「线上链路每次运行结束时（埋点）」

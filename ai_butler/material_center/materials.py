@@ -160,6 +160,11 @@ class MaterialIngestor:
             same_content.retrieved_at = now
             same_content.status = SOURCE_ACTIVE
             same_content.archived_at = None
+            # 内容没变、元数据可能变：发布日/到期日再抓一次就该以最新判定为准。
+            # 只刷新 retrieved_at 会让旧口径永久固化——U122 修完时效口径后，
+            # 已入库的 5 条制度素材就再也拿不到「无到期日」。
+            same_content.stale_after = stale_after
+            same_content.published_at = _parse(doc.published_at)
             await session.flush()
             return REFRESH, same_content.version
 

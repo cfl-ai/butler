@@ -287,7 +287,8 @@ class ChatOrchestrator:
                  intent_router: IntentRouter | None = None,
                  intent_labels: Sequence[str] | None = None,
                  wiki_digest: Callable[[str], Any] | None = None,
-                 tool_answer: Callable[..., Any] | None = None) -> None:
+                 tool_answer: Callable[..., Any] | None = None,
+                 scene: Callable[..., Any] | None = None) -> None:
         self.gateway = gateway
         self.search = search
         self.top_k = top_k
@@ -305,6 +306,8 @@ class ChatOrchestrator:
         self.wiki_digest = wiki_digest
         #: U114：对话入口的 function calling 承接层（异步可调用）。None = 未装。
         self.tool_answer = tool_answer
+        #: U111：主状态机入口（垂类链路）。None = 未装 —— 该轴在生产里不存在。
+        self.scene = scene
 
     # ---------------- 上下文（U73） ----------------
     def _history(self, user_id: str, conversation_id: str | None,
@@ -602,6 +605,51 @@ class ChatOrchestrator:
             yield ChatEvent("done", data={"clarified": True, "notes": clarify_notes,
                                           "conversation_id": conversation_id})
             return
+
+        # ---- 主状态机（U111）：垂类命中就由垂类答，不再走检索与工具回路 ----
+        # 为什么排在 function calling 前面：主状态机是**任务分发者**（计划书三、P3），
+        # 「谁该干这件事」应该先定，再谈用什么工具干。先跑工具回路等于让取数层
+        # 替调度层决定任务归属（E-107 的同型错误：两套决策混用）。
+        # 未装配 / 非垂类命中 / 垂类没答出来 → 写清原因后退回下面既有链路，绝不抢答。
+        if self.scene is not None:
+            try:
+                scene_out = await self.scene(
+                    user_id=user_id, session_id=conversation_id or "",
+                    utterance=query, labels=self.intent_labels)
+            except Exception as exc:              # noqa: BLE001 —— 垂类故障不阻断回答
+                early_notes.append(f"主状态机失败（{type(exc).__name__}）：已退回常规问答")
+                scene_out = None
+            if scene_out is not None:
+                scene_note = getattr(scene_out, "note", "") or ""
+                if scene_note:
+                    early_notes.append(scene_note)
+                # 纯文本化（U119）同样适用于垂类答案：行程里的 `- ` 列表会被洗掉
+                scene_text = plain_text(getattr(scene_out, "text", "") or "")
+                if scene_text.strip():
+                    scene_sources = list(getattr(scene_out, "sources", []) or [])
+                    scene_detail = dict(getattr(scene_out, "detail", {}) or {})
+                    scene_detail["sources"] = scene_sources
+                    remember_note = self._remember(
+                        user_id, conversation_id, question=query, answer=scene_text,
+                        category=retrieval_plan.category.value)
+                    scene_notes = (list(retrieval_plan.notes) + intent_notes + early_notes
+                                   + ([remember_note] if remember_note else []))
+                    # 过程先发、答案后发：右栏要能显示「交给了谁、抽到什么参数」
+                    yield ChatEvent("tools", data=scene_detail)
+                    yield ChatEvent("chunk", text=scene_text,
+                                    speech=scene_text if self._can_speak(resolved_tier) else "")
+                    yield ChatEvent("done", data={
+                        "category": retrieval_plan.category.value,
+                        "source": "scene_scheduler",
+                        "units": scene_detail,
+                        "sources": scene_sources,
+                        "intent_layer": intent_decision.layer if intent_decision else None,
+                        "intent_label": intent_decision.label if intent_decision else None,
+                        "notes": scene_notes,
+                        "history": bool(history.strip()),
+                        "conversation_id": conversation_id})
+                    return
+                early_notes.append("垂类未产出可展示的答案：已退回常规问答")
 
         # ---- function calling 回路（U114/U115 的入口落点）----
         # 装配了才走；没装配 / 开关关闭 / 模型无工具能力 / 回路答不出，

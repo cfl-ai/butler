@@ -107,3 +107,48 @@ def test_published_date_is_never_invented():
              "text": "第一章 总 则\n第一条 为加强和规范中央和国家机关国内差旅费管理的办法。",
              "title": "某个文件"}]
     assert mod.build_candidates(rows)[0].published_at is None
+
+
+# ------------------------------ 真实发布日（U122） ------------------------------ #
+def test_publish_date_comes_from_standalone_sign_off_line():
+    """落款必须**独立成行**才算。正文里的「2006年11月13日发布的《…》同时废止」
+    是废止日期，混进来会把 531 号办法记成 2006-11-13（实测踩过）。"""
+    text = (
+        "第一章 总 则\n"
+        "第一条 为加强和规范中央和国家机关国内差旅费管理，制定本办法。\n"
+        "第三十三条 本办法自2014年1月1日起施行。2006年11月13日发布的"
+        "《财政部关于印发<中央国家机关和事业单位差旅费管理办法>的通知》同时废止。\n"
+        "财政部\n"
+        "2013年12月31日\n"
+    )
+    value, basis = mod.detect_published_at(text, "https://www.gov.cn/x.htm")
+    assert value == "2013-12-31"
+    assert basis == "正文落款"
+
+
+def test_publish_date_manual_mapping_beats_url_when_upload_date_differs():
+    """URL 里的日期是**上网日**，不是印发日：531 号办法上网 2014-07-28、印发 2013-12-31。"""
+    url = ("https://www.mof.gov.cn/gkml/caizhengwengao/wg2014/wg201402/"
+           "201407/t20140728_1118944.htm")
+    value, basis, note = mod.published_at_for("正文里没有任何独立日期的落款", url)
+    assert value == "2013-12-31", "人工核对的印发日优先于 URL 上网日"
+    assert basis == "人工核对"
+    assert "上网日期 2014-07-28" in note, "差异要写进报告，不能静默替换"
+
+
+def test_publish_date_falls_back_to_url_then_stays_empty():
+    value, basis = mod.detect_published_at(
+        "没有落款的一段正文", "https://finance.people.com.cn/n/2015/1020/c1004-1.html")
+    assert (value, basis) == ("2015-10-20", "页面URL（上网日期）")
+
+    value, basis = mod.detect_published_at("没有落款的一段正文", "https://example.com/a")
+    assert value is None and basis == "未识别"
+
+
+def test_candidate_carries_the_real_publish_date():
+    rows = [{"url": "https://www.gov.cn/gongbao/x.htm", "http_code": 200,
+             "title": "财政部关于印发《中央和国家机关差旅费管理办法》的通知",
+             "text": "第一章 总 则\n第一条 为加强和规范中央和国家机关国内差旅费管理，制定本办法。\n"
+                     "财政部\n2013年12月31日\n"}]
+    got = mod.build_candidates(rows)[0]
+    assert got.published_at == "2013-12-31", "发布日要跟着候选一起进核验与入库"

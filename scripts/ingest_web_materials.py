@@ -26,7 +26,7 @@ import json
 import pathlib
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
@@ -53,7 +53,21 @@ _TITLE_IN_BODY = re.compile(r"关于[印转发]{1,2}发?《[^》]{4,60}》的(?:
 #: 标题的站点后缀：人民网、中国政府网的 `--栏目-站点` / `_栏目_站点`
 _SITE_SUFFIX = re.compile(r"(?:--|__|_)[^-_]{0,24}(?:人民网|中国政府网|新华网|央广网|中国之声).*$|(?:--|__)[^-_]{2,24}$")
 
-#: 原文发布日期（页面标注/正文落款）。**不从 URL 猜**，映射不到就留空。
+#: 正文落款日期（「2013年12月31日」）。这是**文件自己的日期**，比 URL 里的上网日期准确。
+_DATE_CN = re.compile(r"(?P<y>20\d{2})\s*年\s*(?P<m>\d{1,2})\s*月\s*(?P<d>\d{1,2})\s*日")
+#: **独立成行的**日期才算落款。为什么必须独立成行：正文里到处是别人的日期，
+#: 「2006年11月13日发布的《…》同时废止」这种句子混进来，会把 531 号办法
+#: 记成 2006-11-13（实测踩过）。落款在页面里是单独一行：机关名 + 日期。
+_DATE_LINE = re.compile(r"^(?:签发日期[:：])?\s*20\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日\s*$")
+#: URL 里的日期（各类政府网站三种常见形态）
+_URL_DATE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"/(?P<y>20\d{2})/(?P<m>\d{2})(?P<d>\d{2})/"),      # /n/2014/0106/
+    re.compile(r"t(?P<y>20\d{2})(?P<m>\d{2})(?P<d>\d{2})_"),        # t20140728_1118944
+    re.compile(r"/(?P<y>20\d{2})-(?P<m>\d{2})/(?P<d>\d{2})/"),      # /2019-07/18/
+)
+
+#: 人工核对过的发布日期。**只在页面里认不出来时兜底**，并作为交叉校验：
+#: 与正文落款不一致时以正文为准，同时把差异打进报告（不静默采用任一方）。
 PUBLISHED_BY_URL: dict[str, str] = {
     "https://www.mof.gov.cn/gkml/caizhengwengao/wg2014/wg201402/201407/t20140728_1118944.htm": "2013-12-31",
     "https://www.gov.cn/gongbao/content/2014/content_2667621.htm": "2013-12-31",
@@ -134,17 +148,71 @@ def pick_title(title: str, body: str) -> str:
     return trimmed if len(trimmed) >= 6 else clean
 
 
+def detect_published_at(text: str, url: str) -> tuple[str | None, str]:
+    """真实发布日 + 判定依据（`正文落款` / `页面URL（上网日期）` / `未识别`）。
+
+    三道口径，按可信度排序，**绝不拿入库时间冒充发布日**：
+
+    1. `正文落款`：独立成行的日期（机关名 + 日期那种）。这是文件自己的印发日。
+    2. 人工核对映射（`PUBLISHED_BY_URL`）：页面把日期放在元数据里、正文抓不到时兜底。
+    3. `页面URL（上网日期）`：URL 里的日期是「这条内容上网的日子」，
+       不是印发日（531 号办法上网 2014-07-28，印发 2013-12-31），所以排最后并标注。
+    """
+    for line in (text or "").splitlines():
+        if not _DATE_LINE.match(line.strip()):
+            continue
+        found = _DATE_CN.search(line)
+        if found is None:
+            continue
+        try:
+            value = date(int(found["y"]), int(found["m"]), int(found["d"]))
+        except ValueError:                      # 2026年2月31日这种脏数据
+            continue
+        return value.isoformat(), "正文落款"
+
+    for pattern in _URL_DATE_PATTERNS:
+        found = pattern.search(url or "")
+        if not found:
+            continue
+        try:
+            value = date(int(found["y"]), int(found["m"]), int(found["d"]))
+        except ValueError:
+            continue
+        return value.isoformat(), "页面URL（上网日期）"
+    return None, "未识别"
+
+
+def published_at_for(text: str, url: str) -> tuple[str | None, str, str]:
+    """发布日 + 判定依据 + 与人工映射的差异说明（三者一起给，避免口径分叉）。
+
+    人工映射**优先于 URL 日期**：URL 上是上网日，人工核对的才是印发日。
+    与正文落款冲突时按正文记账，同时把两边都留在报告里，谁对谁错可回原文核对。
+    """
+    detected, basis = detect_published_at(text, url)
+    manual = PUBLISHED_BY_URL.get(url)
+    if basis == "正文落款":
+        if manual and manual != detected:
+            return detected, basis, (f"人工映射为 {manual}，与正文落款 {detected} 不一致，"
+                                     f"按页面原文记账")
+        return detected, basis, ""
+    if manual:
+        note = "" if detected is None else f"页面只有上网日期 {detected}，采用人工核对的印发日"
+        return manual, "人工核对", note
+    return detected, basis, ""
+
+
 def build_candidates(rows: list[dict]) -> list[Candidate]:
     """抓取结果 → 候选。**取不到正文的也保留**，交给核验判「无法核实」并留痕。"""
     out: list[Candidate] = []
     for i, row in enumerate(rows, 1):
         url = row.get("url", "")
         text = trim_body(row.get("text") or "") if row.get("http_code") == 200 else ""
+        published, _basis, _note = published_at_for(text, url)
         out.append(Candidate(
             doc_id=f"web-{i:02d}", url=url,
             title=pick_title(row.get("title") or "", text),
             text=text, publisher=row.get("publisher", ""),
-            published_at=PUBLISHED_BY_URL.get(url)))
+            published_at=published))
     return out
 
 
@@ -171,6 +239,15 @@ async def main(argv: list[str] | None = None) -> int:
         print(f"  [{flag}] {v['doc_id']} {v['code']}: {v['reason']}")
 
     out: dict = {"admission": summary}
+    # 发布日与依据逐条留痕：入库之后「这条素材算什么时候的」必须能回查，
+    # 否则时效口径只能靠翻日志猜（U122）。
+    published_rows = []
+    for c in report.accepted:
+        value, basis, note = published_at_for(c.text, c.url)
+        published_rows.append({"doc_id": c.doc_id, "published_at": value,
+                               "basis": basis, "note": note})
+        print(f"  发布日 {c.doc_id} {value or '（未识别，留空）'}（{basis}）{note}")
+    out["published"] = published_rows
     if not args.dry_run and report.accepted:
         from ai_butler.agent_wiki.wiring import build_wiki_store
         from ai_butler.data_platform.models import Base

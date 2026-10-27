@@ -64,6 +64,13 @@ class GraphState(TypedDict, total=False):
     degradation: list[str]
     input_untrusted: bool
 
+    # --- 入口补参（U111）---
+    # 必须在这里**显式声明**：LangGraph 只把声明的通道交给节点，
+    # 不声明的键写进 dict 也传不到垂类 Agent —— 实测表现是「参数抽到了、
+    # 垂类却说『还需要你补充目的地』」。
+    task_params: dict[str, Any]
+    candidate_stops: list[dict[str, Any]]
+
 
 def validate_state(state: dict[str, Any]) -> None:
     """校验必填字段。计划书：禁止不带用户身份的裸数据访问。"""

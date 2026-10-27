@@ -28,6 +28,7 @@ from ai_butler.material_center.cleaner import (
     classify,
     content_hash,
     deduplicate,
+    is_normative_document,
     ttl_days,
     to_wiki_source_page,
 )
@@ -162,3 +163,31 @@ def test_duplicate_document_cannot_become_a_source_page():
     dup = deduplicate([a, b])[1]
     with pytest.raises(CleanError):
         to_wiki_source_page(dup)
+
+
+# ------------------- 规范性文件不按资讯 TTL 过期（U122） ------------------- #
+def test_normative_document_gets_no_expiry_date():
+    """制度文件靠新版本替换，不靠时间到期。
+
+    按「发布日 + 资讯 TTL(30 天)」算，2013 年的 531 号办法入库即过期十年；
+    `archive_stale` 一旦被装配，这批素材会被静默清掉（用户侧表现为「答不出来」）。
+    """
+    now = datetime(2026, 10, 27, tzinfo=timezone.utc)
+    doc = clean_document(_raw(
+        text="财政部关于印发《中央和国家机关差旅费管理办法》的通知 财行〔2013〕531号\n"
+             "第一条 为加强和规范中央和国家机关国内差旅费管理，制定本办法。",
+        published_at="2013-12-31"), now=now)
+    assert is_normative_document(doc.text)
+    assert doc.stale_after == "", "规范性文件不设到期日"
+    assert doc.is_stale(now=now) is False
+    assert doc.is_stale(now=now + timedelta(days=3650)) is False, "十年后也不该判过期"
+
+
+def test_news_without_doc_number_still_expires():
+    """没有文号的新闻/解读照旧按 TTL 过期 —— 否则「永不过期」会被这一条规则放宽到全库。"""
+    now = datetime(2026, 10, 27, tzinfo=timezone.utc)
+    doc = clean_document(_raw(text="差旅住宿费标准调整，明年起执行，各地按新标准报销。",
+                              published_at="2015-10-20"), now=now)
+    assert not is_normative_document(doc.text)
+    assert doc.stale_after, "资讯类必须仍被打上到期日"
+    assert doc.is_stale(now=now) is True
