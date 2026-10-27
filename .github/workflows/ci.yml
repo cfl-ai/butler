@@ -69,30 +69,44 @@ jobs:
           python - <<'PY'
           import pathlib, secrets
           from cryptography.fernet import Fernet
+          overrides = {
+              "ENVIRONMENT": "test",
+              "DATA_PLANE_INTERNAL": "false",
+              "POSTGRES_USER": "aibutler",
+              "POSTGRES_PASSWORD": "ci-only-password",
+              "POSTGRES_DB": "aibutler_test",
+              "POSTGRES_HOST": "127.0.0.1",
+              "POSTGRES_PORT": "5435",
+              "REDIS_HOST": "127.0.0.1",
+              "REDIS_PORT": "6382",
+              "REDIS_DB": "0",
+              # 路径类字段的默认值是 data/dev/*，CI 必须显式指到 test 目录，
+              # 否则测试会写进 dev 数据目录（跨环境串味）。
+              "WIKI_ROOT": "data/test/agent_wiki",
+              "STORAGE_ROOT": "data/test/storage",
+              "SESSION_TTL_SECONDS": "43200",
+              "SESSION_IDLE_TIMEOUT_SECONDS": "7200",
+              "SESSION_REFRESH_AHEAD_SECONDS": "1800",
+              "SESSION_TOKEN_SECRET": secrets.token_hex(32),
+              "FIELD_ENCRYPTION_KEY": Fernet.generate_key().decode(),
+          }
           tpl = pathlib.Path(".env.example").read_text(encoding="utf-8").splitlines()
-          out = []
+          out, skipped = [], []
           for line in tpl:
               if "=" not in line or line.startswith("#"):
                   out.append(line); continue
-              key = line.split("=", 1)[0]
-              value = {
-                  "ENVIRONMENT": "test",
-                  "DATA_PLANE_INTERNAL": "false",
-                  "POSTGRES_USER": "aibutler",
-                  "POSTGRES_PASSWORD": "ci-only-password",
-                  "POSTGRES_DB": "aibutler_test",
-                  "POSTGRES_HOST": "127.0.0.1",
-                  "POSTGRES_PORT": "5435",
-                  "REDIS_HOST": "127.0.0.1",
-                  "REDIS_PORT": "6382",
-                  "SESSION_TTL_SECONDS": "43200",
-                  "SESSION_IDLE_TIMEOUT_SECONDS": "7200",
-                  "SESSION_REFRESH_AHEAD_SECONDS": "1800",
-                  "SESSION_TOKEN_SECRET": secrets.token_hex(32),
-                  "FIELD_ENCRYPTION_KEY": Fernet.generate_key().decode(),
-              }.get(key, "")
-              out.append(f"{key}={value}")
+              key, _, tpl_value = line.partition("=")
+              if key in overrides:
+                  out.append(f"{key}={overrides[key]}")
+              elif tpl_value.strip():
+                  out.append(line)
+              else:
+                  # 模板留空 ≠ 「设成空串」：写 `KEY=` 会用空字符串覆盖 Settings 的默认值，
+                  # 带类型的字段（int/bool/float）当场解析失败。留空的键一律不写，
+                  # 让 pydantic 回落到字段默认值。CI 曾在 Settings 上炸 26 个校验错误。
+                  skipped.append(key)
           pathlib.Path(".env.test").write_text("\n".join(out) + "\n", encoding="utf-8")
+          print(f"跳过 {len(skipped)} 个空值键（回落 Settings 默认值）：{', '.join(skipped)}")
           PY
 
       - name: 契约与单元测试（含越权隔离、会话过期、Jev 边界、Wiki 隔离专项）
