@@ -11,7 +11,20 @@
 **可选增强**——需要 key，本项目没有配置；没有 key 就明说没有，
 不拿别家的数据冒充和风。地理编码（地名→坐标）用同一提供方的免费 API；
  nominatim 本机实测连接重置，不采用（U71「不做地址反查」的立场在地名解析
- 上有一个例外：不反查「精确地址」，只解析「城市名」，且结果带歧义标记）。
+上有一个例外：不反查「精确地址」，只解析「城市名」，且结果带歧义标记）。
+
+补充裁定（2026-11-18）
+---------------------
+Open-Meteo 在本机网络下**间歇不可达**：api.open-meteo.com 实测 000 超时
+与恢复交替出现（当天 16:48 失败 → 17:02 恢复 → 17:20 再次超时），而
+wttr.in（免费、无 key、j1 JSON 端点）实测 200/1.5s 稳定。据此：
+**wttr.in 升为主源，Open-Meteo 降为备用源**，由 `FailoverWeather` 串联——
+某一跳失败自动切下一源，全部失败时如实抛出并列出每一跳的原因。
+这不违反 U97「禁止回退」：failover 切换的是**源**，每一跳拿到的都是
+**当下新采集**的数据——拿旧数据冒充新采集才是回退。每条事实带
+`provider` 标记（表 11：统一来源标记），走的是 wttr 还是 open-meteo
+可追溯。wttr.in 免费端点最多 3 天预报：请求超过 3 天时本实现**如实报错**
+触发 failover，而不是静默只回 3 天（不让预报静默变短）。
 
 裁定 U97（2026-10-26）
 ---------------------
@@ -326,6 +339,221 @@ class OpenMeteoWeather:
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise WeatherError(f"地名解析响应缺少坐标字段：{exc}") from exc
+
+
+#: wttr.in 主端点（j1 JSON，免费无 key）
+WTTR_BASE_URL = "https://wttr.in"
+#: wttr.in 免费端点能给的最多预报天数。超过就在本源**如实报错**触发 failover，
+#: 不静默只回 3 天（E-117 同族：让预报静默变短和静默缺字段同罪）
+WTTR_MAX_FORECAST_DAYS = 3
+
+#: wttr.in 天气码（WorldWeatherOnline 码表）→ 中文。
+#: **与 WMO 4677 码表不是一套**：wttr 的 "113" 是晴，塞进 WMO 表会读出
+#: 错误天气——所以这里单独一张表，不许复用 `WMO_CODE_TEXT`（E-44：两处
+#: 口径迟早分叉）。
+WTTR_CODE_TEXT: dict[int, str] = {
+    113: "晴", 114: "大致晴朗", 116: "多云", 119: "阴", 122: "阴",
+    143: "薄雾", 248: "雾", 260: "冻雾",
+    176: "小阵雨", 263: "零星毛毛雨", 266: "毛毛雨",
+    281: "冻毛毛雨", 284: "强冻毛毛雨",
+    293: "零星小雨", 296: "小雨", 299: "中雨（间歇）", 302: "中雨",
+    305: "大雨（间歇）", 308: "大雨",
+    311: "小冻雨", 314: "中到大冻雨",
+    317: "小雨夹雪", 320: "中到大雨夹雪",
+    323: "零星小雪", 326: "小雪", 329: "零星中雪", 332: "中雪",
+    335: "零星大雪", 338: "大雪",
+    350: "冰粒",
+    353: "小阵雨", 356: "中到大阵雨", 359: "暴雨",
+    362: "小阵性雨夹雪", 365: "中到大阵性雨夹雪",
+    368: "小阵雪", 371: "中到大阵雪",
+    374: "小阵性冰粒", 377: "中到大阵性冰粒",
+    179: "零星小雪", 182: "零星雨夹雪", 185: "零星冻毛毛雨",
+    200: "雷暴", 227: "吹雪", 230: "暴风雪",
+    386: "零星雷阵雨", 389: "雷阵雨",
+    392: "零星雷伴雪", 395: "雷伴大雪",
+}
+
+
+class WttrWeather:
+    """wttr.in 实现：实况 + ≤3 天预报 + 地名解析（2026-11-18 主源）。
+
+    `transport` 是测试缝（`httpx.MockTransport`）；`base_url` 可覆盖以便
+    指向镜像。j1 端点对「坐标」与「城市名」都接受：`wttr.in/30.25,120.17`
+    与 `wttr.in/杭州` 返回同一结构，因此本实现同时覆盖
+    `current` / `forecast`（按坐标）与 `geocode`（按城市名）。
+    """
+
+    name = "wttr.in"
+
+    def __init__(self, *, timeout: float = 10.0,
+                 base_url: str = WTTR_BASE_URL,
+                 transport: httpx.BaseTransport | None = None) -> None:
+        if not base_url.startswith("https://"):
+            raise WeatherError(f"wttr.in URL 必须 https：{base_url!r}")
+        self._timeout = timeout
+        self._base_url = base_url.rstrip("/")
+        self._transport = transport
+
+    async def _get_j1(self, location: str) -> Mapping[str, Any]:
+        url = f"{self._base_url}/{location}"
+        async with httpx.AsyncClient(timeout=self._timeout,
+                                     transport=self._transport) as client:
+            try:
+                response = await client.get(url, params={"format": "j1"})
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise WeatherError(f"wttr.in 请求失败（{location}）：{exc}") from exc
+            data: Mapping[str, Any] = response.json()
+        if not data.get("current_condition"):
+            raise WeatherError(
+                f"wttr.in 响应没有 current_condition（顶层字段：{sorted(data)}）")
+        return data
+
+    async def current(self, *, latitude: float, longitude: float) -> WeatherFact:
+        data = await self._get_j1(f"{latitude},{longitude}")
+        row = dict(data["current_condition"][0] or {})
+        try:
+            code = int(row["weatherCode"])
+            temperature = float(row["temp_C"])
+        except (KeyError, TypeError, ValueError) as exc:
+            missing = [k for k in ("weatherCode", "temp_C") if k not in row]
+            raise WeatherError(
+                f"wttr.in 实况缺少字段 {missing}（现有：{sorted(row)}）") from exc
+        # fetched_at = **数据获取时间**（U97 的新鲜度锚点语义）。wttr.in 的
+        # localObsDateTime 不带时区标记，拿它算 age 会差出时区偏移——
+        # 本实现以采集时刻为准（刚取回来的就是新鲜的，语义自洽）。
+        fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        return WeatherFact(
+            latitude=latitude, longitude=longitude,
+            temperature_c=round(temperature, 1),
+            weather_code=code,
+            weather_text=WTTR_CODE_TEXT.get(code, f"未知天气码 {code}"),
+            wind_kmh=round(float(row.get("windspeedKmph") or 0.0), 1),
+            fetched_at=fetched_at,
+            provider=self.name,
+        )
+
+    async def forecast(self, *, latitude: float, longitude: float,
+                       days: int = 3) -> tuple[DailyForecast, ...]:
+        try:
+            count = max(1, min(int(days), MAX_FORECAST_DAYS))
+        except (TypeError, ValueError):
+            count = 3
+        if count > WTTR_MAX_FORECAST_DAYS:
+            raise WeatherError(
+                f"wttr.in 免费端点最多 {WTTR_MAX_FORECAST_DAYS} 天预报"
+                f"（请求 {count} 天）——多天预报请由备用源承接")
+        data = await self._get_j1(f"{latitude},{longitude}")
+        day_rows = list(data.get("weather") or ())
+        if not day_rows:
+            raise WeatherError(
+                f"wttr.in 预报响应没有 weather（顶层字段：{sorted(data)}）")
+        out: list[DailyForecast] = []
+        for index, day in enumerate(day_rows[:count]):
+            hourly = list(day.get("hourly") or ())
+            if not hourly:
+                raise WeatherError(
+                    f"wttr.in 预报第 {index + 1} 天没有 hourly")
+            # 日天气取正午时段（time=="1200"），没有就取中间段——
+            # 日最高最低温是 day 级字段，天气现象只有 hourly 级的
+            midday = next((h for h in hourly
+                           if str(h.get("time")) == "1200"),
+                          hourly[len(hourly) // 2])
+            try:
+                code = int(midday["weatherCode"])
+                t_max = float(day["maxtempC"])
+                t_min = float(day["mintempC"])
+            except (KeyError, IndexError, TypeError, ValueError) as exc:
+                raise WeatherError(
+                    f"wttr.in 预报第 {index + 1} 天缺字段"
+                    f"（day 现有：{sorted(day)}）") from exc
+            probs = [int(h.get("chanceofrain") or 0) for h in hourly]
+            probs += [int(h.get("chanceofsnow") or 0) for h in hourly]
+            out.append(DailyForecast(
+                date=str(day.get("date") or ""),
+                weather_code=code,
+                weather_text=WTTR_CODE_TEXT.get(code, f"未知天气码 {code}"),
+                temp_max_c=round(t_max, 1),
+                temp_min_c=round(t_min, 1),
+                precip_prob_max=max(probs) if probs else 0,
+                precip_mm=round(float(day.get("totalprecipMM") or 0.0), 1),
+            ))
+        return tuple(out)
+
+    async def geocode(self, name: str) -> GeoPoint | None:
+        query = (name or "").strip()
+        if not query:
+            return None
+        data = await self._get_j1(query)
+        areas = list(data.get("nearest_area") or ())
+        if not areas:
+            return None
+        top = dict(areas[0] or {})
+        try:
+            latitude = float(top["latitude"])
+            longitude = float(top["longitude"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise WeatherError(
+                f"wttr.in 地名解析缺少坐标字段：{exc}") from exc
+
+        def _first(field: str) -> str:
+            values = list(top.get(field) or ())
+            return str(values[0].get("value") or "") if values else ""
+
+        return GeoPoint(
+            name=_first("areaName") or query,
+            latitude=latitude, longitude=longitude,
+            country=_first("country"), admin1=_first("region"),
+            ambiguous=len(areas) > 1,
+        )
+
+
+class FailoverWeather:
+    """多源串联故障转移（2026-11-18 补充裁定）。
+
+    - 按 `ports` 顺序逐源尝试，某一跳抛 `WeatherError` 就切下一源；
+    - 某源没有某方法（如只做实况不做地名解析）就**跳过**并记录，
+      不把"没这能力"当成失败冒充（探测式能力声明，ForecastPort 同款）；
+    - 全部源失败时如实抛出，错误信息列出每一跳的失败原因，不吞细节；
+    - 每条返回事实自带 `provider`，走的是哪个源可追溯。
+    """
+
+    def __init__(self, ports: Sequence[WeatherPort]) -> None:
+        ports = tuple(ports)
+        if not ports:
+            raise WeatherError("FailoverWeather 至少需要一个天气源")
+        self._ports = ports
+        #: 聚合名（缓存键不参与，仅日志/证据用）：如 "wttr.in+open-meteo"
+        self.name = "+".join(
+            str(getattr(p, "name", type(p).__name__)) for p in ports)
+
+    async def _try(self, method: str, **kwargs: Any) -> Any:
+        failures: list[str] = []
+        for port in self._ports:
+            label = str(getattr(port, "name", type(port).__name__))
+            handler = getattr(port, method, None)
+            if handler is None:
+                failures.append(f"{label}：不提供 {method}")
+                continue
+            try:
+                return await handler(**kwargs)
+            except WeatherError as exc:
+                failures.append(f"{label}：{exc}")
+        raise WeatherError(
+            f"全部 {len(self._ports)} 个天气源失败 → " + "；".join(failures))
+
+    async def current(self, *, latitude: float,
+                      longitude: float) -> WeatherFact:
+        fact = await self._try("current", latitude=latitude, longitude=longitude)
+        return fact
+
+    async def forecast(self, *, latitude: float, longitude: float,
+                       days: int = 3) -> tuple[DailyForecast, ...]:
+        return await self._try("forecast", latitude=latitude,
+                               longitude=longitude, days=days)
+
+    async def geocode(self, name: str) -> GeoPoint | None:
+        return await self._try("geocode", name=name)
 
 
 class WeatherCache:
