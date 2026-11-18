@@ -6,7 +6,8 @@
 真实外部端口是**异步**的（`verticals/tour/weather.py`、`verticals/tour/amap.py`）。
 这里只做「同步 → 异步」的桥，**不重写 HTTP 与解析**：
 
-- 天气：Open-Meteo（免费无 key，U96），复用 `WeatherCache` + `WeatherCollector`；
+- 天气：wttr.in 主源 + Open-Meteo 备用源（免费无 key，U96 + 2026-11-18
+  补充裁定），复用 `WeatherCache` + `WeatherCollector`，failover 只切源不切数据；
 - POI：高德官方 `v3/place/text`（U109），复用 `AmapSource.search_places`。
 
 U101/U108/U109 已经用真机把这两条路的参数坑踩完了（regeo 要 `经度,纬度` +
@@ -31,7 +32,9 @@ from ai_butler.verticals.tour.amap import AmapError, make_amap_source
 from ai_butler.verticals.tour.sources import CollectError
 from ai_butler.verticals.tour.weather import (
     MAX_FORECAST_DAYS,
+    FailoverWeather,
     OpenMeteoWeather,
+    WttrWeather,
     WeatherCache,
     WeatherCollector,
 )
@@ -66,11 +69,21 @@ def _run(coro: Awaitable[T]) -> T:
 
 
 def default_weather_port(settings: Any = None) -> WeatherCache:
-    """默认天气端口：Open-Meteo + 10 分钟 TTL 缓存（U96/U97）。"""
+    """默认天气端口：wttr.in 主源 + Open-Meteo 备用源（failover）+ TTL 缓存。
+
+    2026-11-18 补充裁定（对 U96 的修订）：原主源 Open-Meteo 在本机网络下
+    **间歇不可达**（api.open-meteo.com 实测 000 超时与恢复交替），升
+    wttr.in（免费无 key、实测 200/1.5s）为主源。failover 只切源不切数据——
+    每一跳都是当下新采集（不违反 U97「禁止回退」），返回事实带 provider
+    标记，来源可追溯（表 11：统一来源标记）。
+    """
     timezone_name = getattr(settings, "weather_timezone", "Asia/Shanghai")
     timeout = getattr(settings, "weather_timeout", WEATHER_TIMEOUT_SECONDS)
     return WeatherCache(
-        OpenMeteoWeather(timezone_name=timezone_name, timeout=timeout),
+        FailoverWeather([
+            WttrWeather(timeout=timeout),
+            OpenMeteoWeather(timezone_name=timezone_name, timeout=timeout),
+        ]),
         ttl_seconds=getattr(settings, "weather_ttl_seconds", WEATHER_TTL_SECONDS))
 
 
