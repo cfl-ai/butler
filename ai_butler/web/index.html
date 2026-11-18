@@ -98,6 +98,7 @@
     border:1px solid var(--line);color:var(--text);font:inherit;outline:none}
   .card input:focus{border-color:var(--accent)}
   .card button{width:100%;padding:10px;border-radius:8px;border:none;cursor:pointer;font:inherit;font-weight:600}
+  .card button:disabled{opacity:.5;cursor:not-allowed}
   .card .primary{background:var(--accent);color:#fff;margin-bottom:8px}
   .card .ghost{background:transparent;color:var(--muted);border:1px solid var(--line)}
   .card .err{min-height:16px;font-size:12px;margin:8px 0 0}
@@ -152,6 +153,7 @@
     <input id="pwd" type="password" placeholder="密码" autocomplete="current-password">
     <button class="primary" id="doLogin">登录</button>
     <button class="ghost" id="doGuest">以访客身份进入</button>
+    <button class="ghost" id="doRetry" style="display:none">重新检测后端</button>
     <div class="err" id="loginErr"></div>
   </div>
 </div>
@@ -177,6 +179,14 @@
   };
 
   // ---------------- 通用请求 ----------------
+  /* 唯一的「怎么起来」说明。三处报错都复用它 —— 各写各的，迟早有一处只
+     说「连不上」却不说「下一步做什么」。 */
+  const START_HINT =
+    "请先启动后端：项目根目录执行 .venv/Scripts/python.exe scripts/run_dev.py" +
+    "（等价于 AIBUTLER_ENV=.env.dev .venv/Scripts/python.exe -m uvicorn " +
+    "ai_butler.server:build_app --factory --port 8411），" +
+    "再访问 http://127.0.0.1:8411/ui 打开本页。";
+
   async function api(path, body, method = "POST") {
     const res = await fetch(path, {
       method,
@@ -195,7 +205,7 @@
       let msg = data && (data.message || data.code);
       if (!msg) {
         msg = res.status === 404
-          ? "接口不存在（404）：当前页面不是从后端打开的。请先启动服务，再用 http://<主机>:<端口>/ui 访问；直接打开文件或走静态预览时，/api 接口不在这个源上"
+          ? "接口不存在（404）：当前页面不是从后端打开的。静态文件直开或 IDE 预览只发文件、不认 /api/*。" + START_HINT
           : "HTTP " + res.status;
       }
       const err = new Error(msg);
@@ -205,17 +215,30 @@
     return data;
   }
 
+  /* 后端不可达时**把入口锁掉**，而不是只弹一行字。
+     原来的写法只改提示文案，登录/访客按钮照样能点 —— 用户点下去拿到的是
+     api() 的 404 文案，把「服务没起」读成「账号密码不对」，方向全错。 */
+  function lockEntry(msg) {
+    overlay.classList.remove("hide");
+    loginErr.textContent = msg;
+    ["acc", "pwd"].forEach((id) => { const el = $(id); if (el) el.disabled = true; });
+    const login = $("doLogin"), guest = $("doGuest"), retry = $("doRetry");
+    if (login) { login.disabled = true; login.textContent = "后端未启动"; }
+    if (guest) guest.disabled = true;
+    if (retry) retry.style.display = "";
+  }
+
   /* 启动自检：/health 是公开探活，能答才有后端可用。
      不做这一步，页面在「静态打开」时会先让人输账号密码，再在提交时
      回一句语焉不详的 HTTP 404 —— 排错方向全错。 */
   async function checkBackend() {
     try {
-      const res = await fetch("/health", { headers: { Accept: "application/json" } });
+      const res = await fetch("/health", { headers: { Accept: "application/json" }, cache: "no-store" });
       const data = await res.json().catch(() => null);
       if (res.ok && data && data.ecosystem) return true;
     } catch (_) { /* 落到下面的兜底 */ }
-    overlay.classList.remove("hide");
-    loginErr.textContent = "连不上后端服务（/health 不可用）：请先启动 ai_butler 服务，再用 http://<主机>:<端口>/ui 打开本页。";
+    lockEntry("连不上后端服务（/health 不可用）：当前页面是从 " +
+      location.origin + " 打开的静态预览，不是后端。" + START_HINT);
     return false;
   }
 
@@ -618,6 +641,19 @@
   };
 
   $("logout").onclick = () => logout(false);
+
+  /* 服务刚起来时不用手敲地址：重新走一遍自检，通了就解锁入口。 */
+  $("doRetry").onclick = async () => {
+    loginErr.textContent = "正在重试…";
+    const ok = await checkBackend();
+    if (!ok) return;
+    ["acc", "pwd"].forEach((id) => { const el = $(id); if (el) el.disabled = false; });
+    const login = $("doLogin"), guest = $("doGuest"), retry = $("doRetry");
+    if (login) { login.disabled = false; login.textContent = "登录"; }
+    if (guest) guest.disabled = false;
+    if (retry) retry.style.display = "none";
+    loginErr.textContent = "";
+  };
 
   // ---------------- 交互 ----------------
   $("newChat").onclick = () => {

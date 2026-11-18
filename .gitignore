@@ -14,6 +14,10 @@ venv/
 htmlcov/
 .idea/
 *.log
+
+# 本地后端常驻运行态（scripts/run_dev.py --detach 生成的 pid 与日志）
+/.run/
+/logs/
 .test-work/
 .test-tmp/
 .smoke-work/
