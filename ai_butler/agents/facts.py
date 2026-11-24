@@ -1,19 +1,10 @@
 """P4 子 Agent 产出事实的契约与私有 Vault 回写通道。
 
-计划书依据
-----------
-- 三、P4「Wiki 约束：子 Agent 产出事实**优先写入对应用户私有 Vault**；
-  **输出事实绑定 Claim 声明 ID 与 Evidence 证据 ID**」
-- 三、P4「隐私约束：读写私有数据必须从 LangGraph State 获取 user_id，
-  不允许硬编码、不能为空；禁止读取其他 user_id 数据」
-- 三、P2「强制所有素材绑定溯源来源，对应 Wiki Evidence 证据条目」
-
 约束如何变成代码
 ----------------
 - 事实缺 claim_page_id 或缺 evidence_ids ⇒ 构造即抛错（不是靠调用方自觉）；
 - 回写必须给出 user_id，且只写该账号的 Vault；
-- 证据条目必须真实存在（公共 Workspace 或该账号 Vault 中找得到），否则拒绝落库。
-"""
+- 证据条目必须真实存在（公共 Workspace 或该账号 Vault 中找得到），否则拒绝落库。"""
 
 from __future__ import annotations
 

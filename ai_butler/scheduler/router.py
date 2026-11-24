@@ -1,13 +1,5 @@
 """P3 五层意图路由（冻结，不得变更顺序与层数）。
 
-计划书依据
-----------
-- 三、P3「落地五层意图路由：硬规则 → Jev 决策 → 向量相似度 → 垂类专用决策模型 → 大模型兜底」
-- 三、P3「实现多意图冲突处理：**不自动选择优先级**，必须向用户确认」
-- 一、项目概述「Jev 仅输出结构化枚举标签 + 置信概率，不输出自由文本」
-- 八、五层路由冻结：jev_confidence_threshold=0.82 / multi_intent_auto_resolve=False
-- 三、P3「全链路降级与回滚机制：任一环节失败自动降级，不阻断主流程」
-
 相关裁定
 --------
 U01 意图标签分层（home-assistant/intents）
@@ -20,8 +12,7 @@ U25 澄清话术由系统渲染 —— 计划书三处禁止 Jev 输出自由文
 JEV-003（本模块的核心不变量）
 ---------------------------
 Jev 返回 require_clarification 后，路由层**必须暂停分发**，
-且**任何更低层都不得覆盖该结论**——这是 multi_intent_auto_resolve=False 的落地。
-"""
+且**任何更低层都不得覆盖该结论**——这是 multi_intent_auto_resolve=False 的落地。"""
 
 from __future__ import annotations
 

@@ -1,14 +1,5 @@
 """P2 append-only 会话事件账本（裁定 U57）。
 
-计划书依据
-----------
-**计划书未定义「事件日志 / 轨迹 / 回放 / 恢复」任何机制**——按项目铁律登记为
-文档未定义项（U57，实现参数），来源走「开源借鉴」：
-
-- **Event Sourcing（事件溯源）**：不存「当前状态」，存「到达状态的全部事件」；
-  状态 = 事件的 fold。追加后不可改不可删，这是回放与恢复能成立的前提。
-- **dsh（DeepSeek Harness）对照设计**：append-only 日志 + 崩溃后重放续跑。
-
 为什么不是「又写一份日志」
 ------------------------
 `devkit/log_query.py` 是**运维日志**（排障/标注/缺陷统计），`scheduler/observe.py`
@@ -24,8 +15,7 @@ P9 评测中台（evaluation/trace.py 的五类过程痕迹）与这里的事件
 2. **可验真**：每条事件带 seq（会话内连续）与 hash（sha256 链式），
    `verify()` 断裂即拒——回放/恢复**前**必须先过校验，fail-closed。
 3. **先脱敏后入账**：payload 一律过 Redactor（redact_deep），
-   明文隐私不许越过这一步（与 harness/context.py 的顺序纪律同构）。
-"""
+   明文隐私不许越过这一步（与 harness/context.py 的顺序纪律同构）。"""
 
 from __future__ import annotations
 

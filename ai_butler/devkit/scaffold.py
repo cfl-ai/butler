@@ -1,20 +1,4 @@
-"""P0-2 Agent 标准化脚手架。
-
-计划书依据
-----------
-- 三、P0-2「搭建 Agent 标准化脚手架：一键生成目录、Class、状态注册、单元测试；
-  脚手架自动注入 user_id 上下文；提供 Agent-Wiki 页面脚手架自动生成实体 / 声明元数据」
-- 三、P4「逐个开发、逐个单测、逐个上线；所有子 Agent 只读全局状态、仅写入自有字段、
-  无跨模块越权调用」
-- 三、P4「隐私约束：读写私有数据必须从 LangGraph State 获取 user_id，
-  不允许硬编码、不能为空」
-- 五、5「模块低耦合，代码结构标准化，点餐、售后等新业务模块可复用整套架构」
-
-生成的代码**自带约束**而不是靠开发者自觉：
-- user_id 只能经 SubAgent.require_user_id(state) 取得；
-- 写入字段被 writes 白名单限定，越界即抛 WriteScopeError；
-- 生成的单测直接断言上述两条。
-"""
+"""P0-2 Agent 标准化脚手架。"""
 
 from __future__ import annotations
 

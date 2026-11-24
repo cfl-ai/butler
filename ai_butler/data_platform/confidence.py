@@ -1,11 +1,5 @@
 """P1 数据置信度打分算法。
 
-计划书依据
-----------
-- 三、P1「实现数据置信度打分算法；**置信分数融合 Agent-Wiki 证据权重**」
-- 三、P1 表注「每一条增量事实生成 Claim 声明并绑定 Evidence 证据；自动标记置信度」
-- 三、P9「Agent-Wiki 指标：声明平均置信度、证据缺失占比」
-
 算法口径
 --------
 计划书要求「实现」算法但未给出公式，故公式属**实现参数**，此处显式登记：
@@ -16,8 +10,7 @@
     confidence     = base × (1 − influence) + evidence_score × influence
 
 含义：**证据越充分，结论越向证据看齐；证据不足时回落到基础分**。
-无证据时 confidence == base，不做任何推测性抬升。
-"""
+无证据时 confidence == base，不做任何推测性抬升。"""
 
 from __future__ import annotations
 

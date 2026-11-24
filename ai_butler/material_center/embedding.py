@@ -1,10 +1,5 @@
 """P2 Embedding 入库规则与向量化实现。
 
-计划书依据
-----------
-- 三、P2「统一切片规则、**Embedding 入库规则**；Wiki 编译产出实体、声明同步写入向量库」
-- 三、P1/P2「检索入参携带 user_id…不会加载其他用户私有向量与 Wiki 页面」
-
 模型选型
 --------
 裁定 U10（人工授权）：Embedding 用 **bge-small-zh-v1.5**（512 维），Rerank 用 bge-reranker-base。
@@ -13,8 +8,7 @@
 测试替身
 --------
 HashingEmbedder 是**确定性的**无模型实现，供单元测试使用：不依赖网络与权重文件，
-但保留「文本越相似、向量越接近」的性质。
-"""
+但保留「文本越相似、向量越接近」的性质。"""
 
 from __future__ import annotations
 

@@ -1,9 +1,5 @@
 """Agent 模块的命令行入口 —— 让 `python ai_butler/agents/<模块>.py` 直接可跑。
 
-计划书依据
-----------
-- 三、P4「逐个开发、逐个单测、逐个上线」
-
 裁定
 ----
 命令行壳的形态为裁定 **U52**（来源与复用边界见 `core/decisions.py`），
@@ -24,8 +20,7 @@
 2. **执行业务必须显式身份**：`--user-id` 与 `--session-id` 缺一个就报错，
    绝不默认填个假值 —— 没有用户上下文的写入无法做行级隔离（计划书三、P0-1）。
 3. **命令行不旁路任何校验**：三层权限、State 契约、写作用域、治理判定照旧，
-   全部复用 `standalone.run_standalone`。省掉的只有 LangGraph 编排。
-"""
+   全部复用 `standalone.run_standalone`。省掉的只有 LangGraph 编排。"""
 
 from __future__ import annotations
 

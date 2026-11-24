@@ -1,10 +1,5 @@
 """离线修复闭环的本机入口（U89）。
 
-计划书依据
-----------
-- 三、P10 触发时机「7×24 小时后台离线自动运行，不占用业务算力」
-- 三、P10 离线链路「…人工审批后台审核 → 审批通过自动版本升级，驳回终止迭代」
-
 这个脚本是什么
 --------------
 `agents/repair_entry.py` 那条链路（评测中台 → harness 改代码 → 复评）的
@@ -34,8 +29,7 @@
     python scripts/run_repair_loop.py run --user-id owner --session-id s1 \\
         --cases scripts/repair_cases.example.json
     python scripts/run_repair_loop.py approve --ticket <id> --by owner
-    python scripts/run_repair_loop.py explain --round R1
-"""
+    python scripts/run_repair_loop.py explain --round R1"""
 
 from __future__ import annotations
 

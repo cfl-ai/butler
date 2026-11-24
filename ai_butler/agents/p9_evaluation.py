@@ -1,17 +1,10 @@
 """P9 指标评估与增量微调体系｜持续优化体系。
 
-计划书依据
-----------
-三、P9 六项开发内容 + 触发时机「系统后台常态化持续运行」
-裁定 U28（LLaMA-Factory + LoRA/QLoRA）、U29（Alpaca 格式）、
-U30（Presidio + 正则兜底）、U31（指标口径自持，Metabase 消费）
-
 一个必须讲清楚的取舍
 --------------------
 **系统级看板默认只统计公共 Workspace。** 把私有 Vault 的内容聚合进全局看板，
 即使脱敏了字段名，聚合本身也可能反推出个体（小样本尤其危险）。
-因此 ~{scope}~ 默认 "public"，要统计某账号就显式带上 user_id 走私有视图。
-"""
+因此 ~{scope}~ 默认 "public"，要统计某账号就显式带上 user_id 走私有视图。"""
 
 from __future__ import annotations
 

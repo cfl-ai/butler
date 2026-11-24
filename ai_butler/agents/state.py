@@ -1,18 +1,10 @@
 """LangGraph 全局 State 契约。
 
-计划书依据
-----------
-- 三、P3「定义完整 LangGraph 全局 State 结构体；新增必填字段
-  user_id、session_id、login_status、jev_decision_result、wiki_digest」
-- 三、P3「注册全局计数器、熔断轮次、工具调用历史；全部记录关联 user_id」
-- 三、P4「所有子 Agent 只读全局状态、仅写入自有字段、无跨模块越权调用」
-
 字段分为两类
 -----------
 - REQUIRED_STATE_FIELDS：计划书点名的必填字段，缺失即拒绝执行；
 - DERIVED_STATE_FIELDS：计划书 P3 提到但未命名的「全局计数器、熔断轮次、工具调用历史」，
-  字段名属实现层命名，不改变语义。
-"""
+  字段名属实现层命名，不改变语义。"""
 
 from __future__ import annotations
 

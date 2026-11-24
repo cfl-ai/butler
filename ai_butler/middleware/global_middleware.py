@@ -1,20 +1,10 @@
 """P0-1 全局中间件（ASGI 层）：接口超时 + 请求日志脱敏。
 
-计划书依据
-----------
-- 三、P0-1「开发全局中间件：接口熔断、超时、降级、防雪崩机制」
-  （熔断 / 降级 / 防雪崩内核见 ai_butler/core/resilience.py，本文件负责 ASGI 层的超时与观测）
-- 三、P0-1「日志脱敏规则：日志禁止打印明文手机号、密码、银行卡、完整位置；
-  保留 user_id 用于排障，剥离原始隐私内容」
-- 三、P0-7「对接云端流式接口：逐字文字渲染 + 同步 TTS 播报」
-  → 超时**不得切断流式响应**，故采用「首字节截止」语义
-
 装配顺序（外 → 内）
 ------------------
 RequestLogMiddleware → TimeoutMiddleware → SessionAuthMiddleware → 业务
 RequestLog 必须在最外层：内层 SessionAuth 会把 user_id 写进 scope["state"]，
-只有外层才能在其之后读到并记录（计划书要求保留 user_id 用于排障）。
-"""
+只有外层才能在其之后读到并记录（计划书要求保留 user_id 用于排障）。"""
 
 from __future__ import annotations
 

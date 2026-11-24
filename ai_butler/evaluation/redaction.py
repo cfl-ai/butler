@@ -1,12 +1,5 @@
 """P9 隐私脱敏 —— 「禁止展示明文用户信息」的确定性实现。
 
-计划书依据
-----------
-- 三、P9「业务指标聚合统计，**原始用户隐私数据脱敏，禁止展示明文用户信息**」
-- 三、P9「日志自动沉淀、优质 / 错误案例分类；**隐私脱敏**」
-- 三、P9「领域 SFT 数据集构建；**剥离用户身份隐私**；禁止把私有 Vault 原始隐私放入训练集」
-- 三、P10「日志输入 Harness 前做隐私脱敏」
-
 裁定 U30
 --------
 Microsoft Presidio（analyzer + anonymizer）为主，中文场景补 cn-pii-anonymization，
@@ -17,8 +10,7 @@ Microsoft Presidio（analyzer + anonymizer）为主，中文场景补 cn-pii-ano
 1. **fail-closed**：safe_text 在无法证明已脱敏时**抛错而不是放行**。
    看板、日志、训练集三个出口都走它，「忘了脱敏」在读路径上就不可能发生。
 2. 模型层（Presidio）是**可选增强**：未安装时正则仍然工作，并如实标注覆盖层级，
-   不假装做了模型级脱敏。
-"""
+   不假装做了模型级脱敏。"""
 
 from __future__ import annotations
 

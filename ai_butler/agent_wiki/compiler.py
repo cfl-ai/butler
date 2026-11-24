@@ -1,21 +1,4 @@
-"""Agent-Wiki v2 编译流水线。
-
-计划书依据
-----------
-- 一、项目概述「同时支持人类可读 Markdown 页面 + 机器编译缓存
-  （agent-digest.json / claims.jsonl / pages.json）」
-- 三、P0-1「提供编译流水线，输入 Markdown 页面输出机器可读缓存，
-  自动检测声明、证据、矛盾、过期素材」
-- 三、P2「过期来源标记为 status:archived 归档」
-- 七、19「矛盾、证据缺失、过期素材可自动产出报告；质检 Agent 可依据证据做事实校验」
-- 八、wiki_compile_auto_run / wiki_auto_report_contradiction /
-      wiki_auto_report_low_confidence / wiki_max_digest_size
-
-开源借鉴依据
------------
-- U17：claims.jsonl 字段以 Microsoft GraphRAG covariates 为起点
-- U18：编译产物形态参考 Markdown + frontmatter → 机器可读缓存的范式
-"""
+"""Agent-Wiki v2 编译流水线。"""
 
 from __future__ import annotations
 

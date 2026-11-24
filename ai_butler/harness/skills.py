@@ -1,18 +1,10 @@
 """P10 MCP + Skill 工具注册（裁定 U35）。
 
-计划书依据
-----------
-- 三、P10 步骤5「基于 **MCP+Skill 协议**集成检索、Git、文件、终端工具；
-   **新增 MCP Skill：Agent-Wiki 维护 Skill，仅用于维护公共 Workspace**」
-- 三、P10 离线链路「通过 MCP Skill 维护公共 Agent-Wiki Workspace 知识库
-  （清理冲突、归档过期来源、生成报告）」
-
 裁定 U35
 --------
 用官方 ~{mcp}~ Python SDK；工具以 Skill 注册表组织，每个 Skill **显式声明作用域**。
 「Agent-Wiki 维护 Skill」**只允许公共 Workspace** —— 在注册层就拒绝任何带 user_id 的目标，
-而不是指望调用方自觉。
-"""
+而不是指望调用方自觉。"""
 
 from __future__ import annotations
 

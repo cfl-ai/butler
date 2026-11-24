@@ -1,13 +1,5 @@
 """评测中台 × Harness 的离线修复闭环 —— 装配点与驱动入口（U80）。
 
-计划书依据
-----------
-- 三、P9「评测中台对全链路做客观评价」——评完要能指出问题
-- 三、P10「评测迭代效果，**未达标持续循环修复**」——指出问题后要有人修、
-  修完要再评一轮；这条链路不是三个类的集合，是一段**有固定顺序的流程**
-- 用户指令（2026-10-25）：「评测中台和 harness 是两个 agent，但是可以在场景下
-  配合使用……修改好后评测总台再进行一轮评测确保 harness 没有出错和胡乱修改」
-
 为什么必须有这个模块（E-77 第 N 次复发）
 --------------------------------------
 U78/U79 之后，`EvaluationPlatformAgent`、`HarnessAgent`、`StreamTraceProducer`
@@ -68,8 +60,7 @@ U78/U79 之后，`EvaluationPlatformAgent`、`HarnessAgent`、`StreamTraceProduc
    把「撤哪一轮、为什么」写清楚交出去。
 4. **每轮可溯源**：`harness/trail.py` 的 `RoundRecord` 覆盖六段——
    问题在哪、本轮边界、改了什么、为什么这样改、验了什么、判成什么样。
-   `RepairLoop.explain()` 与 `RepairTrail.trace_defect()` 是它的两个读口。
-"""
+   `RepairLoop.explain()` 与 `RepairTrail.trace_defect()` 是它的两个读口。"""
 
 from __future__ import annotations
 

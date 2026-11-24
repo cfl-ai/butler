@@ -1,26 +1,4 @@
-"""Agent-Wiki v2 知识本体。
-
-计划书依据
-----------
-- 一、项目概述「Agent-Wiki v2 知识本体范式：本体包含：实体 Entity、来源 Source、声明 Claim、
-  证据 Evidence、关系 Relation、矛盾 Contradiction、开放问题 Question、综合摘要 Synthesis。
-  同时支持人类可读 Markdown 页面 + 机器编译缓存（agent-digest.json / claims.jsonl / pages.json）；
-  区分公共 Workspace（全用户共享公开知识）与用户私有 Vault（绑定 user_id，个人私有知识库），
-  实现事实溯源、矛盾检测，抑制大模型幻觉。」
-- 三、P1「每一条增量事实生成 Claim 声明并绑定 Evidence 证据；自动标记置信度，识别 Contradiction 矛盾声明」
-- 三、P2「原始素材自动生成 Agent-Wiki source.* 源页面，保存来源元数据」
-- 三、P2「过期来源标记为 status:archived 归档」
-- 七、18「知识具备完整本体…编译可输出机器可读缓存文件」
-
-开源借鉴依据（详见 ai_butler/core/decisions.py）
-----------------------------------------------
-- U17：claim 字段以 Microsoft GraphRAG 的 covariates 为起点
-       （claim_type / description / subject_id / object_id / status /
-        valid_from / valid_to(ISO8601) / evidence.source_text / evidence.text_unit_id / source_url）
-- U16：矛盾语义采用 Graphiti 的 fact-invalidation —— **不删除旧声明**，
-       给旧关系写 invalid_at、新增 contradicts 关系，保留完整时间线
-- U18：页面形态采用 Markdown + YAML frontmatter + 固定小节（Observations / Relations）
-"""
+"""Agent-Wiki v2 知识本体。"""
 
 from __future__ import annotations
 

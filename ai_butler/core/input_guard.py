@@ -22,13 +22,7 @@
    或直接给出结论要求系统采信。对策是**不判真假，只判可信度**：
    一律标记为未验证，由下游（P6 质检 / Agent-Wiki 证据链）决定能否入库。
 
-**判真假不是本模块的职责。** 它只回答「这条输入能不能作为事实依据」。
-
-开源借鉴
---------
-风险分类参照 OWASP Top 10 for LLM Applications（LLM01 Prompt Injection、
-LLM09 Misinformation）的分档思路；不引入其代码，仅借鉴分类法（见台账 U41）。
-"""
+**判真假不是本模块的职责。** 它只回答「这条输入能不能作为事实依据」。"""
 
 from __future__ import annotations
 

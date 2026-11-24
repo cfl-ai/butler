@@ -1,17 +1,9 @@
 """P4 子 Agent 能力声明与工具面裁剪。
 
-计划书依据
-----------
-- 三、P4「所有子 Agent 只读全局状态、仅写入自有字段、**无跨模块越权调用**」
-- 三、P2「对外统一检索 API，供**规划 Agent、质检 Agent**、Jev 决策节点调用」
-- 三、P4「Wiki 约束：子 Agent 产出事实优先写入对应用户私有 Vault」
-- 统一架构规范 10.11「垂类 Agent 不得直接调用支付执行能力」
-
 做法
 ----
 「无跨模块越权调用」不靠自觉：装配层按 Agent 的 capabilities **裁剪**出一个工具面，
-未声明的能力在该工具面上取不到，取即抛 CapabilityError。
-"""
+未声明的能力在该工具面上取不到，取即抛 CapabilityError。"""
 
 from __future__ import annotations
 

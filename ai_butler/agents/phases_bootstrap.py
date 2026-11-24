@@ -1,13 +1,4 @@
-"""管家 Agent 的默认装配。
-
-计划书依据
-----------
-- 三、P3「绑定所有 Skill 工具、子 Agent、业务流程统一入口」
-- 计划书封面「管家 Agent 生态体系项目计划书」
-
-只登记**已落地**的阶段 Agent；未落地阶段由 ButlerAgent.ledger() 以
-implemented=False 显式列出，不注册空壳实例。
-"""
+"""管家 Agent 的默认装配。"""
 
 from __future__ import annotations
 

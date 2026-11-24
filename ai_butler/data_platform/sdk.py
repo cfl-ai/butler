@@ -1,12 +1,5 @@
 """P1 全局统一数据 SDK。
 
-计划书依据
-----------
-- 三、P1「封装全局统一数据 SDK（**所有 Agent 只读，禁止直写库**）」
-- 三、P1 表注「SDK 约束：入参强制传入 user_id；查询自动拼接行级过滤；
-  **公共知识库不受 user_id 限制**；SDK 同时封装 Agent-Wiki 读写 API」
-- 三、P4「Wiki 约束：子 Agent 产出事实优先写入对应用户私有 Vault」
-
 两条看似冲突的要求如何对齐
 ------------------------
 「所有 Agent 只读，禁止直写库」针对的是**数据库**；
@@ -17,8 +10,7 @@
 | 四大核心数据表 | **只读** | 仅暴露 read_* 方法，全部走 readonly 会话 |
 | Agent-Wiki | **可读可写** | wiki_* 方法，隔离由 WikiStore 强制 |
 
-**所有**数据库访问都必须经由本 SDK；业务代码不得自行打开 session_scope。
-"""
+**所有**数据库访问都必须经由本 SDK；业务代码不得自行打开 session_scope。"""
 
 from __future__ import annotations
 

@@ -1,22 +1,4 @@
-"""Agent-Wiki v2 运行时存储层：公共 Workspace / 用户私有 Vault。
-
-计划书依据
-----------
-- 三、P0-1「Agent-Wiki v2 运行时存储层：公共 Workspace 存储全系统公开素材；
-  每个用户独立私有 Vault，绑定 user_id；提供编译流水线，输入 Markdown 页面输出机器可读缓存，
-  自动检测声明、证据、矛盾、过期素材」
-- 一、项目概述「区分公共 Workspace（全用户共享公开知识）与用户私有 Vault（绑定 user_id）」
-- 三、P2「检索入参携带 user_id；合并返回公共 Workspace + 当前用户私有 Vault 内容；
-  **不会加载其他用户私有向量与 Wiki 页面**」
-- 三、P1「素材溯源库属于 Agent-Wiki 公共 Workspace 无用户 ID」
-- 七、17「区分公共 Workspace（全用户可读）、用户私有 Vault（user_id 绑定，互相隔离）」
-- 八、wiki_public_workspace_enable / wiki_user_vault_per_user
-
-开源借鉴依据
------------
-- U19：公共库与私有库**共用同一套 schema**，靠作用域 + user_id 隔离，不建两套结构。
-  该做法参考 cognee 的 NodeSet 分组（同图多主题隔离）。
-"""
+"""Agent-Wiki v2 运行时存储层：公共 Workspace / 用户私有 Vault。"""
 
 from __future__ import annotations
 
