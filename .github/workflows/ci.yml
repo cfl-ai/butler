@@ -1,22 +1,9 @@
 # AI 管家 Agent 生态体系 —— CI 流水线
-# 计划书依据：三、P0-2
-#   「制定 Git 分支规范、CI 自动构建、自动部署流水线」
-#   「对接 Harness 自进化体系，评测数据自动流入迭代闭环」
-#
-# 平台选型：GitHub Actions（2026-10-23 改，用户指令「用GitHub不用gitea」，登记 U54）。
-#   沿革：U11 曾裁定 Gitea + act_runner，依据是「github.com 在本机与工具链均不可达」。
-#   该判定对**主站与 git 端点**精确成立（直连/代理/SSH 22/ssh.github.com:443 全域不通，
-#   `git ls-remote` 实测 Empty reply），但 api.github.com 可达（200）。
-#   最终形态：代码由使用者在可访问 github 的终端自行推送；CI 完全跑在 GitHub 托管的
-#   runner 上 —— 本机不需要任何 runner，外部 action（checkout/setup-python 等）与
-#   docker.io 镜像均可直接用，回到计划书原生的 GitHub Actions 形态。
-#   服务镜像因此从 daocloud 镜像源改回 canonical 名（GitHub runner 侧无此约束）。
-#
-# 与计划书四环境隔离的对应：CI 只跑 test 环境；预发布/生产由部署流水线单独触发。
+# CI 只跑 test 环境；预发布/生产由部署流水线单独触发。
 #
 # 步骤顺序有一条**硬要求**：装依赖必须排在「生成 .env.test」之前。
 #   生成脚本 import cryptography，而它来自 requirements.txt ——
-#   顺序反了 CI 会在第一次运行就 ImportError（本项目真踩过，见 MEMORY E-26）。
+#   顺序反了 CI 会在第一次运行就 ImportError。
 #   tests/test_ci_pipeline.py 会守住这一条。
 
 name: CI
@@ -135,7 +122,7 @@ jobs:
                   else:
                       # 模板留空 ≠ 「设成空串」：写 `KEY=` 会用空字符串覆盖 Settings 的默认值，
                       # 带类型的字段（int/bool/float）当场解析失败。模板留空的键一律不写，
-                      # 让 pydantic 回落到字段默认值。CI 曾因此在 Settings 上炸 26 个校验错误。
+                      # 让 pydantic 回落到字段默认值。
                       skipped.append(key)
               # 覆盖表里可能有模板**根本没有**的键（API_PORT 就是这样：它由
               # environments.api_port 派生，.env.example 里没这一行）。只遍历模板
@@ -184,7 +171,7 @@ jobs:
       # 端侧语音的引擎层与推理层**有意不进 CI**（tests/test_ci_pipeline.py 的
       # NOT_IN_CI 登记了完整理由）：它需要 sherpa-onnx 原生推理包与
       # models/kws-zipformer-wenetspeech-3.3M 全套（models/ 整体 gitignore），
-      # 两项都不在 CI 依赖面内。真机层（麦克风权限/保活/功耗，U23）同样不在此覆盖，
+      # 两项都不在 CI 依赖面内。真机层（麦克风权限/保活/功耗）同样不在此覆盖，
       # 由 scripts/verify_android_artifact.py 在构建产物上单独校验。
       # 本地验证：.venv + models/ 就绪后 `python scripts/verify_voice_engine.py`。
 
