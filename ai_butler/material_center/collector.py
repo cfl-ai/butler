@@ -31,7 +31,7 @@ class SourceConnector(Protocol):
 
 @dataclass(frozen=True)
 class CollectPolicy:
-    """采集策略（计划书未给数值 → 实现参数）。"""
+    """采集策略（未给数值 → 实现参数）。"""
 
     min_interval_seconds: float = 1.0     # 对同一来源的礼貌间隔
     timeout_seconds: float = 20.0

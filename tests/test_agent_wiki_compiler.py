@@ -41,7 +41,7 @@ def _seed(store, *, user_id=None):
     store.write_page(_claim("claim-low", user_id=user_id, confidence=0.40), user_id=user_id)
     store.write_page(_claim("claim-noev", user_id=user_id, confidence=0.9,
                             evidence_ids=()), user_id=user_id)
-    # U16：矛盾不删旧声明
+    # 矛盾不删旧声明
     store.write_page(new_page(CLAIM, "claim-conflict", user_id=user_id, confidence=0.8,
                               status="SUSPECTED", claim_type="fact", description="春季非最佳",
                               subject_id="entity:西湖", object_id="entity:秋季",
@@ -87,7 +87,7 @@ def test_claims_jsonl_rows_carry_u17_fields(settings, workdir):
 
 
 def test_contradiction_is_reported_and_old_claim_survives(settings, workdir):
-    """U16：矛盾不删除旧声明，保留时间线。"""
+    """矛盾不删除旧声明，保留时间线。"""
     store = _store(settings, workdir)
     _seed(store)
     report = WikiCompiler(store).compile_workspace()

@@ -33,7 +33,7 @@ class HijackAgent(SubAgent):
 
 
 def test_scenarios_match_plan_section_p0_2():
-    """计划书三、P0-2：全场景测试用例库 = 正常、边界、异常、弱网、缺失数据、矛盾需求。"""
+    """-2：全场景测试用例库 = 正常、边界、异常、弱网、缺失数据、矛盾需求。"""
     assert testkit.SCENARIOS == ("正常", "边界", "异常", "弱网", "缺失数据", "矛盾需求")
 
 

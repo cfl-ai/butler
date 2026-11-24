@@ -296,7 +296,7 @@ def test_llm_is_not_called_when_jev_declines():
 
 
 def test_circuit_breaker_blocks_both_jev_and_llm():
-    """计划书三、P5 步骤 5「接入 LangGraph 循环熔断」：达上限即不再触发昂贵调用。"""
+    """ 步骤 5「接入 LangGraph 循环熔断」：达上限即不再触发昂贵调用。"""
     jev, llm = _Jev(JevDecision(REPLAN, 0.9, "jev")), _LLM()
     state = _state(utterance="安排行程")
     state["rollback_count"] = MAX_ROLLBACKS
@@ -325,7 +325,7 @@ def test_agent_annotates_low_confidence_retrieval_as_risk():
 
 
 def test_agent_emits_streaming_chunks_for_speech():
-    """计划书三、P5 步骤 6「流式 Token 输出，支撑手机端逐字文字 + 语音同步播报」。"""
+    """ 步骤 6「流式 Token 输出，支撑手机端逐字文字 + 语音同步播报」。"""
     llm = _LLM("第一句说明。第二句建议。第三句提示。")
     digest = _call(_agent(llm=llm), _state(utterance="安排行程"))["p5_plan"]
     assert digest["stream_ready"] is True

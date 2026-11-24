@@ -30,7 +30,7 @@ def test_unknown_account_is_rejected(registry):
 
 
 def test_plaintext_password_never_touches_disk(registry):
-    """这是本模块存在的核心意义 —— 计划书原话「数据库不保存明文密码」。"""
+    """这是本模块存在的核心意义 —— 原话「数据库不保存明文密码」。"""
     secret = "plaintext-must-not-appear"
     registry.register(user_id="u-1", password=secret)
     raw = (registry.path).read_text(encoding="utf-8")

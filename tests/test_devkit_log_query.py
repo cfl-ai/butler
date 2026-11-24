@@ -27,7 +27,7 @@ def test_append_requires_user_id(audit):
 
 
 def test_detail_is_redacted_before_it_hits_disk(audit, settings, workdir):
-    """计划书三、P0-1：日志禁止打印明文手机号、密码、银行卡、完整位置。"""
+    """-1：日志禁止打印明文手机号、密码、银行卡、完整位置。"""
     record = audit.append(
         event="pay", level="INFO", user_id="u-1",
         detail={"password": "P@ss", "phone": "13800001111",
@@ -43,7 +43,7 @@ def test_detail_is_redacted_before_it_hits_disk(audit, settings, workdir):
 
 
 def test_query_requires_user_id(audit):
-    """计划书三、P0-2：业务接口禁止读取其他用户日志。"""
+    """-2：业务接口禁止读取其他用户日志。"""
     with pytest.raises(LogAccessError) as ei:
         audit.query(user_id="")
     assert "禁止读取其他用户日志" in str(ei.value)
@@ -70,7 +70,7 @@ def test_query_filters_by_level_and_event(audit):
 
 
 def test_annotate_uses_the_four_plan_categories(audit):
-    """计划书三、P0-9：优质 / 错误案例分类；Jev 错误、Wiki 冲突案例独立分类。"""
+    """-9：优质 / 错误案例分类；Jev 错误、Wiki 冲突案例独立分类。"""
     assert CASE_CATEGORIES == ("优质案例", "错误案例", "Jev错误", "Wiki冲突")
 
     rec = audit.append(event="jev", level="ERROR", user_id="u-1")

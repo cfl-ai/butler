@@ -106,7 +106,7 @@ def test_login_response_never_echoes_the_password(settings, redis_client):
 
 # ============================== 设备上报 ==============================
 def test_device_report_requires_a_session(settings, redis_client):
-    """计划书七、11：未登录拒绝一切业务接口。"""
+    """七、11：未登录拒绝一切业务接口。"""
     async def main():
         _app, client = _client(settings, redis_client)
         async with client:

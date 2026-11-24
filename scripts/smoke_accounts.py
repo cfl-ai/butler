@@ -231,7 +231,7 @@ def main() -> int:
     _, forgot_missing2 = call("POST", "/api/session/forgot",
                               {"kind": "phone", "identifier": "13900000000"})
     # 文案里嵌的是**入参的掩码**，它是入参的纯函数，与「账号是否存在」无关；
-    # 结构上唯一的差别是 dev 通道的令牌（生产通道 dev_token_visible() 为 False）。
+    # 结构上唯一的差别是 dev 通道的令牌（生产通道 dev_token_visible 为 False）。
     check("未注册号与已注册号响应结构一致（不可枚举）",
           set(forgot_missing) == set(forgot) - {"dev_token"}
           and forgot_missing == forgot_missing2

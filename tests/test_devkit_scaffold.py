@@ -59,7 +59,7 @@ def test_generated_code_compiles_and_actually_runs(workdir):
 
 
 def test_generated_agent_pulls_user_id_from_state_not_from_construction(workdir):
-    """计划书三、P4：user_id 不允许硬编码、不能为空。"""
+    """：user_id 不允许硬编码、不能为空。"""
     result = scaffold.scaffold_agent(
         "weather_perception", root=workdir, writes=("weather_snapshot",))
     module = _load_generated(result.files[1])
@@ -101,7 +101,7 @@ def test_wiki_page_scaffold_generates_entity_and_claim_metadata(settings, workdi
     claim = store.read_page("clm-1")
     assert claim.type == "claim" and claim.confidence == 0.93
     assert claim.extra["evidence_ids"] == ["ev-1"]
-    assert claim.status == "TRUE"                            # U17 默认状态
+    assert claim.status == "TRUE"                            # 默认状态
 
 
 def test_wiki_page_scaffold_respects_vault_isolation(settings, workdir):

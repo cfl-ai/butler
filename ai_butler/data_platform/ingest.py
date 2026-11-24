@@ -30,7 +30,7 @@ from ai_butler.data_platform.governance import (
 )
 from ai_butler.data_platform.models import CONFLICT_NONE, UserProfileRecord
 
-#: 计划书三、P1 逐字点名的四类数据来源
+#: 逐字点名的四类数据来源
 CONVERSATION = "conversation"
 BEHAVIOR = "behavior"
 DEVICE = "device"
@@ -192,7 +192,7 @@ class DataIngestor:
 
     def _sync_wiki(self, uid: str, fact: IncrementFact, record, confidence: float,
                    result: IngestResult, now: datetime, actor: str) -> None:
-        """计划书三、P1：增量事实同步生成 Wiki 声明证据，并更新私有 Vault 页面。"""
+        """：增量事实同步生成 Wiki 声明证据，并更新私有 Vault 页面。"""
         stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
         evidence_ids: list[str] = []
 

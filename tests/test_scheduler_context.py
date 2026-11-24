@@ -59,7 +59,7 @@ def test_append_and_load_roundtrip(manager):
 
 
 def test_context_is_isolated_per_account(manager):
-    """计划书三、P4：禁止读取其他 user_id 数据。"""
+    """：禁止读取其他 user_id 数据。"""
     manager.append("user-A", "s1", role=ROLE_USER, content="A 的私密行程")
     manager.append("user-B", "s1", role=ROLE_USER, content="B 的私密行程")
 

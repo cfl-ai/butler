@@ -134,7 +134,7 @@ class ChangeAudit:
     # ---------------- Wiki 页面变更历史（含回溯） ----------------
     def record_wiki_page(self, page: WikiPage, *, action: str = UPDATE, actor: str = "",
                          before: str | None = None) -> ChangeEntry:
-        """记录 Wiki 页面变更。计划书三、P1「同步保留 Wiki 页面变更历史」。"""
+        """记录 Wiki 页面变更。「同步保留 Wiki 页面变更历史」。"""
         return self.record(entity="wiki_page", entity_id=page.id, action=action,
                            user_id=page.user_id, before={"markdown": before} if before else None,
                            after={"markdown": page.to_markdown()}, actor=actor)

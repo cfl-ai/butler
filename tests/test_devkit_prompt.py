@@ -70,7 +70,7 @@ def test_ab_assignment_is_stable_per_user(registry):
 
 
 def test_ab_requires_user_id(registry):
-    """计划书：禁止不带用户身份的裸访问。"""
+    """：禁止不带用户身份的裸访问。"""
     with pytest.raises(PromptError):
         registry.ab_assign("exp", user_id="")
 
@@ -85,7 +85,7 @@ def test_ab_versions_maps_groups_to_the_last_two_versions(registry):
 
 
 def test_jev_question_templates_are_managed_under_one_prefix(registry):
-    """计划书三、P0-2：同步管理 Jev 决策 Question 模板版本。"""
+    """-2：同步管理 Jev 决策 Question 模板版本。"""
     registry.save_jev_question("intent", "判定主意图：{{question}}")
     registry.save_jev_question("intent", "判定主意图与候选列表：{{question}}")
     registry.save_jev_question("conflict", "判定是否多意图冲突：{{question}}")
@@ -98,7 +98,7 @@ def test_jev_question_templates_are_managed_under_one_prefix(registry):
 
 
 def test_default_ab_split_is_an_implementation_parameter(registry):
-    """计划书未定义分流比例 → 作为实现参数显式登记，可覆盖。"""
+    """文档未定义分流比例 → 作为实现参数显式登记，可覆盖。"""
     assert DEFAULT_AB_SPLIT == {"A": 1, "B": 1}
     registry.save("p", "a")
     registry.save("p", "b")

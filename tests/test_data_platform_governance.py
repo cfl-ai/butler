@@ -51,7 +51,7 @@ def test_conflict_always_goes_to_manual_review_regardless_of_score(governor):
 
 
 def test_threshold_is_reused_not_invented(settings, governor):
-    """计划书【八】已有 0.82；不再新造第二个阈值。"""
+    """【八】已有 0.82；不再新造第二个阈值。"""
     assert governor.threshold == settings.jev_confidence_threshold == 0.82
     assert governor.decide(confidence=0.82).action == PERSIST     # 含边界
     assert governor.decide(confidence=0.819).action == LOG_ONLY
@@ -78,7 +78,7 @@ def test_enqueue_and_list_scoped_by_user(queue):
     queue.enqueue(kind="contradiction", ref_id="c-a", reason="A 的矛盾", user_id="user-A")
     queue.enqueue(kind="contradiction", ref_id="c-b", reason="B 的矛盾", user_id="user-B")
 
-    # 计划书三、P6：人工后台只能按 user_id 查看对应账号业务
+    #：人工后台只能按 user_id 查看对应账号业务
     assert [i.ref_id for i in queue.list_items()] == ["c-pub"]
     assert [i.ref_id for i in queue.list_items(user_id="user-A")] == ["c-a"]
     assert [i.ref_id for i in queue.list_items(user_id="user-B")] == ["c-b"]
@@ -111,7 +111,7 @@ def test_stats_are_aggregate_only(queue):
 
 
 def test_wiki_contradictions_are_fed_into_the_queue(settings, workdir, queue):
-    """计划书三、P1「Wiki 检测到矛盾自动送入冲突复核队列」。"""
+    """「Wiki 检测到矛盾自动送入冲突复核队列」。"""
     store = WikiStore(workdir / "wiki", settings=settings)
     store.write_page(new_page(SOURCE, "src-1", url="https://e.com/a", status="active"))
     store.write_page(new_page(CLAIM, "claim-1", confidence=0.9, claim_type="fact",

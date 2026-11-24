@@ -20,7 +20,7 @@ class ThrottleError(RuntimeError):
     """资源预算超限。"""
 
 
-#: 各配额的默认值（实现参数；计划书未给数值）
+#: 各配额的默认值（实现参数；未给数值）
 DEFAULT_TOKENS_PER_ACCOUNT_PER_MINUTE = 60_000
 DEFAULT_RETRIEVALS_PER_ACCOUNT_PER_MINUTE = 30
 DEFAULT_JEV_CALLS_PER_ACCOUNT_PER_MINUTE = 120

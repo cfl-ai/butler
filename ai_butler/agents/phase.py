@@ -32,11 +32,11 @@ class PhaseNotImplemented(PhaseError):
 class PhaseAgent(SubAgent):
     """阶段 Agent。子类必须声明 ~{phase_code}~；其余元数据一律从 phases 真值源取。"""
 
-    #: 计划书阶段编号，如 "P1"
+    #: 阶段编号，如 "P1"
     phase_code: ClassVar[str] = ""
     #: 本阶段 Agent 对外写入的 State 字段（自有字段）
     writes: ClassVar[tuple[str, ...]] = ()
-    #: 本阶段需要的外部能力（计划书三、P4「无跨模块越权调用」）
+    #: 本阶段需要的外部能力（无跨模块越权调用）
     capabilities: ClassVar[tuple[str, ...]] = ()
 
     tools: Any = None

@@ -78,7 +78,7 @@ def test_consecutive_zero_fix_rounds_stop_the_loop():
 
 
 def test_single_zero_fix_round_does_not_stop_yet():
-    """只有一轮没进展还不算停滞 —— 容忍轮数是 2（与 U32 同口径）。"""
+    """只有一轮没进展还不算停滞 —— 容忍轮数是 2（与 同口径）。"""
     runs = [_run(1, defects_found=2, defects_fixed=0)]
     assert score(runs).verdict == Verdict.CONTINUE
 
@@ -127,7 +127,7 @@ def test_negative_counts_are_refused():
 
 
 def test_scorecard_always_explains_itself():
-    """每次结论都要带理由 —— 否则「为什么停了」无从追溯（E-53）。"""
+    """每次结论都要带理由 —— 否则「为什么停了」无从追溯。"""
     for runs in ([], [_run(1, defects_fixed=1, defects_found=4)],
                  [_run(1, defects_found=1, defects_fixed=1, converged=True)],
                  [_run(1, private_data_leaks=1)]):

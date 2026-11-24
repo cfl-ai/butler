@@ -1,17 +1,13 @@
-"""P0-1 统一配置装载。
+"""统一配置装载。
 
-计划书未定义项的处理台账（Skill-05）
-----------------------------------
-【文档未定义项 #12】计划书原文：「设置会话有效期，长时间无交互会话自动失效」——
-计划书**未给出任何数值**。按 Skill-05，AI 不得自行填补空白。
+部分参数的原始需求未给出数值（如「设置会话有效期，长时间无交互会话自动失效」）。
+约定：不得自行填补空白，凡此类取值必须有**人工授权**——用户于 2026-10-16 指示
+「按设计经验取值，后期可根据实际情况调整」。因此本模块以 PARAM_PROVENANCE
+登记取值、理由与授权来源，并把最终数值交给环境变量承载
+（便于后期按实际情况调整，无需改代码）。
 
-本项的补充来源为**人工授权**：用户于 2026-10-16 指示「按设计经验取值，
-后期可根据实际情况调整」。该指示构成 Skill-05 要求的「人工需求补充」，
-因此本模块以 PARAM_PROVENANCE 登记取值、理由与授权来源，
-并把最终数值交给环境变量承载（便于后期按实际情况调整，无需改代码）。
-
-【文档未定义项 #13】「加盐哈希」未指定算法与代价因子，
-   算法选型见 app/core/security.py（实现层决定）。"""
+另一类未指定实现细节的需求（如「加盐哈希」未指定算法与代价因子），
+由实现层决定，选型见 core/security.py。"""
 
 from __future__ import annotations
 
@@ -41,25 +37,25 @@ DEFAULT_TOOL_CAPABLE_MODELS: tuple[str, ...] = (
     "moonshot-v1", "kimi-k2",
 )
 
-#: 计划书未定义、经**人工授权**确定取值的参数登记表。
-#: 用途：任何数值都能回溯到「计划书原文 → 未定义 → 授权来源 → 取值理由」。
+#: 经**人工授权**确定取值的参数登记表（原始需求未给出数值）。
+#: 用途：任何数值都能回溯到「原始需求 → 授权来源 → 取值理由」。
 PARAM_PROVENANCE: dict[str, dict[str, Any]] = {
     "session_idle_timeout_seconds": {
         "env": "SESSION_IDLE_TIMEOUT_SECONDS",
-        "plan_quote": "设置会话有效期，长时间无交互会话自动失效（三、P0-1）；"
-                      "会话登录管控访问权限，长时间未操作系统强制重新登录（一、项目概述）",
-        "status": "人工授权取值（非计划书定义）",
+        "plan_quote": "设置会话有效期，长时间无交互会话自动失效；"
+                      "会话登录管控访问权限，长时间未操作系统强制重新登录",
+        "status": "人工授权取值",
         "authorized_at": "2026-10-16",
         "value": 7200,
-        "rationale": "2 小时无任何交互即失效。计划书规定会话失效**直接终止 Graph 流程**，"
+        "rationale": "2 小时无任何交互即失效。设计规定会话失效**直接终止 Graph 流程**，"
                      "阈值必须覆盖一次完整任务周期（规划→质检→三档预算→用户确认→流式播报），"
                      "过短会在流程中途切断会话；2 小时仍满足「长时间未操作强制重新登录」。",
         "tunable": True,
     },
     "session_ttl_seconds": {
         "env": "SESSION_TTL_SECONDS",
-        "plan_quote": "设置会话有效期（三、P0-1）",
-        "status": "人工授权取值（非计划书定义）",
+        "plan_quote": "设置会话有效期",
+        "status": "人工授权取值",
         "authorized_at": "2026-10-16",
         "value": 43200,
         "rationale": "单个会话凭证最长 12 小时，覆盖一个自然使用日；"
@@ -69,7 +65,7 @@ PARAM_PROVENANCE: dict[str, dict[str, Any]] = {
     },
     "session_refresh_ahead_seconds": {
         "env": "SESSION_REFRESH_AHEAD_SECONDS",
-        "plan_quote": "会话 Token 生成、校验、自动刷新（三、P0-1）",
+        "plan_quote": "会话 Token 生成、校验、自动刷新",
         "status": "实现参数",
         "authorized_at": "2026-10-16",
         "value": 1800,
@@ -118,7 +114,7 @@ class Settings(BaseSettings):
     postgres_max_overflow: int = 20
     postgres_pool_timeout: int = 30
     postgres_echo: bool = False
-    # 「隐私字段独立加密存储」所需密钥（实现参数，非计划书参数）
+    # 「隐私字段独立加密存储」所需密钥（实现参数，非参数）
     field_encryption_key: str = ""
 
     # ---------- Redis：会话与限流载体 ----------
@@ -144,8 +140,8 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = ""
 
-    # ---------- 图文识别 / 图文输出（台账 U61/U62，**计划书未定义**）----------
-    # 计划书 P7「双输入」只写了语音 + 文字；图片输入与图文输出由人工指令
+    # ---------- 图文识别 / 图文输出（台账 U61/U62，**未定义**）----------
+    #  P7「双输入」只写了语音 + 文字；图片输入与图文输出由人工指令
     # （2026-10-24「支持图文识别和输出」）追加，按「开源借鉴」处理。
     # 默认顺序 ollama → openai：前者离线可查（模型没拉取能被 /api/tags 发现），
     # 后者用于接入任意 OpenAI 兼容的多模态端点。
@@ -157,7 +153,7 @@ class Settings(BaseSettings):
     openai_vision_model: str = ""
 
     # ---------- 语音链路（P7；模型落地方式见台账 U65）----------
-    # 计划书 P7 要求 VAD/ASR/TTS；U65 明确「识别在云端执行、端侧模型可选」，
+    #  P7 要求 VAD/ASR/TTS；U65 明确「识别在云端执行、端侧模型可选」，
     # 因此服务端必须有可跑的一整套模型，且缺模型时 fail-closed 而不是返回空文本。
     speech_models_root: str = "models/speech"
     speech_enable: bool = True
@@ -168,7 +164,7 @@ class Settings(BaseSettings):
     voiceprint_threshold: float = 0.35           # U63：声纹判等阈值，偏严
     voiceprint_max_samples: int = 3              # 每账号最多保留的声纹样本数
 
-    # ---------- 访客模式（台账 U64，**计划书未定义**）----------
+    # ---------- 访客模式（台账 U64，**未定义**）----------
     # 「未登录只能文字查询」由人工授权扩宽了可用面，但**没有放宽鉴权**：
     # 访客仍持短期凭据、仍过同一套中间件，只是能力表里只有 text_query。
     guest_enable: bool = True
@@ -181,8 +177,8 @@ class Settings(BaseSettings):
     chat_top_k: int = 5
     guest_public_scope: str = "public-workspace"  # 访客检索用的公共作用域标识
 
-    # ---------- 多轮上下文（U73，计划书三、P3「会话上下文管理」）----------
-    # 关掉即全局退化为单轮；**默认开**，因为「多轮」是计划书点名要求的能力，
+    # ---------- 多轮上下文（U73，三、P3「会话上下文管理」）----------
+    # 关掉即全局退化为单轮；**默认开**，因为「多轮」是点名要求的能力，
     # 默认关等于把它做成一个需要用户自己发现的开关。
     chat_history_enable: bool = True
     chat_history_max_turns: int = 20             # 窗口内最多保留的轮数
@@ -191,7 +187,7 @@ class Settings(BaseSettings):
     chat_summary_max_chars: int = 600            # 摘要上限
     conversation_ttl_seconds: int = 604800       # 索引项保留 7 天
 
-    # ---------- 五层意图路由接线（U74，计划书三、P3）----------
+    # ---------- 五层意图路由接线（U74，三、P3）----------
     # 五层里 L1 硬规则 / L2 Jev / L3 向量**有实现并已接线**；
     # L4 垂类模型（U110，落地 U98 协议）**已有实现但默认不接线**——
     #   scheduler/vertical.py 给出了首个 `VerticalDecisionModel` 实现，标定守护全绿前
@@ -289,13 +285,13 @@ class Settings(BaseSettings):
     wiki_auto_report_contradiction: bool = True    # wiki_auto_report_contradiction = true
     wiki_auto_report_low_confidence: bool = True   # wiki_auto_report_low_confidence = true
     wiki_max_digest_size: int = 12000              # wiki_max_digest_size = 12000
-    # 存储根目录（实现参数，非计划书参数）
+    # 存储根目录（实现参数，非参数）
     wiki_root: str = "data/dev/agent_wiki"
     # 统一文件存储根（三、P0-1「统一文件存储、日志存储、版本备份、项目回溯机制」）
     storage_root: str = "data/dev/storage"
 
     # ---------- 全局中间件（三、P0-1「接口熔断、超时、降级、防雪崩机制」）----------
-    # 以下均为**实现参数**（负载相关），非计划书【八】固化参数，可按实际负载调整
+    # 以下均为**实现参数**（负载相关），非【八】固化参数，可按实际负载调整
     request_timeout_seconds: float = 30.0            # 接口超时；流式响应按「首字节截止」处理
     circuit_breaker_failure_threshold: int = 5       # 连续失败达阈值即熔断
     circuit_breaker_cooldown_seconds: int = 30       # 熔断冷却时长，之后半开探测
@@ -394,8 +390,8 @@ def load_settings(**overrides: Any) -> Settings:
         if missing:
             raise MissingAuthorizedParamError(
                 "会话参数缺失：" + "、".join(missing) + "\n"
-                "这些数值计划书未定义，现由人工授权取值（授权日期 2026-10-16）。\n"
-                "取值、理由与计划书原文见 app/core/config.py 的 PARAM_PROVENANCE；\n"
+                "这些数值未定义，现由人工授权取值（授权日期 2026-10-16）。\n"
+                "取值、理由与原文见 app/core/config.py 的 PARAM_PROVENANCE；\n"
                 "请写入 .env（可参照 .env.example），或按实际情况调整后再写入。"
             ) from exc
         raise

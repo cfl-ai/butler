@@ -47,10 +47,10 @@ MODELS: dict[str, tuple[str, tuple[str, ...]]] = {
         ("encoder-epoch-99-avg-1.int8.onnx", "decoder-epoch-99-avg-1.int8.onnx",
          "joiner-epoch-99-avg-1.int8.onnx", "tokens.txt"),
     ),
-    # 声纹：CAM++ 中文说话人 embedding（U63）。约 28 MB，**只在云端跑**
+    # 声纹：CAM++ 中文说话人 embedding。约 28 MB，**只在云端跑**
     "speaker": ("csukuangfj/speaker-embedding-models",
                 ("3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx",)),
-    # TTS：VITS 中文多说话人（U21 的端侧兜底形态）。体积大，默认只在云端跑
+    # TTS：VITS 中文多说话人（ 的端侧兜底形态）。体积大，默认只在云端跑
     "tts-zh": ("csukuangfj/sherpa-onnx-vits-zh-ll",
                ("model.onnx", "tokens.txt", "lexicon.txt",
                 "dict/jieba.dict.utf8", "dict/hmm_model.utf8",

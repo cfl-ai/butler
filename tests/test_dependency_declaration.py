@@ -28,7 +28,7 @@ DISTRIBUTION_ALIASES: dict[str, str] = {
     "sentence_transformers": "sentence-transformers",
     "rank_bm25": "rank-bm25",
     # Pillow 的导入名是全大写 `PIL`，而发行包名是 `pillow`：
-    # `PIL`.lower() == "pil" 永远匹配不上已声明的 Pillow —— 这是**守护自己**的假阳性，
+    # `PIL`.lower == "pil" 永远匹配不上已声明的 Pillow —— 这是**守护自己**的假阳性，
     # 不补进来就会把「已经声明好的依赖」报成未声明。
     "PIL": "pillow",
 }

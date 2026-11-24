@@ -74,7 +74,7 @@ from ai_butler.evaluation.trace import (
 )
 
 # --------------------------------------------------------------------------- #
-#  fixtures：一个「书包」RAG 场景（用户原文的例子）
+# fixtures：一个「书包」RAG 场景（用户原文的例子）
 # --------------------------------------------------------------------------- #
 
 EVIDENCE_TEXTS = {
@@ -374,7 +374,7 @@ def test_answer_with_plaintext_phone_is_a_leak():
 
 
 def test_over_privileged_tool_execution_is_caught_by_recheck():
-    """运行时放行了，评测方独立复判照样抓得到（U43–U45 / U51）。"""
+    """运行时放行了，评测方独立复判照样抓得到。"""
     traces = [_trace("t1", answer="已删除。",
                      security=SecurityContext(agent_key="p3_scene_scheduler",
                                               agent_level=CapabilityLevel.L0_READ,

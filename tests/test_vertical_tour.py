@@ -128,11 +128,11 @@ class FakeCollector:
 # ============================== 台账 ============================== #
 def test_phase_two_decisions_are_registered_and_resolved():
     keys = {d.key for d in decisions.DECISIONS if d.phase == "V1"}
-    # U94–U97 = 2026-10-26 真实数据接入批次（路线源/交通方式分级/weather源/实时语义）；
-    # U101/U103/U104 = 高德接入方式、坐标基准转换、镇乡层级缺口；
-    # U105/U106 = 电脑端定位、规划含时间；
-    # U108 = 高德官方 key 接入（2026-10-26，restapi 接通、township/周边 POI 解锁）
-    # U109 = 高德官方 POI 检索（v3/place/text + around，与 regeo 顺带 POI 不重叠）
+    # = 2026-10-26 真实数据接入批次（路线源/交通方式分级/weather源/实时语义）；
+    # = 高德接入方式、坐标基准转换、镇乡层级缺口；
+    # = 电脑端定位、规划含时间；
+    # = 高德官方 key 接入（2026-10-26，restapi 接通、township/周边 POI 解锁）
+    # = 高德官方 POI 检索（v3/place/text + around，与 regeo 顺带 POI 不重叠）
     assert keys == {"U37", "U38", "U39", "U40", "U94", "U95", "U96", "U97",
                     "U101", "U103", "U104", "U105", "U106", "U108", "U109"}
     for key in keys:
@@ -196,7 +196,7 @@ def test_out_of_scope_lists_match_the_plan():
     assert set(HANDOFF) == set(OUT_OF_SCOPE), "每个 ❌ 项都该有去向提示"
 
 
-# ============================== 脚手架边界（U39）============================== #
+# ============================== 脚手架边界============================== #
 def test_vertical_agent_has_no_routing_or_dispatch_power():
     """表 11 模块边界：无权修改路由规则、无权分发任务给其他 Agent。"""
     assert TourAgent.may_route is False
@@ -233,7 +233,7 @@ def test_parse_params_treats_blank_and_empty_list_as_missing():
     assert "目的地" in got.missing and "出行天数" in got.missing
 
 
-# ============================== 路线校验（U38）============================== #
+# ============================== 路线校验============================== #
 def test_haversine_is_reasonable():
     # 杭州西湖 -> 灵隐寺 约 5 公里
     km = haversine_km((30.25, 120.15), (30.24, 120.10))
@@ -285,7 +285,7 @@ def test_low_confidence_stops_are_labelled():
     assert low_confidence_stops(stops) == ("未核实景点",)
 
 
-# ============================== 采集底座（U37）============================== #
+# ============================== 采集底座============================== #
 def test_collected_fact_rejects_private_fields():
     """表 11：公共采集底座不可读取隐私。"""
     with pytest.raises(CollectError) as ei:
@@ -335,7 +335,7 @@ def test_claim_requires_evidence():
         to_claim_fact(fact, subject_id="x", claim_page_id="c")
 
 
-# ============================== 重规划判定（U40）============================== #
+# ============================== 重规划判定============================== #
 def test_no_trigger_means_no_llm_call():
     """原文「条件成立**才**调用大模型」——不成立时根本不该召模型。"""
     got = evaluate_preconditions(ReplanSignals())

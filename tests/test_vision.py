@@ -408,7 +408,7 @@ def test_availability_endpoint_reports_reasons(settings, redis_client):
 
 
 # --------------------------------------------------------------------------- #
-# 超时：视觉接口必须单独放宽（端到端实测过 504，见台账 U61）
+# 超时：视觉接口必须单独放宽（端到端实测过 504，见）
 # --------------------------------------------------------------------------- #
 def test_timeout_middleware_honours_path_override():
     import asyncio as _asyncio

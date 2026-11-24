@@ -51,7 +51,7 @@ def scoped_id(scope_key: str, chunk_id: str) -> str:
 
 @dataclass(frozen=True)
 class RetrievalRule:
-    """三重检索参数（计划书未给数值 → 实现参数）。"""
+    """三重检索参数（未给数值 → 实现参数）。"""
 
     candidate_k: int = 40
     top_k: int = 10
@@ -173,7 +173,7 @@ class Reranker(Protocol):
 
 
 class CrossEncoderReranker:
-    """bge-reranker-base（裁定 U10），从本地目录加载。"""
+    """bge-reranker-base（裁定 ），从本地目录加载。"""
 
     def __init__(self, model_path: str | Path, *, max_length: int = 512) -> None:
         path = Path(model_path)
@@ -297,7 +297,7 @@ class HybridRetriever:
     # ---------------- 检索 ----------------
     def retrieve(self, query: str, *, user_id: str,
                  top_k: int | None = None) -> list[RetrievedChunk]:
-        """三重混合检索。**user_id 必填**（计划书表注「检索入参携带 user_id」）。"""
+        """三重混合检索。**user_id 必填**（检索入参携带 user_id）。"""
         if not user_id or not str(user_id).strip():
             raise EmbeddingError(
                 "检索必须携带 user_id（计划书三、P2 表注）；禁止不带用户身份的裸检索")

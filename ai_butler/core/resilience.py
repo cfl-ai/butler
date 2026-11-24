@@ -150,7 +150,7 @@ class CircuitBreaker:
 # 组合入口：防雪崩 → 熔断 → 超时 → 降级
 # --------------------------------------------------------------------------- #
 class Resilience:
-    """按依赖名持有闸门，业务侧只调用 call()。"""
+    """按依赖名持有闸门，业务侧只调用 call。"""
 
     def __init__(self, *, settings, redis=None) -> None:
         self.settings = settings

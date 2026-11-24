@@ -37,7 +37,7 @@ class RogueAgent(SubAgent):
 
 
 def test_required_state_fields_match_plan_section_p3():
-    """计划书三、P3 逐字点名的五个必填字段。"""
+    """ 逐字点名的五个必填字段。"""
     assert REQUIRED_STATE_FIELDS == (
         "user_id", "session_id", "login_status", "jev_decision_result", "wiki_digest",
     )
@@ -67,7 +67,7 @@ def test_agent_reads_user_id_from_state():
 
 
 def test_agent_cannot_write_fields_outside_its_scope():
-    """计划书三、P4：仅写入自有字段。越权写入必须被拦下，而不是静默生效。"""
+    """：仅写入自有字段。越权写入必须被拦下，而不是静默生效。"""
     agent = RogueAgent()
     with pytest.raises(WriteScopeError) as ei:
         agent(new_state(user_id="u-1", session_id="s-1"))
@@ -75,13 +75,13 @@ def test_agent_cannot_write_fields_outside_its_scope():
 
 
 def test_agent_skips_execution_when_session_invalid():
-    """计划书三、P4：会话失效则跳过执行。"""
+    """：会话失效则跳过执行。"""
     agent = DemoAgent()
     assert agent(new_state(user_id="u-1", session_id="s-1", login_status=False)) == {}
 
 
 def test_agent_has_no_way_to_delegate_to_another_agent():
-    """计划书五、5：Agent 之间禁止直接互相调用。基类不得提供任何转交入口。"""
+    """五、5：Agent 之间禁止直接互相调用。基类不得提供任何转交入口。"""
     surface = [n for n in dir(SubAgent) if not n.startswith("__")]
     forbidden = {"dispatch", "delegate", "call_agent", "handoff", "route", "forward"}
     assert not (set(surface) & forbidden), f"基类暴露了任务转交入口：{set(surface) & forbidden}"

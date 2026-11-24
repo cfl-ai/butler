@@ -21,7 +21,7 @@ from ai_butler.verticals.tour.weather import (
 )
 
 # --------------------------------------------------------------------------- #
-#  j1 样本（wttr.in 真实结构的最小还原）
+# j1 样本（wttr.in 真实结构的最小还原）
 # --------------------------------------------------------------------------- #
 def _j1_payload() -> dict:
     return {
@@ -68,7 +68,7 @@ def _wttr(payload: dict | None = None) -> WttrWeather:
 
 
 # --------------------------------------------------------------------------- #
-#  WttrWeather：解析
+# WttrWeather：解析
 # --------------------------------------------------------------------------- #
 def test_current_parses_j1_and_uses_wttr_code_table():
     fact = asyncio.run(_wttr().current(latitude=30.25, longitude=120.17))
@@ -145,7 +145,7 @@ def test_http_error_carries_location():
 
 
 # --------------------------------------------------------------------------- #
-#  FailoverWeather：换源语义
+# FailoverWeather：换源语义
 # --------------------------------------------------------------------------- #
 def test_failover_switches_to_next_source_on_primary_failure():
     class _Broken:
@@ -214,7 +214,7 @@ def test_failover_requires_at_least_one_port():
 
 
 # --------------------------------------------------------------------------- #
-#  装配点：主备顺序
+# 装配点：主备顺序
 # --------------------------------------------------------------------------- #
 def test_default_weather_port_wires_wttr_primary():
     port = default_weather_port()

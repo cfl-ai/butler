@@ -59,7 +59,7 @@ class EvaluationAgent(PhaseAgent):
     writes: ClassVar[tuple[str, ...]] = ("p9_evaluation",)
     capabilities: ClassVar[tuple[str, ...]] = (CAP_DATA_READ, CAP_WIKI_READ)
 
-    #: 离线链路严禁访问私有 Vault（计划书三、P10）
+    #: 离线链路严禁访问私有 Vault
     #: 模型层分析器（如 Presidio 适配器）。未注入即只用正则兜底。
     analyzer: Any = None
     stale_days: int = 180

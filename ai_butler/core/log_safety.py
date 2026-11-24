@@ -36,14 +36,14 @@ ERASE_KEYS = frozenset({
 MASK_RULES: tuple[tuple[tuple[str, ...], Any], ...] = (
     (("phone", "mobile", "tel", "手机"), mask_phone),
     (("bank", "card", "银行卡", "account_no"), mask_bank_card),
-    # 登录账号（七、13「全链路日志做隐私脱敏」）。
+    # 登录账号。
     # 这里原先漏了：mask_account 写好了却从没进规则表，
     # 于是字段名叫 account 的日志**一点都没脱敏**。
     (("account", "账号", "账户"), mask_account),
     (("location", "address", "geo", "lat", "lng", "位置", "地址"), mask_location),
 )
 
-#: 计划书明确保留、不得脱敏的排障字段
+#: 设计明确保留、不得脱敏的排障字段
 PRESERVE_KEYS = frozenset({"user_id", "userId"})
 
 _ERASED = "***已抹除***"
@@ -61,7 +61,7 @@ def _field_masker(key: str):
 
 
 def redact(value: Any, *, key: str | None = None) -> Any:
-    """递归脱敏。user_id 原样保留（计划书要求保留用于排障）。"""
+    """递归脱敏。user_id 原样保留（设计要求保留用于排障）。"""
     if key is not None:
         if key in PRESERVE_KEYS:
             return value

@@ -39,7 +39,7 @@ from ai_butler.verticals.tour.wiring import build_tour_agent
 
 
 # --------------------------------------------------------------------------- #
-# 标定样本（U03：阈值由样本分布钉住，不是拍脑袋）
+# 标定样本（阈值由样本分布钉住，不是拍脑袋）
 # --------------------------------------------------------------------------- #
 TRAVEL_POSITIVES = [
     "帮我规划一个周末去北京的旅游行程",
@@ -58,7 +58,7 @@ TRAVEL_NEGATIVES = [
 
 
 # --------------------------------------------------------------------------- #
-# 台账：U98 曾被标 RESOLVED 但代码从未落地（声明≠能力），U110 才真正落地
+# 台账： 曾被标 RESOLVED 但代码从未落地（声明≠能力）， 才真正落地
 # --------------------------------------------------------------------------- #
 def test_u110_registered_and_u98_carries_correction():
     from ai_butler.core import decisions
@@ -153,7 +153,7 @@ def test_router_wires_l4_when_enabled():
 
 
 # --------------------------------------------------------------------------- #
-# TourAgent 生产装配点（填 E-86）
+# TourAgent 生产装配点（填 ）
 # --------------------------------------------------------------------------- #
 class FakeCollector:
     """测试替身：照实返回全部类别，不触发网络。"""
@@ -210,7 +210,7 @@ _PARAMS = {"destination": "杭州", "start_date": "2026-11-01", "days": 2, "part
 
 
 def test_build_tour_agent_runs_full_trip_with_injected_fakes():
-    """装配点产出的 Agent 能端到端跑通一次行程（E-86 反例：装配之后真能跑）。"""
+    """装配点产出的 Agent 能端到端跑通一次行程（反例：装配之后真能跑）。"""
     agent = build_tour_agent(collector=FakeCollector(), routing=FakeRouting())
     out = _call(agent, _state(task_kind="trip_plan", task_params=_PARAMS,
                               candidate_stops=_CANDIDATES))
@@ -223,10 +223,10 @@ def test_build_tour_agent_runs_full_trip_with_injected_fakes():
 
 
 # --------------------------------------------------------------------------- #
-# 派发器（U110 闭环：L4 命中 → 真有执行者）
+# 派发器（ 闭环：L4 命中 → 真有执行者）
 # --------------------------------------------------------------------------- #
 def test_dispatcher_resolves_tour_through_real_factory():
-    """不注入任何替身，`resolve("tour")` 也必须装出真 Agent —— 否则又是一次 E-86。"""
+    """不注入任何替身，`resolve("tour")` 也必须装出真 Agent —— 否则又是一次。"""
     dispatcher = VerticalDispatcher()
     assert dispatcher.has("tour") is True
     agent = dispatcher.resolve("tour")
@@ -253,7 +253,7 @@ def test_dispatcher_bind_overrides_factory():
 
 
 # --------------------------------------------------------------------------- #
-# 端到端：L4 命中 → SceneScheduler 真的把任务交给垂类（U110 全链路）
+# 端到端：L4 命中 → SceneScheduler 真的把任务交给垂类（ 全链路）
 # --------------------------------------------------------------------------- #
 def _vertical_scheduler(*, verticals):
     return SceneScheduler(

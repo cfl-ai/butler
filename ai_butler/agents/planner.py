@@ -84,7 +84,7 @@ class PlannerAgent(SubAgent):
                 claim_type="fact",
             ))
 
-        # 风控（台账 U41）：不可信输入产出的事实只能落成 SUSPECTED
+        # 风控：不可信输入产出的事实只能落成 SUSPECTED
         written = writer.write_many(
             facts, user_id=uid, untrusted=bool(state.get("input_untrusted")))
         return {"planner_digest": {

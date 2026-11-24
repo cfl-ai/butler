@@ -22,13 +22,13 @@ SCOPE_VAULT = "vault"
 SCOPE_LOGS = "logs"
 SCOPE_BACKUPS = "backups"
 SCOPE_EXPORTS = "exports"
-#: P0-2 Prompt 版本库（三、P0-2「搭建 Prompt 版本库」，属全局资产非用户私有）
+#: P0-2 Prompt 版本库
 SCOPE_PROMPTS = "prompts"
-#: P1 冲突人工复核队列（三、P1「冲突人工复核」「Wiki 检测到矛盾自动送入冲突复核队列」）
+#: P1 冲突人工复核队列
 SCOPE_REVIEW = "review"
-#: P1 数据版本溯源与变更审计（三、P1「数据版本溯源、变更审计、回溯系统」）
+#: P1 数据版本溯源与变更审计
 SCOPE_AUDIT = "audit"
-#: P3 会话上下文（三、P3「会话上下文管理：多轮对话状态保持」）
+#: P3 会话上下文
 #: 按 user_id 分片存放，跨账号物理不可见。
 SCOPE_CONVERSATIONS = "conversations"
 

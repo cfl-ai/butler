@@ -53,7 +53,7 @@ def _run_phase(butler, code, state):
     return asyncio.run(butler.run_phase(code, state))
 
 
-#: 计划书三、P4 原文「包含子 Agent：设备感知、天气感知、时间进度、增量抽取、
+#: 原文「包含子 Agent：设备感知、天气感知、时间进度、增量抽取、
 #: 路线方案、备选预案、代码迭代 Agent」——「Agent」是七项共用的总称，
 #: 与阶段命名同一口径（P1 就叫「数据中台」不叫「数据中台 Agent」），故不逐项带后缀。
 PLAN_NAMES = ["设备感知", "天气感知", "时间进度", "增量抽取",
@@ -62,14 +62,14 @@ PLAN_NAMES = ["设备感知", "天气感知", "时间进度", "增量抽取",
 
 # ============================== 名册 ============================== #
 def test_roster_matches_the_plan_line_word_for_word():
-    """计划书三、P4 逐字点名的 7 个 Agent，顺序与名称都要对上。"""
+    """ 逐字点名的 7 个 Agent，顺序与名称都要对上。"""
     assert len(ROSTER) == 7
     assert [row[1] for row in ROSTER] == PLAN_NAMES
     assert [row[0] for row in ROSTER] == [c.name for c in MOPS_AGENT_CLASSES]
 
 
 def test_every_member_writes_exactly_one_own_field():
-    """计划书三、P4「仅写入自有字段」——一个成员只认领一个字段，避免互相踩。"""
+    """「仅写入自有字段」——一个成员只认领一个字段，避免互相踩。"""
     for (name, _, write_field), cls in zip(ROSTER, MOPS_AGENT_CLASSES):
         assert cls.writes == (write_field,), f"{name} 的写入字段与名册不一致"
         assert cls.responsibilities
@@ -212,7 +212,7 @@ def test_time_progress_handles_missing_context():
 # ============================== 4. 增量抽取 ============================== #
 def test_incremental_extraction_writes_evidence_bound_facts_into_private_vault(
         evidence_pages):
-    """计划书三、P4 Wiki 约束：产出事实优先写入本人私有 Vault，绑定 Claim/Evidence ID。"""
+    """ Wiki 约束：产出事实优先写入本人私有 Vault，绑定 Claim/Evidence ID。"""
     wiki = evidence_pages
     search = _StubSearch([_Hit("d#0000", "西湖春季六点开放", ["ev-1"], confidence=0.93)])
     agent = IncrementalExtractionAgent(tools=_tools(
@@ -281,7 +281,7 @@ def test_contingency_plan_reacts_to_a_disruption(evidence_pages):
 
 # ============================== 7. 代码迭代 ============================== #
 def test_code_iteration_only_proposes_and_never_executes():
-    """计划书三、P10 才允许在隔离沙箱里改代码；业务链路内严格止步于提案。"""
+    """ 才允许在隔离沙箱里改代码；业务链路内严格止步于提案。"""
     assert CodeIterationAgent.EXECUTES_CODE is False
     state = _state()
     state["qa_report"] = {"findings": [{"kind": "证据缺失", "page_id": "c-1"}]}
@@ -302,7 +302,7 @@ def test_code_iteration_without_signals_proposes_nothing():
 
 # ============================== 通用约束 ============================== #
 def test_every_member_skips_when_session_is_invalid():
-    """计划书三、P4 触发时机「会话失效则跳过执行」。"""
+    """ 触发时机「会话失效则跳过执行」。"""
     search = _StubSearch([])
     for cls in MOPS_AGENT_CLASSES:
         agent = cls(tools=_tools(cls, retrieval=search, data_read=_StubDevice(),
@@ -311,7 +311,7 @@ def test_every_member_skips_when_session_is_invalid():
 
 
 def test_every_member_refuses_blank_user_id():
-    """计划书三、P4 隐私约束：user_id 不允许硬编码、不能为空。"""
+    """ 隐私约束：user_id 不允许硬编码、不能为空。"""
     search = _StubSearch([])
     for cls in MOPS_AGENT_CLASSES:
         agent = cls(tools=_tools(cls, retrieval=search))
@@ -330,7 +330,7 @@ def test_every_member_only_writes_its_own_field(evidence_pages):
 
 
 def test_every_member_reads_state_without_mutating_it():
-    """计划书三、P4「只读全局状态」。"""
+    """「只读全局状态」。"""
     search = _StubSearch([])
     for cls in MOPS_AGENT_CLASSES:
         agent = cls(tools=_tools(cls, retrieval=search, data_read=_StubDevice(),

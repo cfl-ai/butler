@@ -62,7 +62,7 @@ def test_retrieval_requires_user_id(workdir):
 
 
 def test_user_cannot_see_another_users_private_chunks(workdir):
-    """计划书三、P2：不会加载其他用户私有向量与 Wiki 页面。"""
+    """：不会加载其他用户私有向量与 Wiki 页面。"""
     service = _build(workdir)
     _seed(service)
 
@@ -74,7 +74,7 @@ def test_user_cannot_see_another_users_private_chunks(workdir):
 
 
 def test_public_knowledge_is_visible_to_everyone(workdir):
-    """计划书三、P1/P2：公共域全账号可读。"""
+    """/P2：公共域全账号可读。"""
     service = _build(workdir)
     _seed(service)
     query = "西湖景区开放时间门票预约"
@@ -106,7 +106,7 @@ def test_same_doc_id_in_public_and_vault_do_not_collide(workdir):
 
 # ------------------------------ 融合与重排 ------------------------------ #
 def test_hits_carry_confidence_and_evidence_ids(workdir):
-    """计划书三、P2：返回附带声明置信度、证据 ID。"""
+    """：返回附带声明置信度、证据 ID。"""
     service = _build(workdir)
     _seed(service)
     hits = service.search("西湖景区开放时间", user_id="user-A").hits
@@ -178,7 +178,7 @@ def test_remove_document_only_affects_own_scope(workdir):
 
 # ------------------------------ Jev 接口 ------------------------------ #
 def test_search_for_jev_returns_only_structured_fields(workdir):
-    """计划书三、P2「Jev 决策可直接读取声明置信度」——只给 id/置信度/证据，不给正文。"""
+    """「Jev 决策可直接读取声明置信度」——只给 id/置信度/证据，不给正文。"""
     service = _build(workdir)
     _seed(service)
     rows = service.search_for_jev("西湖景区开放时间", user_id="user-A")
@@ -190,7 +190,7 @@ def test_search_for_jev_returns_only_structured_fields(workdir):
 
 @pytest.mark.live
 def test_live_bge_reranker_reorders(workdir):
-    """真实 Rerank 联调（裁定 U10：bge-reranker-base）。"""
+    """真实 Rerank 联调（裁定 bge-reranker-base）。"""
     from ai_butler.material_center.embedding import BGEEmbedder
     from ai_butler.material_center.retrieval import CrossEncoderReranker
 

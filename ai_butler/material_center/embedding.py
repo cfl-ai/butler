@@ -27,7 +27,7 @@ META_DOC_ID = "doc_id"
 META_CHUNK_INDEX = "chunk_index"
 META_PAGE_ID = "page_id"        # 对应 Agent-Wiki 页面 id
 META_SOURCE_ID = "source_id"    # 对应素材溯源库 source_key
-META_CONFIDENCE = "confidence"  # 声明置信度（计划书：返回附带声明置信度）
+META_CONFIDENCE = "confidence"  # 声明置信度（：返回附带声明置信度）
 
 SCOPE_PUBLIC = "public"
 SCOPE_VAULT = "vault"

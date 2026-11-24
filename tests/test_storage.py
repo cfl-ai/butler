@@ -48,7 +48,7 @@ def test_vault_scope_requires_user_id(settings, workdir):
 
 
 def test_global_scope_rejects_user_id(settings, workdir):
-    """计划书：公共域无用户 ID。"""
+    """：公共域无用户 ID。"""
     store = _store(settings, workdir)
     with pytest.raises(StorageIsolationError):
         store.scope_dir(SCOPE_WORKSPACE, user_id="u-1")

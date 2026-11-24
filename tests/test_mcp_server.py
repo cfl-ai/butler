@@ -87,7 +87,7 @@ def test_serialize_result_exposes_judgement_fields() -> None:
 
 
 def test_contract_drift_fails_fast() -> None:
-    """schema 漂移检测：注册表契约与 MCP 签名不一致必须启动失败（E-44）。"""
+    """schema 漂移检测：注册表契约与 MCP 签名不一致必须启动失败。"""
     registry = ToolRegistry()
     registry.register(
         "read_wiki_page",

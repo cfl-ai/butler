@@ -58,7 +58,7 @@ class ConfidenceBreakdown:
 
     @property
     def evidence_missing(self) -> bool:
-        """计划书七、19「证据缺失」判定的依据。"""
+        """七、19「证据缺失」判定的依据。"""
         return self.evidence_count == 0
 
 

@@ -13,7 +13,7 @@ def build_report(*, board: Mapping[str, Any], deposit: Mapping[str, Any],
                  dataset: Mapping[str, Any], pipeline: Mapping[str, Any],
                  runs: Sequence[Mapping[str, Any]], generated_at: str,
                  redactor: Redactor | None = None) -> dict[str, Any]:
-    """组装迭代评估报告。Jev 与知识库质量各成一段（计划书明确要求「包含」）。"""
+    """组装迭代评估报告。Jev 与知识库质量各成一段（包含）。"""
     red = redactor or Redactor()
     metrics = dict(board.get("metrics") or {})
 

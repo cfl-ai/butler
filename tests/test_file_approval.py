@@ -158,7 +158,7 @@ def test_construction_refuses_non_positive_ttl(tmp_path):
 # 三、并发与接口一致性
 # --------------------------------------------------------------------------- #
 def test_two_instances_requests_do_not_lose_each_other(tmp_path):
-    """两个进程各自申请：后写的必须看见先写的（锁内重读，U86 的立场）。"""
+    """两个进程各自申请：后写的必须看见先写的（锁内重读， 的立场）。"""
     path = tmp_path / "approvals.json"
     a = _service(path)
     b = _service(path)

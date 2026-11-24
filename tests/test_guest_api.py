@@ -67,7 +67,7 @@ def test_guest_entry_issues_restricted_credential(settings, redis_client):
     body = response.json()
     assert body["tier"] == "guest"
     assert body["user_id"].startswith("guest:")
-    # 能力面只有文字查询 —— 这是 U64 的全部含义
+    # 能力面只有文字查询 —— 这是 的全部含义
     assert body["capabilities"] == ["text_query"]
     assert body["token"]
 
@@ -176,7 +176,7 @@ def test_guest_cannot_request_clarification_bypass(settings, redis_client):
 
 
 def test_member_gets_speech_text_for_tts(settings, redis_client):
-    """成员的文字查询带播报文本（访客没有）—— 这是 U64 的直接差异。"""
+    """成员的文字查询带播报文本（访客没有）—— 这是 的直接差异。"""
 
     async def main():
         async with _client(settings, redis_client) as client:

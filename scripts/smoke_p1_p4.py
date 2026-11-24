@@ -11,7 +11,7 @@ r"""P1–P4 端到端冒烟：真实 dev 环境（PostgreSQL + Redis）串起四
 from __future__ import annotations
 
 # 临时目录自愈：系统临时目录不可写时改用工作区目录，
-# 否则 chromadb 的 rust 绑定会报「unable to open database file」（见 MEMORY E-14）。
+# 否则 chromadb 的 rust 绑定会报「unable to open database file」（见 ）。
 import sys as _sys
 from pathlib import Path as _Path
 _ROOT = _Path(__file__).resolve().parents[1]
@@ -342,7 +342,7 @@ async def main() -> int:
               f"增量抽取产出 {len(inc['facts'])} 条绑定证据的事实，"
               f"跳过 {len(inc['skipped'])} 条")
 
-        # 垂类派发（U110）：L4 命中垂类键 → 由垂类 Agent 执行，而不是走阶段链。
+        # 垂类派发：L4 命中垂类键 → 由垂类 Agent 执行，而不是走阶段链。
         # 这里是**非测试**的可运行装配点：证明 `build_tour_agent` 不只在 pytest 里被触达。
         vertical_scheduler = SceneScheduler(
             router=IntentRouter([VerticalDispatchLayer(build_vertical_model())]),
@@ -359,7 +359,7 @@ async def main() -> int:
         ok(f"垂类派发：意图={vres.intent} 执行者={vres.dispatched}；"
            f"垂类如实要求补参数（未回退、未假装成功）")
 
-        # 输入接通（U114/U117）：function calling 现在**默认打开**，且工具请求有专用
+        # 输入接通：function calling 现在**默认打开**，且工具请求有专用
         # 供应商路由（本机 Ollama 无 tools → 工具请求走具备能力的供应商）。
         # 这里断言的全是真事：开关默认值、能力结论可诊断、关闭时零行为变化、
         # 以及**真跑一次**工具回路。
@@ -403,9 +403,9 @@ async def main() -> int:
            f"检索命中 {hit.output['count']} 条")
         print(f"        工具能力：{'可用' if capable else '不可用'} —— {why}")
 
-        # ② 真跑一次完整回路（U117）：离散化 → 调配 → 裁剪工具 → 模型调工具 → 回答。
-        #    这是「开关不是装饰」的唯一证据 —— 能力可用就必须真跑出答案，
-        #    不可用就如实打印原因（不假装跑过）。
+        # ② 真跑一次完整回路：离散化 → 调配 → 裁剪工具 → 模型调工具 → 回答。
+        # 这是「开关不是装饰」的唯一证据 —— 能力可用就必须真跑出答案，
+        # 不可用就如实打印原因（不假装跑过）。
         fc_out = await answer_with_tools(
             gateway=gw,
             registry=build_tool_registry(search_service=service, wiki_store=wiki,
@@ -425,7 +425,7 @@ async def main() -> int:
         else:
             ok(f"function calling 未启用（如实）：{fc_out.skipped[:60]}")
 
-        # Wiki 编译流水线（U115）：此前只在 scripts/smoke_p0.py 跑过，生产里没人调。
+        # Wiki 编译流水线：此前只在 scripts/smoke_p0.py 跑过，生产里没人调。
         # 这里走**生产装配点**编译一次，并产出真正要注入对话的 digest。
         from ai_butler.agent_wiki.wiring import WikiDigestProvider, compile_on_startup
 
@@ -480,7 +480,7 @@ async def main() -> int:
         assert len(planned) == len(phases_mod.planned_phases())
         assert all(not row["enrolled"] for row in planned)
 
-        # 调未落地阶段必须抛错，且报错带上计划书该阶段的核心能力。
+        # 调未落地阶段必须抛错，且报错带上该阶段的核心能力。
         # 目标阶段**从真值源取**而不是写死——否则每有一个阶段落地，这里都要跟着改一次。
         pending = phases_mod.planned_phases()
         assert pending, "已无未落地阶段，本项检查需改为「全部阶段均可放行」的验证"

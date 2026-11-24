@@ -56,7 +56,7 @@ def test_fast_request_passes_untouched():
 
 
 def test_streaming_response_is_not_cut_by_timeout():
-    """计划书三、P0-7 要求逐字流式播报 → 首字节之后必须解除截止。"""
+    """-7 要求逐字流式播报 → 首字节之后必须解除截止。"""
 
     async def main():
         app = TimeoutMiddleware(_stream_app, timeout_seconds=0.1)   # 总时长 0.45s > 0.1s

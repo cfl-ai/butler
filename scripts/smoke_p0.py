@@ -7,7 +7,7 @@ r"""P0-1 端到端冒烟：真实 PostgreSQL + Redis + Ollama 串起三个模块
 from __future__ import annotations
 
 # 临时目录自愈：系统临时目录不可写时改用工作区目录，
-# 否则 chromadb 的 rust 绑定会报「unable to open database file」（见 MEMORY E-14）。
+# 否则 chromadb 的 rust 绑定会报「unable to open database file」（见 ）。
 import sys as _sys
 from pathlib import Path as _Path
 _ROOT = _Path(__file__).resolve().parents[1]

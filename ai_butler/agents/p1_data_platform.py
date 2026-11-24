@@ -46,7 +46,7 @@ class DataPlatformAgent(PhaseAgent):
             "profile_rows": counts["profile_rows"],
             "knowledge_rows": counts["knowledge_rows"],
             "governance_threshold": threshold,
-            "readonly": True,          # 计划书三、P1「所有 Agent 只读，禁止直写库」
+            "readonly": True,          # 「所有 Agent 只读，禁止直写库」
         }}
 
 if __name__ == "__main__":  # 直接运行本文件：打印本 Agent 档案（不带参数不碰外部依赖）

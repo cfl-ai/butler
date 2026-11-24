@@ -89,7 +89,7 @@ class SearchWiring:
 
     # ---------------- 对外 ----------------
     def search(self, query: str, user_id: str | None) -> list[dict[str, Any]]:
-        """执行一次检索。**guest 一律只查公共域**（U64：私有库需登录）。"""
+        """执行一次检索。**guest 一律只查公共域**（私有库需登录）。"""
         service = self.service()
         # SearchService 强制要求 user_id；访客用一个明确的公共作用域标识，
         # 而不是伪造一个真实账号 —— 后者的私有向量会被顺带检索到。

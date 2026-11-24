@@ -63,7 +63,7 @@ def test_jev_hit_rate_only_counts_records_where_jev_actually_decided():
 
 
 def test_accuracy_definition_is_pluggable():
-    """计划书未定义准确率口径 → 默认完全相等，可由调用方覆盖。"""
+    """文档未定义准确率口径 → 默认完全相等，可由调用方覆盖。"""
     records = [_rec(answer="杭州三日游", expected="杭州 3 日游")]
     assert Evaluator().evaluate(records).accuracy == 0.0
 
@@ -80,7 +80,7 @@ def test_report_text_covers_all_eight_metrics():
 
 
 def test_harness_export_strips_user_identity(workdir):
-    """计划书三、P10：评测集合不含用户敏感原始数据。"""
+    """：评测集合不含用户敏感原始数据。"""
     records = [_rec(task_id="t1", user_id="13800001111", answer="x")]
     out = Evaluator().export_for_harness(records, path=workdir / "export.json")
     payload = json.loads(open(out, encoding="utf-8").read())

@@ -153,7 +153,7 @@ class MaterialIngestor:
             same_content.status = SOURCE_ACTIVE
             same_content.archived_at = None
             # 内容没变、元数据可能变：发布日/到期日再抓一次就该以最新判定为准。
-            # 只刷新 retrieved_at 会让旧口径永久固化——U122 修完时效口径后，
+            # 只刷新 retrieved_at 会让旧口径永久固化—— 修完时效口径后，
             # 已入库的 5 条制度素材就再也拿不到「无到期日」。
             same_content.stale_after = stale_after
             same_content.published_at = _parse(doc.published_at)
@@ -199,7 +199,7 @@ class MaterialIngestor:
     # ------------------------------------------------------------------ #
     async def archive_stale(self, *, now: datetime | None = None,
                             grace_days: int = DEFAULT_ARCHIVE_GRACE_DAYS) -> list[str]:
-        """过期素材识别与归档。计划书三、P2「过期来源标记为 status:archived 归档」。"""
+        """过期素材识别与归档。「过期来源标记为 status:archived 归档」。"""
         moment = now or datetime.now(timezone.utc)
         archived: list[str] = []
         async with self._db.session_scope(user_id=None) as session:

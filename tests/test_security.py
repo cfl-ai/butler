@@ -22,7 +22,7 @@ SECRET = "test-secret-not-for-production-0123456789abcdef"   # >=32 字节，满
 
 
 def test_password_is_salted_and_never_plaintext():
-    """计划书：用户账号密码加盐哈希存储，数据库不保存明文密码。"""
+    """：用户账号密码加盐哈希存储，数据库不保存明文密码。"""
     h1 = hash_password("Passw0rd!测试")
     h2 = hash_password("Passw0rd!测试")
     assert h1 != h2, "两次哈希必须不同（随机盐）"
@@ -38,7 +38,7 @@ def test_password_longer_than_bcrypt_limit_is_supported():
 
 
 def test_field_cipher_roundtrip_and_random_iv(settings):
-    """计划书：手机号、位置、支付信息等隐私字段独立加密存储。"""
+    """：手机号、位置、支付信息等隐私字段独立加密存储。"""
     c = FieldCipher(settings.field_encryption_key)
     phone = "13800001111"
     a, b = c.encrypt(phone), c.encrypt(phone)
@@ -48,7 +48,7 @@ def test_field_cipher_roundtrip_and_random_iv(settings):
 
 
 def test_log_masking_never_leaks_plaintext():
-    """计划书：日志禁止打印明文手机号、账号、银行卡、完整位置。"""
+    """：日志禁止打印明文手机号、账号、银行卡、完整位置。"""
     assert mask_phone("13800001111") == "138****1111"
     assert mask_bank_card("6222021234567890123").endswith("0123")
     assert "6222021234567890123" not in mask_bank_card("6222021234567890123")

@@ -170,7 +170,7 @@ def test_store_refuses_private_record_without_user_id(store):
 
 
 def test_scope_filter_isolation(store):
-    """计划书三、P2：不会加载其他用户私有向量。"""
+    """：不会加载其他用户私有向量。"""
     store.upsert([
         _rec("pub", [1.0, 0.0, 0.0], "公共素材", scope=SCOPE_PUBLIC),
         _rec("a", [1.0, 0.0, 0.0], "A 的私有素材", scope=SCOPE_VAULT, user_id="user-A"),
@@ -198,7 +198,7 @@ def test_delete_document_only_touches_the_given_scope(store):
 
 @pytest.mark.live
 def test_live_bge_embedder_and_real_semantics(settings):
-    """真实模型联调：bge-small-zh-v1.5（裁定 U10）。"""
+    """真实模型联调：bge-small-zh-v1.5（裁定 ）。"""
     from pathlib import Path
 
     path = Path(__file__).resolve().parents[1] / "models" / "bge-small-zh-v1.5"

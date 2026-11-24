@@ -84,7 +84,7 @@ def test_snapshot_serialises_datetimes():
 
 # -------------------- Wiki 页面变更历史与回溯 -------------------- #
 def test_wiki_page_history_is_kept_and_scoped(audit):
-    """计划书三、P1「同步保留 Wiki 页面变更历史」。"""
+    """「同步保留 Wiki 页面变更历史」。"""
     page = new_page(CLAIM, "claim-h", confidence=0.9, claim_type="fact", description="v1",
                     subject_id="a", object_id="b", evidence_ids=["ev-1"], user_id="user-A")
     audit.record_wiki_page(page, action=CREATE, actor="ingest")

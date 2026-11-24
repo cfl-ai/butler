@@ -27,7 +27,7 @@ class StubProvider(Provider):
 
     async def chat(self, messages, *, model=None, timeout=0, max_tokens=None,
                    api_key=None, base_url=None, temperature=None):
-        """`temperature` 是 U74 新增的判定确定性参数，桩必须跟着契约走。"""
+        """`temperature` 是 新增的判定确定性参数，桩必须跟着契约走。"""
         if self._fail:
             raise RuntimeError(f"{self.name} down")
         return ChatResult(text=self._text, provider=self.name, model="stub", latency_ms=1)
@@ -110,7 +110,7 @@ def test_jev_accepts_structured_enum_above_threshold(settings):
 
 
 def test_jev_never_passes_free_text_downstream(settings):
-    """计划书：Jev 只输出结构化枚举标签 + 置信概率，禁止输出自由自然语言文本。"""
+    """：Jev 只输出结构化枚举标签 + 置信概率，禁止输出自由自然语言文本。"""
     d = asyncio.run(_jev(settings, "我觉得用户可能想去旅游吧", jev_shadow_mode=False)
                     .decide(user_id="u-1", question="?", allowed_labels=LABELS))
     assert not d.accepted and d.label is None and d.source == "fallback"
@@ -124,7 +124,7 @@ def test_jev_rejects_label_outside_allowed_set(settings):
 
 
 def test_jev_below_threshold_falls_back_downstream(settings):
-    """计划书：置信不足向下流转（jev_confidence_threshold=0.82）。"""
+    """：置信不足向下流转（jev_confidence_threshold=0.82）。"""
     payload = json.dumps({"label": "旅游", "confidence": 0.5})
     d = asyncio.run(_jev(settings, payload, jev_shadow_mode=False)
                     .decide(user_id="u-1", question="?", allowed_labels=LABELS))
@@ -152,7 +152,7 @@ def test_jev_disabled(settings):
 
 
 def test_jev_requires_label_set_from_human(settings):
-    """【文档未定义项 #1】计划书未给出标签清单，禁止 AI 编造。"""
+    """【文档未定义项 #1】未给出标签清单，禁止 AI 编造。"""
     with pytest.raises(ValueError) as ei:
         asyncio.run(_jev(settings, "{}").decide(user_id="u-1", question="?", allowed_labels=[]))
     assert "文档未定义项" in str(ei.value)
@@ -170,7 +170,7 @@ def test_live_ollama_through_gateway(settings):
 
 
 # --------------------------------------------------------------------------- #
-# 计划书三、P3「Jev 调用独立配额统计」
+# 「Jev 调用独立配额统计」
 # --------------------------------------------------------------------------- #
 def test_jev_uses_an_independent_rate_bucket(settings):
     """Jev 与业务话务必须各占一个配额桶，否则独立配额形同虚设。"""

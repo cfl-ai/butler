@@ -55,7 +55,7 @@ def _bill(bill_id="b1", *, amount=100.0, user_id="user-A", channel="alipay",
                 evidence_ids=tuple(evidence))
 
 
-# ============================== 档位与阈值（U07）============================== #
+# ============================== 档位与阈值============================== #
 def test_tiers_and_modes_match_the_plan():
     assert TIERS == ("low", "medium", "high")
     assert MODES == ("free", "manual")
@@ -63,7 +63,7 @@ def test_tiers_and_modes_match_the_plan():
 
 
 def test_thresholds_come_from_decision_u07_not_invented():
-    """U07：中预算 单笔 ≤1000 免密 + 单日累计 ≤3000 封顶；低预算阈值 0；高预算用月剩余比例。"""
+    """中预算 单笔 ≤1000 免密 + 单日累计 ≤3000 封顶；低预算阈值 0；高预算用月剩余比例。"""
     low = TIER_POLICIES[TIER_LOW]
     assert low.per_transaction_free_limit == 0.0 and low.daily_cap == 0.0
     assert low.requires_manual_confirmation is True
@@ -110,7 +110,7 @@ def test_aggregate_sums_totals_and_channels():
 
 
 def test_aggregate_refuses_another_accounts_bill():
-    """计划书三、P8 表注：账单交易记录行级隔离。"""
+    """ 表注：账单交易记录行级隔离。"""
     with pytest.raises(PermissionError) as ei:
         aggregate_bills([_bill(user_id="user-B")], user_id="user-A")
     assert "行级隔离" in str(ei.value)
@@ -152,7 +152,7 @@ def test_high_tier_without_monthly_budget_falls_back_to_manual():
 
 
 def test_free_quota_is_an_account_private_switch():
-    """计划书三、P8 步骤3「免密额度属于账号私有配置」。"""
+    """ 步骤3「免密额度属于账号私有配置」。"""
     d = decide_payment_mode(policy=TIER_POLICIES[TIER_MEDIUM], amount=100.0,
                             free_quota_enabled=False)
     assert d.mode == MODE_MANUAL and "账号私有配置" in d.reason

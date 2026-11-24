@@ -19,10 +19,10 @@ from typing import Any, Sequence
 
 from ai_butler.core.storage import SCOPE_PROMPTS, FileStore
 
-#: Jev 决策 Question 模板的命名前缀（计划书三、P0-2 要求同步管理其版本）
+#: Jev 决策 Question 模板的命名前缀（-2 要求同步管理其版本）
 JEV_TEMPLATE_PREFIX = "jev.question."
 
-#: A/B 默认分流比例（计划书未定义 → 实现参数）
+#: A/B 默认分流比例（文档未定义 → 实现参数）
 DEFAULT_AB_SPLIT: dict[str, int] = {"A": 1, "B": 1}
 
 

@@ -10,38 +10,38 @@ from __future__ import annotations
 
 from typing import Any, TypedDict
 
-#: 计划书三、P3 逐字点名的必填字段
+#: 必填字段（命名源逐字点名）
 REQUIRED_STATE_FIELDS: tuple[str, ...] = (
     "user_id", "session_id", "login_status", "jev_decision_result", "wiki_digest",
 )
 
-#: 计划书三、P3「全局计数器、熔断轮次、工具调用历史」——字段名为实现层命名
+#: 「全局计数器、熔断轮次、工具调用历史」——字段名为实现层命名
 DERIVED_STATE_FIELDS: tuple[str, ...] = (
     "task_id", "intent", "rollback_count", "loop_count", "tool_call_history",
-    # --- P3 主状态机所需（计划书三、P3「定义完整 LangGraph 全局 State 结构体」）---
-    # 计划书只规定了必填字段与「计数器/轮次/历史」，主状态机的流转字段属实现层命名。
+    # --- P3 主状态机所需（定义完整 LangGraph 全局 State 结构体）---
+    # 只规定了必填字段与「计数器/轮次/历史」，主状态机的流转字段属实现层命名。
     "utterance", "route_decision", "clarification", "agent_results", "degradation",
-    # 风控结论（台账 U41）：输入是否被标为不可信。**受保护字段**，
+    # 风控结论：输入是否被标为不可信。**受保护字段**，
     # 子 Agent 不得改写 —— 否则「不得沉淀为事实」这条约束可被绕过。
     "input_untrusted",
 )
 
 
 class StateContractError(RuntimeError):
-    """State 不满足计划书要求的必填契约。"""
+    """State 不满足设计要求的必填契约。"""
 
 
 class GraphState(TypedDict, total=False):
     """全局状态。total=False 表示可选字段可不填，必填性由 validate_state 运行时强制。"""
 
-    # --- 必填（计划书三、P3）---
+    # --- 必填---
     user_id: str
     session_id: str
     login_status: bool
     jev_decision_result: Any
     wiki_digest: Any
 
-    # --- 派生（计划书三、P3 提及）---
+    # --- 派生（ 提及）---
     task_id: str
     intent: str | None
     rollback_count: int
@@ -56,7 +56,7 @@ class GraphState(TypedDict, total=False):
     degradation: list[str]
     input_untrusted: bool
 
-    # --- 入口补参（U111）---
+    # --- 入口补参---
     # 必须在这里**显式声明**：LangGraph 只把声明的通道交给节点，
     # 不声明的键写进 dict 也传不到垂类 Agent —— 实测表现是「参数抽到了、
     # 垂类却说『还需要你补充目的地』」。
@@ -65,7 +65,7 @@ class GraphState(TypedDict, total=False):
 
 
 def validate_state(state: dict[str, Any]) -> None:
-    """校验必填字段。计划书：禁止不带用户身份的裸数据访问。"""
+    """校验必填字段。：禁止不带用户身份的裸数据访问。"""
     missing = [f for f in REQUIRED_STATE_FIELDS if f not in state]
     if missing:
         raise StateContractError(

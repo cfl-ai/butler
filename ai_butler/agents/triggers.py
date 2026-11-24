@@ -87,7 +87,7 @@ class TriggerBus:
         ordered = [n for n in self.registry.names() if n in set(wanted)]
 
         if not login_status:
-            # 计划书三、P4：会话失效则跳过执行
+            # 会话失效则跳过执行（设计规定）
             return TriggerPlan(fired=(), skipped=tuple(ordered), changed=changed,
                                reasons=tuple(reasons + ["会话失效，全部子任务跳过"]))
         return TriggerPlan(fired=tuple(ordered), skipped=(), changed=changed,

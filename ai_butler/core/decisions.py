@@ -27,8 +27,8 @@ PENDING = "pending"
 class Decision:
     key: str
     title: str
-    phase: str                     # 计划书阶段：P0-1 / P2 / P3 / P7 / P8 / P10
-    plan_quote: str                # 计划书原文片段（说明此处未定义）
+    phase: str                     # 阶段：P0-1 / P2 / P3 / P7 / P8 / P10
+    plan_quote: str                # 引用片段（说明此处未定义）
     status: str
     source: str                    # 人工授权 / 开源借鉴 / 实现参数
     resolution: str
@@ -41,27 +41,27 @@ class Decision:
 
 
 _D = "2026-10-16"
-#: U43 起的裁定日期（接管后新增的三层权限 / 检索路由 / 复检 / Harness 评测）
+#: 接管后新增裁定（三层权限 / 检索路由 / 复检 / Harness 评测）
 _D2 = "2026-10-19"
-#: U53 起的裁定日期（运行时内核补齐：权限闸接线 / 事件日志 / 上下文计量 / 超时审批）
+#: 运行时内核补齐裁定（权限闸接线 / 事件日志 / 上下文计量 / 超时审批）
 _D3 = "2026-10-23"
-#: U63~U66 语音三件套 / 访客层 / 检索分类，U67 起的账号体系与模型接入
+#: 语音三件套 / 访客层 / 检索分类 / 账号体系与模型接入
 _D4 = "2026-10-24"
-#: U73 多轮上下文，U74 五层路由接线，U75 影子旁路与判定确定性，
-#: U76 评测缺陷单与处置路由，U77 缺陷受理与自我修改边界
+#: 多轮上下文 / 五层路由接线 / 影子旁路与判定确定性
+#: 评测缺陷单与处置路由 / 缺陷受理与自我修改边界
 _D5 = "2026-10-25"
-#: U78 大模型写补丁的安全边界，U79 复评的两个判据（同日第二批，与 U76/U77 同一链路的下一段）
+#: 大模型写补丁的安全边界 / 复评的两个判据（同日第二批，同一链路的下一段）
 _D6 = "2026-10-25"
-#: U80 两个 Agent 的配合需要一个装配点与固定顺序（同日第三批：把闭环从「测试里能跑」变成「装了电」）
+#: 两个 Agent 的配合需要一个装配点与固定顺序（同日第三批：把闭环从「测试里能跑」变成「装了电」）
 _D7 = "2026-10-25"
-#: U81 跨轮重试的四道约束（同日第四批：把 U80 登记为「未做」的那一项补上）
+#: 跨轮重试的四道约束（同日第四批：把此前登记为「未做」的那一项补上）
 _D8 = "2026-10-25"
-#: U88 源码修改授权簿、U89 本机 CLI 入口、U90 持久审批票、U91 在线埋点接通、
-#: U92 生产装配点注入真 coder、U93 授权簿与 PatchGuard 两层独立
+#: 源码修改授权簿 / 本机 CLI 入口 / 持久审批票 / 在线埋点接通
+#: 生产装配点注入真 coder / 授权簿与 PatchGuard 两层独立
 #: （同日第五批：端到端接通——「继续入口往下推，以本地这台机器作为有权改源码」）
 _D9 = "2026-10-25"
 _D10 = "2026-10-26"
-#: U115 Wiki 编译流水线与 wiki_digest 的生产装配（用户追问「llm wiki 是否跑通」后核实并补上）
+#: Wiki 编译流水线与 wiki_digest 的生产装配（用户追问「llm wiki 是否跑通」后核实并补上）
 _D27 = "2026-10-27"
 
 DECISIONS: tuple[Decision, ...] = (
@@ -259,7 +259,7 @@ DECISIONS: tuple[Decision, ...] = (
                    "三、P3「Jev 仅输出结构化枚举，不输出自由文本」；\n"
                    "Skill-01 同款硬限制。"
                    "而 U14 借鉴 CLAMBER 时引入的 clarifying_question 属于自由文本。",
-        # 由效力顺序（计划书 ＞ Skills 集合 ＞ 统一架构规范文档 ＞ 台账裁定）唯一确定
+        # 由效力顺序（ ＞ Skills 集合 ＞ 统一架构规范文档 ＞ 台账裁定）唯一确定
         status=RESOLVED, source="文档推导", decided_at=_D,
         resolution="按效力顺序，**计划书胜出**：Jev 只输出 require_clarification(0/1)、"
                    "clarification_category(枚举)、candidate_labels(枚举列表)，"
@@ -272,7 +272,7 @@ DECISIONS: tuple[Decision, ...] = (
         plan_quote="P1 点名的四大核心数据表中，「素材溯源库属于 Agent-Wiki 公共 Workspace 无用户 ID；\n"
                    "用户画像、设备状态、私有 Wiki Vault 必须绑定 user_id」——"
                    "**知识图谱库未被列入任一侧**",
-        # 来源为「文档推导」而非「人工授权」：答案由计划书自身的域定义唯一确定，
+        # 来源为「文档推导」而非「人工授权」：答案由自身的域定义唯一确定，
         # 不涉及自由裁量，也不应冒充人工裁定。
         status=RESOLVED, source="文档推导", decided_at=_D,
         resolution="按计划书「公共域：景点、天气、公开资讯，全账号可读；私有域：用户偏好、对话、消费、"
@@ -604,8 +604,8 @@ DECISIONS: tuple[Decision, ...] = (
         code_reuse="design_only",
     ),
 
-    # ==================== U43 起：三层权限分级 / 检索路由 / 复检 / Harness 评测 ====================
-    # 来源日期 2026-10-19（接管后新增，与 U01–U42 的 2026-10-16 区分）。
+    # ==================== 三层权限分级 / 检索路由 / 复检 / Harness 评测 ====================
+    # 来源日期 2026-10-19（接管后新增，与 的 2026-10-16 区分）。
     Decision(
         key="U43", title="Agent 能力分级模型", phase="P4",
         plan_quote="「无跨模块越权调用」「所有子 Agent 只读全局状态、仅写入自有字段」（三、P4）；\n"
@@ -786,7 +786,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="本项目自定的实现参数，无外部来源可引用",
         code_reuse="n/a",
     ),
-    # ==================== U53 起：运行时内核补齐（2026-10-23） ====================
+    # ==================== 运行时内核补齐（2026-10-23） ====================
     Decision(
         key="U53", title="工具统一调度的权限闸接线（在线编排路径）", phase="P3",
         plan_quote="三、P3「实现工具统一调度、重复调用拦截、无增量终止」；\n"
@@ -813,7 +813,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="本项目自定的实现参数，无外部来源可引用",
         code_reuse="n/a",
     ),
-    # ==================== U54：CI 平台切换到 GitHub Actions ====================
+    # ==================== CI 平台切换到 GitHub Actions ====================
     Decision(
         key="U54", title="CI 平台由 Gitea + act_runner 切换为 GitHub Actions", phase="P0",
         plan_quote="三、P0-2「制定 Git 分支规范、CI 自动构建、自动部署流水线」——"
@@ -840,7 +840,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="平台切换由用户指令触发；网络可达性为本机实测事实，无外部来源可引用",
         code_reuse="n/a",
     ),
-    # ==================== U55/U56：评测中台 Agent（2026-10-23） ====================
+    # ==================== 评测中台 Agent（2026-10-23） ====================
     Decision(
         key="U55", title="新增评测中台 Agent（结果+过程七大维度评测）", phase="P9",
         plan_quote="三、P9「全维度指标监控看板搭建；业务指标聚合统计」——"
@@ -1305,7 +1305,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "三家导航 scheme 为公开协议，仅拼接 URL，不引入其 SDK",
         code_reuse="n/a",
     ),
-    # ---- U72：重置令牌的邮件通道 ----
+    # ---- 重置令牌的邮件通道 ----
     Decision(
         key="U72",
         phase="P0-1",
@@ -1334,7 +1334,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="计划书未定义项；`smtplib` / `base64` 为 Python 标准库，无第三方代码复用",
         code_reuse="n/a",
     ),
-    # ---- U73：多轮上下文的会话标识与隔离 ----
+    # ---- 多轮上下文的会话标识与隔离 ----
     Decision(
         key="U73",
         phase="P3",
@@ -1375,7 +1375,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "未复制第三方代码；`secrets` / `re` 为标准库",
         code_reuse="n/a",
     ),
-    # ---- U74：五层意图路由的接线与标签集 ----
+    # ---- 五层意图路由的接线与标签集 ----
     Decision(
         key="U74",
         phase="P3",
@@ -1418,7 +1418,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "未引入外部标签体系（未复用 home-assistant/intents 的具体清单）",
         code_reuse="n/a",
     ),
-    # ---- U75：影子模式的执行方式与判定确定性 ----
+    # ---- 影子模式的执行方式与判定确定性 ----
     Decision(
         key="U75",
         phase="P3",
@@ -1447,7 +1447,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="计划书未定义项；均为实现参数，无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U76：评测缺陷单与处置路由 ----
+    # ---- 评测缺陷单与处置路由 ----
     Decision(
         key="U76",
         phase="P9",
@@ -1492,7 +1492,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "Google 缺陷分级等外部体系的具体条目，仅取其「严重度分层」的通用思路",
         code_reuse="n/a",
     ),
-    # ---- U77：缺陷受理与「自我修改」的边界 ----
+    # ---- 缺陷受理与「自我修改」的边界 ----
     Decision(
         key="U77",
         phase="P10",
@@ -1537,7 +1537,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="计划书未定义项；均为实现参数与边界裁定，无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U78：大模型写补丁的安全边界 ----
+    # ---- 大模型写补丁的安全边界 ----
     Decision(
         key="U78",
         phase="P10",
@@ -1589,7 +1589,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "自研解析与保守应用逻辑",
         code_reuse="n/a",
     ),
-    # ---- U79：复评的两个判据与「不知道」的处置 ----
+    # ---- 复评的两个判据与「不知道」的处置 ----
     Decision(
         key="U79",
         phase="P9",
@@ -1633,7 +1633,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "未复用具体评测框架的实现",
         code_reuse="n/a",
     ),
-    # ---- U80：两个 Agent 的配合方式（装配点 + 固定顺序） ----
+    # ---- 两个 Agent 的配合方式（装配点 + 固定顺序） ----
     Decision(
         key="U80",
         phase="P10",
@@ -1682,7 +1682,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U81：跨轮重试的边界、判据与审批 ----
+    # ---- 跨轮重试的边界、判据与审批 ----
     Decision(
         key="U81",
         phase="P10",
@@ -1736,7 +1736,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "未引入外部代码",
         code_reuse="n/a",
     ),
-    # ---- U82：一次会话里跑第二遍时，账本凭什么还认得清 ----
+    # ---- 一次会话里跑第二遍时，账本凭什么还认得清 ----
     Decision(
         key="U82",
         phase="P10",
@@ -1781,7 +1781,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U83：账本要跨得过进程重启，代价是账本文件本身成了不可信输入 ----
+    # ---- 账本要跨得过进程重启，代价是账本文件本身成了不可信输入 ----
     Decision(
         key="U83",
         phase="P10",
@@ -1824,7 +1824,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "与 `core/event_journal.py`（U57）同形但不复用其端口（两本账语义不同）",
         code_reuse="n/a",
     ),
-    # ---- U84：首轮痕迹从哪来——契约两侧都缺 ----
+    # ---- 首轮痕迹从哪来——契约两侧都缺 ----
     Decision(
         key="U84",
         phase="P9",
@@ -1870,7 +1870,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "复用仓库内 U57 事件账本，无外部代码",
         code_reuse="n/a",
     ),
-    # ---- U85：排程——只给单元，不发明调度语义 ----
+    # ---- 排程——只给单元，不发明调度语义 ----
     Decision(
         key="U85",
         phase="P10",
@@ -1905,7 +1905,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U86：账本写互斥——锁的是「读-判-写」整段 ----
+    # ---- 账本写互斥——锁的是「读-判-写」整段 ----
     Decision(
         key="U86",
         phase="P10",
@@ -1951,7 +1951,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "「锁跨越读-判-写」为通用并发纪律，无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U87：落盘必须 fsync——声明 ≠ 能力 ----
+    # ---- 落盘必须 fsync——声明 ≠ 能力 ----
     Decision(
         key="U87",
         phase="P10",
@@ -1983,7 +1983,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="计划书未定义项；os.fsync 为操作系统标准能力，无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U88：源码修改授权簿——哪台机器、哪个主体有权让闭环改源码 ----
+    # ---- 源码修改授权簿——哪台机器、哪个主体有权让闭环改源码 ----
     Decision(
         key="U88",
         phase="P10",
@@ -2022,7 +2022,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="人工授权；HMAC-SHA256 为标准密码学原语，无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U89：触发入口——本机 CLI 人工触发，不做 HTTP 端点 ----
+    # ---- 触发入口——本机 CLI 人工触发，不做 HTTP 端点 ----
     Decision(
         key="U89",
         phase="P10",
@@ -2057,7 +2057,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U90：撤销票必须跨进程——持久审批票 ----
+    # ---- 撤销票必须跨进程——持久审批票 ----
     Decision(
         key="U90",
         phase="P10",
@@ -2086,7 +2086,7 @@ DECISIONS: tuple[Decision, ...] = (
                      "无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U91：在线埋点接通——声明 ≠ 能力的标准形态 ----
+    # ---- 在线埋点接通——声明 ≠ 能力的标准形态 ----
     Decision(
         key="U91",
         phase="P9",
@@ -2117,7 +2117,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="文档推导（计划书 P9 评估体系的输入契约），无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U92：生产装配点——每一个端口都给真实现 ----
+    # ---- 生产装配点——每一个端口都给真实现 ----
     Decision(
         key="U92",
         phase="P10",
@@ -2151,7 +2151,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="文档推导（计划书 P10 离线链路的生产形态），无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U93：授权簿与 PatchGuard 两层独立，范围口径共用 ----
+    # ---- 授权簿与 PatchGuard 两层独立，范围口径共用 ----
     Decision(
         key="U93",
         phase="P10",
@@ -2179,7 +2179,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="文档推导（计划书 P10「质检风险校验」的分层），无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U94：真实路线数据源——拒绝一个会静默冒充的服务器 ----
+    # ---- 真实路线数据源——拒绝一个会静默冒充的服务器 ----
     Decision(
         key="U94",
         phase="V1",
@@ -2213,7 +2213,7 @@ DECISIONS: tuple[Decision, ...] = (
                       "（静默冒充），拒绝采用；高德/腾讯路径规划为商业授权且需 key，未纳入",
         code_reuse="design_only",
     ),
-    # ---- U95：交通方式真正参与计算，无真实数据时的降级口径 ----
+    # ---- 交通方式真正参与计算，无真实数据时的降级口径 ----
     Decision(
         key="U95",
         phase="V1",
@@ -2242,7 +2242,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="文档推导（计划书表 11「出行方式」输入权的落地），无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U96：实时天气源——免费无 key 为主，商业 API 为注入增强 ----
+    # ---- 实时天气源——免费无 key 为主，商业 API 为注入增强 ----
     Decision(
         key="U96",
         phase="V1",
@@ -2271,7 +2271,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="Open-Meteo CC BY 4.0（需署名）；和风天气为商业 API 服务条款",
         code_reuse="design_only",
     ),
-    # ---- U97：「实时」的语义定义与陈旧标注 ----
+    # ---- 「实时」的语义定义与陈旧标注 ----
     Decision(
         key="U97",
         phase="V1",
@@ -2300,7 +2300,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="文档推导（计划书表 11「持续监听」的时间语义），无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U98：L4 垂类派发——协议躺了半年，本轮接上 ----
+    # ---- L4 垂类派发——协议躺了半年，本轮接上 ----
     Decision(
         key="U98",
         phase="P3",
@@ -2334,7 +2334,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="文档推导（计划书五层路由第 4 层的落地），无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U99：移动端地图底图——免费瓦片 + 无 key 时的诚实降级 ----
+    # ---- 移动端地图底图——免费瓦片 + 无 key 时的诚实降级 ----
     Decision(
         key="U99",
         phase="P7",
@@ -2364,7 +2364,7 @@ DECISIONS: tuple[Decision, ...] = (
                       "overpass-api.de 被中间件 502 拦截——三者均不采用",
         code_reuse="design_only",
     ),
-    # ---- U100：界面图标标记规范 ----
+    # ---- 界面图标标记规范 ----
     Decision(
         key="U100",
         phase="P7",
@@ -2617,7 +2617,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="人工授权（用户 2026-10-26 提供官方 key）；高德 Web 服务条款仍适用",
         code_reuse="n/a",
     ),
-    # ---- U109：高德官方 POI 检索（关键字/分类搜 + 周边搜，与 regeo 周边 POI 不重叠） ----
+    # ---- 高德官方 POI 检索（关键字/分类搜 + 周边搜，与 regeo 周边 POI 不重叠） ----
     Decision(
         key="U109",
         phase="V1",
@@ -2644,7 +2644,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="人工授权（用户 2026-10-26 提供官方 key）；高德 Web 服务条款仍适用",
         code_reuse="n/a",
     ),
-    # ---- U110：L4 垂类派发落地 + TourAgent 生产装配点（填 E-86） ----
+    # ---- L4 垂类派发落地 + TourAgent 生产装配点（填 ） ----
     Decision(
         key="U110",
         phase="P3",
@@ -2684,7 +2684,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="文档推导（计划书 P3 与表 11 的组合要求），无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U111：SceneScheduler 本身没有生产装配点（不冒充已上线） ----
+    # ---- SceneScheduler 本身没有生产装配点（不冒充已上线） ----
     Decision(
         key="U111",
         phase="P3",
@@ -2717,7 +2717,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="文档推导（P3 主状态机的装配缺口），无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U112：Function Calling 全项目接入（2026-10-27，用户明确要求） ----
+    # ---- Function Calling 全项目接入（2026-10-27，用户明确要求） ----
     Decision(
         key="U112",
         phase="P3",
@@ -2755,7 +2755,7 @@ DECISIONS: tuple[Decision, ...] = (
                       "本项目的工具护栏（ToolDispatcher 权限/审批/重复拦截）已有且必须保持唯一真值源",
         code_reuse="design_only",
     ),
-    # ---- U113：用户输入离散化（去状态化）与 Agent/工具调配 ----
+    # ---- 用户输入离散化（去状态化）与 Agent/工具调配 ----
     Decision(
         key="U113",
         phase="P3",
@@ -2790,7 +2790,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="文档推导（P3 分发路由与表 11 步骤1 的组合要求），无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U114：离散化接通 Function Calling 回路 + 工具能力裁剪 ----
+    # ---- 离散化接通 Function Calling 回路 + 工具能力裁剪 ----
     Decision(
         key="U114",
         phase="P3",
@@ -2852,7 +2852,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="文档推导（P3 分发路由 + P4 职责边界的组合要求），无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U115：Wiki 编译流水线与 wiki_digest 的生产装配（2026-10-27） ----
+    # ---- Wiki 编译流水线与 wiki_digest 的生产装配（2026-10-27） ----
     Decision(
         key="U115",
         phase="P3",
@@ -2890,7 +2890,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="文档推导（计划书八的 auto_run 开关 + 三、P3 的 wiki_digest 契约），无外部代码复用",
         code_reuse="n/a",
     ),
-    # ---- U116：常规入口界面形态（用户裁定 2026-10-27，实现未开始） ----
+    # ---- 常规入口界面形态（用户裁定 2026-10-27，实现未开始） ----
     Decision(
         key="U116",
         phase="P7",
@@ -3121,7 +3121,7 @@ DECISIONS: tuple[Decision, ...] = (
         license_note="人工授权（用户裁定时效起点），文档依据为计划书 P2 过期素材识别与新旧版本融合",
         code_reuse="n/a",
     ),
-    # ---- U123：垂类入口的闸门与参数抽取（U111 补全的必要件） ----
+    # ---- 垂类入口的闸门与参数抽取（ 补全的必要件） ----
     Decision(
         key="U123",
         phase="P3",

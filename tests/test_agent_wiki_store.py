@@ -46,7 +46,7 @@ def test_page_markdown_roundtrip():
 
 
 def test_claim_requires_u17_fields():
-    """U17：claim 必填字段缺失即拒绝。"""
+    """claim 必填字段缺失即拒绝。"""
     with pytest.raises(OntologyError) as ei:
         new_page(CLAIM, "c1", claim_type="x")           # 缺 description/subject_id/object_id
     assert "缺少必填字段" in str(ei.value)
@@ -72,7 +72,7 @@ def test_confidence_must_be_within_0_1():
 
 # --------------------------- 双库隔离 --------------------------- #
 def test_public_workspace_page_must_not_carry_user_id(settings, workdir):
-    """计划书三、P1：素材溯源库属于 Agent-Wiki 公共 Workspace 无用户 ID。"""
+    """：素材溯源库属于 Agent-Wiki 公共 Workspace 无用户 ID。"""
     store = _store(settings, workdir)
     page = _claim("c-pub", user_id=None)
     store.write_page(page, user_id=None)                     # 正常
@@ -115,7 +115,7 @@ def test_cross_account_pages_are_invisible(settings, workdir):
 
 
 def test_retrieval_merges_workspace_and_own_vault_only(settings, workdir):
-    """计划书三、P2：合并返回公共 Workspace + 当前用户私有 Vault，不加载其他用户页面。"""
+    """：合并返回公共 Workspace + 当前用户私有 Vault，不加载其他用户页面。"""
     store = _store(settings, workdir)
     store.write_page(_claim("c-pub"), user_id=None)
     store.write_page(_claim("c-a", user_id="user-A"), user_id="user-A")

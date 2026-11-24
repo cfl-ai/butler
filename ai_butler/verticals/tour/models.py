@@ -57,7 +57,7 @@ class Stop:
     #: 「规划含时间」就落空了。
     arrive_minute: int | None = None
     leave_minute: int | None = None
-    #: 上一段通行时间是否为**估计**（haversine 降级或无坐标；U95）
+    #: 上一段通行时间是否为**估计**（haversine 降级或无坐标；）
     travel_estimated: bool = False
     latitude: float | None = None
     longitude: float | None = None
@@ -123,12 +123,12 @@ class TripPlan:
     issues: list[dict[str, Any]] = field(default_factory=list)
     costs: list[CostItem] = field(default_factory=list)
     replanned: bool = False
-    #: 路线依据（U94/U95）：`osrm:<profile>` = 真实路网；`haversine` = 几何估计；
+    #: 路线依据：`osrm:<profile>` = 真实路网；`haversine` = 几何估计；
     #: `mixed` = 部分段落降级。**没有这个字段，「基于真实」就是一句客气话。**
     route_basis: str = "haversine"
-    #: 降级来源（transit 无免费真实源 → car，U94）；None 表示未降级
+    #: 降级来源（transit 无免费真实源 → car，）；None 表示未降级
     degraded_from: str | None = None
-    #: 取真实路线时的逐段失败原因（禁回退纪律的可见性；U95）
+    #: 取真实路线时的逐段失败原因（禁回退纪律的可见性；）
     routing_failures: tuple[str, ...] = ()
     #: 时间轴的出发时刻（分钟制）
     start_minute: int = DEFAULT_DEPART_MINUTE
@@ -189,7 +189,7 @@ class TripPlan:
             "timeline": self.timeline(),
             "issues": list(self.issues),
             "replanned": self.replanned,
-            #: 路线依据与降级必须进 synthesis 摘要（U95）：用户按估计时间
+            #: 路线依据与降级必须进 synthesis 摘要：用户按估计时间
             #: 赶火车时，误点的责任在没人告诉他这是估计。
             "route_basis": self.route_basis,
             "estimate_only": self.estimate_only,

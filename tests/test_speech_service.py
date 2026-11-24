@@ -113,7 +113,7 @@ def test_availability_reports_missing_models_with_actionable_reason(tmp_path):
     """缺模型时给的是「跑哪个脚本」，不是一句「不可用」。"""
     runtime = SpeechRuntime(SpeechModelPaths.resolve(tmp_path))
     payload = runtime.availability()
-    # availability() 只报事实（每个组件齐不齐），"available" 的聚合计由接口层加
+    # availability 只报事实（每个组件齐不齐），"available" 的聚合计由接口层加
     assert all(ready is False for ready in payload["ready"].values())
     reasons = " ".join(c["reason"] for c in payload["components"])
     assert "download_speech_models.py" in reasons

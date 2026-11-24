@@ -44,7 +44,7 @@ def _redactor() -> Redactor:
 # ------------------------------ shadowing ------------------------------ #
 
 def test_shadowed_items_are_not_deleted_but_restorable():
-    """被压条目只让位：影子带内容，restore_shadowed() 可重建。"""
+    """被压条目只让位：影子带内容，restore_shadowed 可重建。"""
     items = [ContextItem(f"i{i}", f"内容 {i}", relevance=float(i) / 10)
              for i in range(6)]
     got = compress(items, redactor=_redactor(), max_items=2)

@@ -36,7 +36,7 @@ class MopsClusterAgent(PhaseAgent):
             "user_id": uid, "phase": self.phase_code,
             "cluster_size": len(ROSTER),
             "roster": roster_manifest(),
-            # 计划书三、P4 触发时机
+            # 触发时机
             "trigger": "全局状态变更自动触发对应子任务执行；会话失效则跳过执行",
             "dispatched_by": "p3_scene_scheduler",   # 业务子 Agent 由 P3 管辖
         }}
