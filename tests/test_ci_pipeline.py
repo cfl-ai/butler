@@ -121,6 +121,38 @@ def test_dependencies_install_before_anything_that_imports_them(ci):
     assert not offenders, "\n".join(offenders)
 
 
+def test_required_imports_are_declared_in_requirements():
+    """mcp_server/ 踩坑复盘（2026-11-24 CI 收集失败）的守护：
+    mcp 包此前只装进本地 venv、未写进 requirements.txt，runner 侧
+    `from mcp.server.mcpserver import MCPServer` 当场 ModuleNotFoundError。
+    本测试锁定：本仓库自己代码里「顶层 import 的非 stdlib 第三方包」必须
+    在依赖清单（requirements.txt 或 requirements-ml.txt）中声明。
+    判据是模块名首段（pip 名与 import 名不一致的包需在此对齐，如
+    PyYAML→yaml、python-telegram-bot→telegram）；当前先覆盖 mcp 这条
+    真实踩坑线，后续按新增模块层逐个登记，避免启发式误报。"""
+    import importlib.util
+
+    declared = set()
+    for fname in ("requirements.txt", "requirements-ml.txt"):
+        f = ROOT / fname
+        if f.exists():
+            for line in f.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    declared.add(line.split("=")[0].split(">")[0].split("<")[0].strip().lower())
+
+    # 真实踩坑线：mcp_server/server.py 顶层 `from mcp.server.mcpserver import MCPServer`
+    mcp_importable = importlib.util.find_spec("mcp") is not None
+    assert "mcp" in declared, (
+        "mcp_server/ 依赖 mcp 包，但 requirements.txt 未声明——"
+        "本地能跑只是因为 venv 手装过；CI 干净环境必挂（2026-11-24 复盘）"
+    )
+    # 反向一致性：清单里声明了 mcp，就要求本机可解析（版本下限 2.3 的口径
+    # 由 requirements.txt 注释承载；本机缺包时提示一句，防止守护与实装脱节）。
+    if "mcp" in declared:
+        assert mcp_importable, "requirements.txt 声明了 mcp，但当前环境未安装"
+
+
 def test_no_step_pins_a_github_only_action_in_the_dart_job(ci):
     """Dart job 只依赖 dart-lang/setup-dart 与 checkout，避免引入更多外部依赖。"""
     uses = [

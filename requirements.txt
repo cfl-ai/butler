@@ -56,6 +56,12 @@ jieba>=0.42
 # 视觉推理本身走 Ollama / OpenAI 兼容端点，不在此依赖里。
 Pillow>=10.0
 
+# --- MCP 标准协议服务（mcp_server/，2026-11-18 新增层）---
+# CI 真实踩坑（2026-11-24）：此包此前只装进了本地 venv 未回写清单，
+# runner 侧 import 即 ModuleNotFoundError，pytest 收集阶段 exit 2。
+# 2.x 中类名为 MCPServer（1.x 时代叫 FastMCP），勿降级到 <2.0。
+mcp>=2.3.0
+
 # --- 测试 ---
 pytest
 fakeredis
