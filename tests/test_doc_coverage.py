@@ -22,7 +22,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 DOC = ROOT / "docs" / "统一架构规范文档.md"
 
-#: 计划书三、P0-2「开发内容与步骤」的九条（第一步含三个并列项，拆开守）。
+#: 三、P0-2「开发内容与步骤」的九条（第一步含三个并列项，拆开守）。
 #: 每一项给出若干关键词，**全部命中**才算这一条有落点。
 P0_2_PLAN_STEPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("①a Git 分支规范", ("Git 分支规范",)),
@@ -52,12 +52,12 @@ def p0_2_section() -> str:
 
 
 def test_every_p0_2_plan_step_has_a_row(p0_2_section):
-    """计划书九步，一步都不能从表里消失。
+    """九步，一步都不能从表里消失。
 
-    **只在表格行里查，不在整节正文里查** —— 第一版查的是整节，
-    结果表前面的一句说明里提到了「自动部署流水线」，就把删掉表格行的
-    情况给放过了。关键词出现在散文里，不等于它是一行交付物。
-    """
+ **只在表格行里查，不在整节正文里查** —— 第一版查的是整节，
+ 结果表前面的一句说明里提到了「自动部署流水线」，就把删掉表格行的
+ 情况给放过了。关键词出现在散文里，不等于它是一行交付物。
+ """
     table_text = "\n".join(_mapping_table(p0_2_section))
     missing = [
         label for label, keywords in P0_2_PLAN_STEPS
@@ -72,10 +72,10 @@ def test_every_p0_2_plan_step_has_a_row(p0_2_section):
 def test_unfinished_items_are_marked_as_gaps_not_omitted(p0_2_section):
     """没落地的条目必须**明确写成缺口**，并给出依据。
 
-    自动部署流水线的目标环境已由裁定 U09 缓做 —— 这是可接受的现状，
-    但表里必须说清楚，否则读者会以为它已经做了。
-    同样只看表格行，不看正文。
-    """
+ 自动部署流水线的目标环境已由裁定 缓做 —— 这是可接受的现状，
+ 但表里必须说清楚，否则读者会以为它已经做了。
+ 同样只看表格行，不看正文。
+ """
     table_text = "\n".join(_mapping_table(p0_2_section))
     assert "自动部署流水线" in table_text, "表里没有自动部署流水线这一行"
     assert "未落地" in table_text or "缺口" in table_text, (
@@ -87,9 +87,9 @@ def test_unfinished_items_are_marked_as_gaps_not_omitted(p0_2_section):
 def _mapping_table(section: str) -> list[str]:
     """只取 P0-2 对照表本身。
 
-    §13 里还有别的表（如场景条数统计），不能一把梭全查 ——
-    否则会拿三列的规则去要求两列的表（第一版就这么错了）。
-    """
+ §13 里还有别的表（如场景条数统计），不能一把梭全查 ——
+ 否则会拿三列的规则去要求两列的表（第一版就这么错了）。
+ """
     lines = section.splitlines()
     start = next(
         (i for i, line in enumerate(lines)
@@ -137,13 +137,13 @@ def param_section() -> str:
 def test_doc_no_longer_claims_any_table_13_param_is_pending(param_section):
     """文档不得把**已经落地**的参数说成「待纳入」。
 
-    §4.2 曾长期写着「待纳入（8 项，P3 路由落地时加入）」，
-    而 P3 早已落地：那 8 个参数都在 TABLE_13 里，
-    落点模块（scheduler.graph / scheduler.router / core.db / rag.collector）也都能导入。
+ §4.2 曾长期写着「待纳入（8 项，P3 路由落地时加入）」，
+ 而 P3 早已落地：那 8 个参数都在 TABLE_13 里，
+ 落点模块（scheduler.graph / scheduler.router / core.db / rag.collector）也都能导入。
 
-    **文档说「待办」而代码早已做完，与反过来（说做了其实没做）一样有害** ——
-    读者会据此以为还有活没干，或者据此重新去「纳入」一遍。
-    """
+ **文档说「待办」而代码早已做完，与反过来（说做了其实没做）一样有害** ——
+ 读者会据此以为还有活没干，或者据此重新去「纳入」一遍。
+ """
     assert "待纳入" not in param_section, (
         "§4 仍写着「待纳入」——若确实还有未纳入的参数，请写清是哪几项、依据是什么"
     )
@@ -160,9 +160,9 @@ def test_param_section_lists_every_table_13_param(param_section):
 def test_the_pending_claim_would_have_been_false(param_section):
     """这条守的是**前提**：那 8 项确实已落地，所以「待纳入」本就是错的。
 
-    如果哪天它们真的没落地，那说明本节的前提变了 ——
-    这时应当去改文档与代码，而不是让这条测试悄悄失效。
-    """
+ 如果哪天它们真的没落地，那说明本节的前提变了 ——
+ 这时应当去改文档与代码，而不是让这条测试悄悄失效。
+ """
     from ai_butler.devkit.acceptance import TABLE_13, verify_table_13
     from ai_butler.core import phases
 
@@ -174,10 +174,10 @@ def test_the_pending_claim_would_have_been_false(param_section):
     assert "18 项" in param_section, "§4.1 标题应写明已纳入 18 项"
 
 
-# ============================== 四十六、计划书表格索引 ============================== #
+# ============================== 四十六、表格索引 ============================== #
 TABLE_INDEX_START = "## 46. 计划书表格索引"
 
-#: 计划书正文一共 13 张表，一张都不能从索引里消失
+#: 正文一共 13 张表，一张都不能从索引里消失
 PLAN_TABLES = tuple(range(1, 14))
 
 
@@ -209,11 +209,11 @@ def table_index_section() -> str:
 
 
 def test_plan_table_index_covers_all_thirteen_tables(table_index_section):
-    """计划书 13 张表，索引里一张都不能少。
+    """ 13 张表，索引里一张都不能少。
 
-    内容实现了却查不到对应关系，与「对照表省掉一条」是同一类问题：
-    **汇总与真值源之间缺一层索引**。
-    """
+ 内容实现了却查不到对应关系，与「对照表省掉一条」是同一类问题：
+ **汇总与真值源之间缺一层索引**。
+ """
     rows = _table_rows(table_index_section, "计划书表")
     listed = set()
     for cells in rows:
@@ -244,10 +244,10 @@ def test_every_indexed_chapter_actually_exists(table_index_section):
 def test_documented_case_count_matches_reality():
     """文档里写「全场景用例库：N 条」，那个 N 必须是**真的**。
 
-    真事：用例库从 397 涨到 463，而文档一直写着 397 ——
-    没有任何测试会因此变红，读者看到的是一个过期的数字。
-    与 E-41（文档说「待办」而代码早做完）同型：**文档里的数字也是断言**。
-    """
+ 真事：用例库从 397 涨到 463，而文档一直写着 397 ——
+ 没有任何测试会因此变红，读者看到的是一个过期的数字。
+ 与 （文档说「待办」而代码早做完）同型：**文档里的数字也是断言**。
+ """
     import re
 
     from ai_butler.devkit.scenario_library import default_library
@@ -263,13 +263,13 @@ def test_documented_case_count_matches_reality():
 def test_documented_ledger_count_matches_reality():
     """文末「未定义项台账：N 项」的那个 N 和四项分布，也必须是**真的**。
 
-    这是上一条的同类问题：台账从 41 长到 66，而文档结尾一直写着
-    「41 项全部裁定（开源借鉴 26 / 人工授权 6 / 实现参数 1 / 文档推导 8）」。
-    数字本身没错过，只是**没人回头改**——正好是「文档里的数字也是断言」
-    最容易漏掉的那一半：过期不等于写错，但读者一样被误导。
+ 这是上一条的同类问题：台账从 41 长到 66，而文档结尾一直写着
+ 「41 项全部裁定（开源借鉴 26 / 人工授权 6 / 实现参数 1 / 文档推导 8）」。
+ 数字本身没错过，只是**没人回头改**——正好是「文档里的数字也是断言」
+ 最容易漏掉的那一半：过期不等于写错，但读者一样被误导。
 
-    这里连**分布**一起守，因为只对总数时，改了分类归属也不会变红。
-    """
+ 这里连**分布**一起守，因为只对总数时，改了分类归属也不会变红。
+ """
     from collections import Counter
 
     from ai_butler.core import decisions

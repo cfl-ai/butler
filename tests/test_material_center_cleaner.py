@@ -138,7 +138,7 @@ def test_clean_batch_pipeline():
 
 # ---------------------- 转换为 Wiki Source 页面 ---------------------- #
 def test_wiki_source_page_is_public_by_default_and_carries_provenance():
-    """计划书三、P2「转换为 Wiki Source 源页面，保存来源元数据」+ 素材溯源库无用户 ID。"""
+    """三、P2「转换为 Wiki Source 源页面，保存来源元数据」+ 素材溯源库无用户 ID。"""
     cleaned = clean_document(_raw())
     page = to_wiki_source_page(cleaned, now="2026-10-16T00:00:00Z")
 
@@ -165,13 +165,13 @@ def test_duplicate_document_cannot_become_a_source_page():
         to_wiki_source_page(dup)
 
 
-# ------------------- 规范性文件不按资讯 TTL 过期（U122） ------------------- #
+# ------------------- 规范性文件不按资讯 TTL 过期 ------------------- #
 def test_normative_document_gets_no_expiry_date():
     """制度文件靠新版本替换，不靠时间到期。
 
-    按「发布日 + 资讯 TTL(30 天)」算，2013 年的 531 号办法入库即过期十年；
-    `archive_stale` 一旦被装配，这批素材会被静默清掉（用户侧表现为「答不出来」）。
-    """
+ 按「发布日 + 资讯 TTL(30 天)」算，2013 年的 531 号办法入库即过期十年；
+ `archive_stale` 一旦被装配，这批素材会被静默清掉（用户侧表现为「答不出来」）。
+ """
     now = datetime(2026, 10, 27, tzinfo=timezone.utc)
     doc = clean_document(_raw(
         text="财政部关于印发《中央和国家机关差旅费管理办法》的通知 财行〔2013〕531号\n"

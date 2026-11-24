@@ -24,7 +24,7 @@ from ai_butler.harness.memory import MemoryEntry
 from ai_butler.harness.risk import Change
 from ai_butler.harness.sandbox import DEFAULT_TIMEOUT, SandboxPort, SandboxResult
 
-#: 四阶循环（计划书逐字）
+#: 四阶循环（逐字）
 STAGE_COLLECT = "context_collection"
 STAGE_DECIDE = "llm_decision"
 STAGE_EXECUTE = "tool_execution"
@@ -32,7 +32,7 @@ STAGE_CORRECT = "self_correction"
 LOOP_STAGES: tuple[str, ...] = (STAGE_COLLECT, STAGE_DECIDE, STAGE_EXECUTE,
                                 STAGE_CORRECT)
 
-#: 裁定 U32
+#: 裁定 
 MAX_ITERATIONS = 8
 NO_PROGRESS_LIMIT = 2
 
@@ -57,8 +57,8 @@ class StageRecord:
     stage: str
     detail: str
     outcome: str = ""
-    #: 结构化附注（U78）。`detail` 给人读，`meta` 给代码判。
-    #: 让下游去 `startswith("应用补丁")` 匹配中文，就是 E-44 那类漂移隐患；
+    #: 结构化附注。`detail` 给人读，`meta` 给代码判。
+    #: 让下游去 `startswith("应用补丁")` 匹配中文，就是 那类漂移隐患；
     #: 判据必须是字段，不是句子。
     meta: Mapping[str, Any] = field(default_factory=dict)
 
@@ -81,7 +81,7 @@ class LoopResult:
     pending_approval: HookVerdict | None = None
     memory_entries: list[MemoryEntry] = field(default_factory=list)
     context: CompressedContext | None = None
-    #: 补丁应用结果（U78）。空表示本轮从未动过代码。
+    #: 补丁应用结果。空表示本轮从未动过代码。
     patch_results: list[Any] = field(default_factory=list)
 
     @property
@@ -108,14 +108,14 @@ Decider = Callable[[CompressedContext, Sequence[StageRecord]], Awaitable[Proposa
 class AgenticLoop:
     """四阶 Agentic Loop。
 
-    `patcher`（U78）是**补丁落盘端口**，可缺省。它的位置被刻意定死在
-    「Hook 之后、命令之前」：
+ `patcher`是**补丁落盘端口**，可缺省。它的位置被刻意定死在
+ 「Hook 之后、命令之前」：
 
-        Hook 判风险（不看代码就跑） → 应用补丁 → 跑验证命令 → 绿了保留 / 红了回滚
+ Hook 判风险（不看代码就跑） → 应用补丁 → 跑验证命令 → 绿了保留 / 红了回滚
 
-    顺序不能调换。先应用再判 Hook，等于让高危变更先落地再被拦；
-    先跑命令再应用，则命令验证的是**没改过的代码**，全部作废。
-    """
+ 顺序不能调换。先应用再判 Hook，等于让高危变更先落地再被拦；
+ 先跑命令再应用，则命令验证的是**没改过的代码**，全部作废。
+ """
 
     decide: Decider
     hooks: HookChain
@@ -131,9 +131,9 @@ class AgenticLoop:
                   journal: EventJournal | None = None) -> LoopResult:
         """跑四阶循环。
 
-        `journal`（U57）传入即**实时**落账：每条 StageRecord 与终局快照都追加到
-        append-only 账本，进程崩溃后可从账本回放恢复，不依赖本方法的返回值。
-        """
+ `journal`传入即**实时**落账：每条 StageRecord 与终局快照都追加到
+ append-only 账本，进程崩溃后可从账本回放恢复，不依赖本方法的返回值。
+ """
         result = LoopResult(converged=False, iterations=0, reason="")
 
         def _emit(record: StageRecord) -> None:
@@ -146,7 +146,7 @@ class AgenticLoop:
                                          summarizer=summarizer, max_items=max_items,
                                          result=result, emit=_emit, journal=journal)
         finally:
-            # 兜底回滚（U78）：任何未 commit 的补丁都不得留在仓库里。
+            # 兜底回滚：任何未 commit 的补丁都不得留在仓库里。
             # 覆盖本方法的 4 处 return（Hook 拦截 / 审批暂停 / 无进展 / 上限归档）
             # 以及 decide 抛异常的情形——「改了代码但循环异常退出」
             # 是最容易留下半成品改动的路径。
@@ -173,7 +173,7 @@ class AgenticLoop:
                          journal: EventJournal | None = None) -> LoopResult:
 
         # ---- 阶段一：上下文收集（含脱敏与压缩）----
-        # U58：journal 传入即把让位记录与分项计量落账（只让位不删除，
+        #：journal 传入即把让位记录与分项计量落账（只让位不删除，
         # 崩溃恢复后知道压掉了什么、为什么）。
         context = compress(items, redactor=redactor, max_items=max_items,
                            summarizer=summarizer, where="Harness 上下文",
@@ -213,7 +213,7 @@ class AgenticLoop:
                     return result
 
             executed: list[SandboxResult] = []
-            # ---- 补丁落盘：**Hook 已放行，现在才允许动代码**（U78）----
+            # ---- 补丁落盘：**Hook 已放行，现在才允许动代码**----
             applied: tuple[str, ...] = ()
             apply_failed = ""
             if (self.patcher is not None and proposal.change is not None

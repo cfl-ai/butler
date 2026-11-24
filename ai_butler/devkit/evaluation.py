@@ -14,7 +14,7 @@ from typing import Any, Callable, Iterable, Sequence
 
 @dataclass
 class RunRecord:
-    """单次任务运行记录。字段按计划书点名的 8 项指标设计。"""
+    """单次任务运行记录。字段按设计点名的 8 项指标设计。"""
 
     task_id: str
     user_id: str
@@ -31,7 +31,7 @@ class RunRecord:
     prompt_tokens: int = 0
     completion_tokens: int = 0
 
-    # 循环次数（计划书三、P3「全局计数器、熔断轮次」）
+    # 循环次数（三、P3「全局计数器、熔断轮次」）
     loop_count: int = 0
 
     # 重规划成功率
@@ -75,10 +75,10 @@ class EvalReport:
         return asdict(self)
 
     def to_text(self) -> str:
-        """纯文本评估报告（计划书 P9「迭代评估报告自动输出」）。
+        """纯文本评估报告（ P9「迭代评估报告自动输出」）。
 
-        刻意不输出 Markdown：本项目约定只有计划书点名的文档才落 md。
-        """
+ 刻意不输出 Markdown：本项目约定只有设计点名的文档才落 md。
+ """
         lines = [
             "===== 自动化评测报告 =====",
             f"样本数：{self.total_runs}",
@@ -177,10 +177,10 @@ class Evaluator:
     def export_for_harness(self, records: Sequence[RunRecord], *, path) -> str:
         """导出评测数据供离线自进化链路消费。
 
-        计划书三、P0-2「对接 Harness 自进化体系，评测数据自动流入迭代闭环」；
-        计划书三、P10「评测集合不含用户敏感原始数据」——因此导出时
-        **user_id 做不可逆摘要**，只保留可关联性，不保留身份。
-        """
+ 三、P0-2「对接 Harness 自进化体系，评测数据自动流入迭代闭环」；
+ 三、P10「评测集合不含用户敏感原始数据」——因此导出时
+ **user_id 做不可逆摘要**，只保留可关联性，不保留身份。
+ """
         import hashlib
         from pathlib import Path
 

@@ -34,9 +34,9 @@ def test_open_source_borrowings_have_references_and_license_notes():
 def test_copyleft_sources_are_design_only():
     """已采用来源若为 AGPL / GPL / 无 LICENSE，只能标 design_only，不得复用代码或数据。
 
-    只看 license_note（已采用来源）；excluded_note 记录的是被排除备选的许可警告，
-    不影响本项的可复用性判定。
-    """
+ 只看 license_note（已采用来源）；excluded_note 记录的是被排除备选的许可警告，
+ 不影响本项的可复用性判定。
+ """
     copyleft = re.compile(r"AGPL|GPL|无 LICENSE|未声明", re.I)
     for item in d.DECISIONS:
         if item.license_note and copyleft.search(item.license_note):
@@ -47,7 +47,7 @@ def test_copyleft_sources_are_design_only():
 
 def test_code_reuse_values_are_meaningful():
     """code_reuse 不得被误用：开源借鉴项必须明确 allowed 或 design_only；
-    人工授权/实现参数项应标 n/a（无外部来源可复用）。"""
+ 人工授权/实现参数项应标 n/a（无外部来源可复用）。"""
     for item in d.DECISIONS:
         assert item.code_reuse in ("allowed", "design_only", "n/a"), item.key
         if item.source == "开源借鉴":
@@ -59,7 +59,7 @@ def test_code_reuse_values_are_meaningful():
 
 
 def test_document_derived_items_quote_the_plan():
-    """文档推导类裁定必须引用计划书原文，且不得冒充人工授权。"""
+    """文档推导类裁定必须引用原始需求，且不得冒充人工授权。"""
     derived = [i for i in d.DECISIONS if i.source == "文档推导"]
     assert derived, "至少 U24 应为文档推导"
     for item in derived:

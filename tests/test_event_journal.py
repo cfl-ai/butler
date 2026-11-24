@@ -271,10 +271,10 @@ def test_scheduler_with_journal_records_session_lifecycle(loop):
 def loop():
     """模块级事件循环。
 
-    与 test_scheduler_graph.py 同款：必须 set_event_loop——同进程内其他用例
-    调用 asyncio.run() 后会把当前事件循环置空，asyncpg 某些路径会去取「当前」循环，
-    产生只在整包连跑时才冒头的偶发失败（E 类经验，见该文件原文注释）。
-    """
+ 与 test_scheduler_graph.py 同款：必须 set_event_loop——同进程内其他用例
+ 调用 asyncio.run 后会把当前事件循环置空，asyncpg 某些路径会去取「当前」循环，
+ 产生只在整包连跑时才冒头的偶发失败（E 类经验，见该文件原文注释）。
+ """
     lp = asyncio.new_event_loop()
     asyncio.set_event_loop(lp)
     yield lp

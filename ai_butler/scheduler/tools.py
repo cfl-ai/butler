@@ -46,7 +46,7 @@ DEFAULT_NO_PROGRESS_LIMIT = 3
 #: 单次任务允许的工具调用总次数上限（实现参数，防跑飞）
 DEFAULT_MAX_CALLS = 50
 
-#: 错误码（U60：按错误码判责，与评测维度四的超时归因对齐）
+#: 错误码（：按错误码判责，与评测维度四的超时归因对齐）
 CODE_TASK_TIMEOUT = "TASK_TIMEOUT"      # 任务执行超时（本调度线程判）
 CODE_HANDLER_ERROR = "HANDLER_ERROR"    # 未分类异常
 
@@ -62,11 +62,11 @@ class ToolTimeout(ToolError):
 
 
 def _error_code(exc: BaseException) -> str:
-    """按错误码判责（U60）。
+    """按错误码判责。
 
-    handler 显式带了 `.code`（如 PAYMENT_TIMEOUT / INTERFACE_DOWN）就透传——
-    判责信息在产生地最完整；没带才落 HANDLER_ERROR。
-    """
+ handler 显式带了 `.code`（如 PAYMENT_TIMEOUT / INTERFACE_DOWN）就透传——
+ 判责信息在产生地最完整；没带才落 HANDLER_ERROR。
+ """
     code = getattr(exc, "code", None)
     if isinstance(code, str) and code.strip():
         return code.strip()
@@ -98,12 +98,12 @@ class ToolResult:
     note: str = ""
     duplicate: bool = False
     progressed: bool = True
-    #: 本次调用实际生效的审批档（U45）。Tier1/Tier2 的调用在审批放行前不得执行。
+    #: 本次调用实际生效的审批档。Tier1/Tier2 的调用在审批放行前不得执行。
     approval_tier: int = 0
-    #: 审批票号（U59）。needs_approval 且未放行时携带，调用方凭它去人工批准后
+    #: 审批票号。needs_approval 且未放行时携带，调用方凭它去人工批准后
     #: 带 approval_id 重新 dispatch。
     approval_id: str = ""
-    #: 错误码（U60）。失败时按码判责：TASK_TIMEOUT / handler 自带 code 透传 /
+    #: 错误码。失败时按码判责：TASK_TIMEOUT / handler 自带 code 透传 /
     #: HANDLER_ERROR；成功为空串。评测维度四直接消费此字段。
     error_code: str = ""
 
@@ -113,7 +113,7 @@ class ToolResult:
 
     @property
     def needs_approval(self) -> bool:
-        """是否触碰了需要人工确认的档位（计划书三、P8「付款动作必须经人工确认」）。"""
+        """是否触碰了需要人工确认的档位（三、P8「付款动作必须经人工确认」）。"""
         return self.approval_tier >= 1
 
     @property
@@ -130,22 +130,22 @@ class ToolSpec:
     #: 判定本次输出是否带来增量；默认「有非空输出即算增量」
     progresses: Callable[[Any], bool] | None = None
     description: str = ""
-    #: 本工具动作所需的能力级（U43 表：只读检索 = L0 / 写自有字段 = L1 /
+    #: 本工具动作所需的能力级（ 表：只读检索 = L0 / 写自有字段 = L1 /
     #: 调外部工具 = L2 / 支付执行·删数据·改权限 = L3）。
     #: 默认 L2：工具是**进程外动作**，未声明即按副作用对待 ——
-    #: 与 U43「不得用布尔量推导」同一立场：宁可将纯函数工具显式标 L0，
+    #: 与 「不得用布尔量推导」同一立场：宁可将纯函数工具显式标 L0，
     #: 也不给未声明的工具留一个「大概只是读」的默认放行。
     required: CapabilityLevel = CapabilityLevel.L2_SIDE_EFFECT
-    #: 本工具接触的数据密级（U44）。None = 沿用分发上下文的密级。
+    #: 本工具接触的数据密级。None = 沿用分发上下文的密级。
     sensitivity: DataSensitivity | None = None
-    #: 协作式超时（U60）。None = 不限时（默认，与接线前行为一致）。
+    #: 协作式超时。None = 不限时（默认，与接线前行为一致）。
     #: 注意语义：超时只保证**调用方不再等待**，不保证执行体已停止——
-    #  handler 若是纯计算，残留线程会在后台跑完；副作用类工具应自行幂等。
+    # handler 若是纯计算，残留线程会在后台跑完；副作用类工具应自行幂等。
     timeout_seconds: float | None = None
-    #: 参数契约（JSON Schema / object），供 **function calling** 向模型声明入参（U112）。
+    #: 参数契约（JSON Schema / object），供 **function calling** 向模型声明入参。
     #: None = 本工具不向模型暴露（仍是 Python 内可调的内部工具）。
     #: 这里是「能不能被模型调用」的开关，也是参数的唯一真值源 ——
-    #: 模型看到的 schema 与执行侧的解释必须是同一份，否则必漂移（E-44 家族）。
+    #: 模型看到的 schema 与执行侧的解释必须是同一份，否则必漂移（ 家族）。
     params_schema: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
@@ -157,7 +157,7 @@ class ToolSpec:
             if self.params_schema.get("type") != "object":
                 raise ToolError(f"工具 {self.name!r} 的 params_schema.type 必须是 'object'")
 
-    #: 本工具属于哪个 `CAP_*` 能力（U114）。**工具→能力的唯一真值源**：
+    #: 本工具属于哪个 `CAP_*` 能力。**工具→能力的唯一真值源**：
     #: 调配结论给出的是能力集合，能否落到具体工具，靠这一字段，
     #: 而不是在别处再维护一张「能力→工具」映射表（多一张表就多一处漂移）。
     #: 留空 = 未归类，**不对模型暴露**（宁可少暴露，也不让模型看见职责外的工具）。
@@ -165,7 +165,7 @@ class ToolSpec:
 
     @property
     def exposed_to_model(self) -> bool:
-        """是否向模型暴露（U112/U114）：**契约与能力归属两道闸都要过**。"""
+        """是否向模型暴露：**契约与能力归属两道闸都要过**。"""
         return self.params_schema is not None and bool(self.capability)
 
 
@@ -197,14 +197,14 @@ class ToolRegistry:
         return spec
 
     def as_openai_tools(self) -> list[dict[str, Any]]:
-        """导出 **function calling** 的工具清单（U112）。
+        """导出 **function calling** 的工具清单。
 
-        形态对齐 OpenAI Chat Completions `tools` 数组（MCP 的工具声明同源），
-        这样换模型、换供应商都不用改这一层 —— 「大模型可更换」落在协议上，不落在代码分支上。
+ 形态对齐 OpenAI Chat Completions `tools` 数组（MCP 的工具声明同源），
+ 这样换模型、换供应商都不用改这一层 —— 「大模型可更换」落在协议上，不落在代码分支上。
 
-        **只导出显式声明了 `params_schema` 的工具**：没写参数契约的工具不会被模型
-        看到。宁可少暴露，也不让模型去猜一个没有契约的工具该怎么调（没契约 = 没护栏）。
-        """
+ **只导出显式声明了 `params_schema` 的工具**：没写参数契约的工具不会被模型
+ 看到。宁可少暴露，也不让模型去猜一个没有契约的工具该怎么调（没契约 = 没护栏）。
+ """
         return [spec_as_openai_tool(s) for s in self.specs() if s.exposed_to_model]
 
     def get(self, name: str) -> ToolSpec:
@@ -222,9 +222,9 @@ class ToolRegistry:
 
 def spec_as_openai_tool(spec: ToolSpec) -> dict[str, Any]:
     """单个工具的对外声明形态。**序列化只有这一处** ——
-    `as_openai_tools` 与按能力裁剪的 `build_tools_for` 都走它，
-    免得两处各写一份 dict 结构，改一处漏一处（E-44 家族）。
-    """
+ `as_openai_tools` 与按能力裁剪的 `build_tools_for` 都走它，
+ 免得两处各写一份 dict 结构，改一处漏一处（ 家族）。
+ """
     return {"type": "function",
             "function": {"name": spec.name,
                          "description": spec.description or spec.name,
@@ -244,11 +244,11 @@ class ToolDispatcher:
         self.throttle = throttle
         self.no_progress_limit = no_progress_limit
         self.max_calls = max_calls
-        #: 权限上下文（U43–U45）。**未绑定即拒绝一切分发** ——
+        #: 权限上下文。**未绑定即拒绝一切分发** ——
         #: 没有「未绑定时放行」的分支，那正是「声明了没接上」的形状。
         self._permission = permission
-        #: 审批服务（U59）。**未绑定时 Tier1/Tier2 一律挂起不执行** ——
-        #: 没有「没接审批服务就放行」的分支（U45 原纪律）。
+        #: 审批服务。**未绑定时 Tier1/Tier2 一律挂起不执行** ——
+        #: 没有「没接审批服务就放行」的分支（ 原纪律）。
         self._approval = approval
         self.reset()
 
@@ -260,9 +260,9 @@ class ToolDispatcher:
     def bind_permission(self, permission: ToolPermission) -> None:
         """绑定（或切换）权限上下文。
 
-        调度器在每次任务开始时绑定；**子 Agent 触达工具时不重新绑定**，
-        而是在 `dispatch(..., agent=...)` 里以自己的身份求值（U51 权限不可传递）。
-        """
+ 调度器在每次任务开始时绑定；**子 Agent 触达工具时不重新绑定**，
+ 而是在 `dispatch(..., agent=...)` 里以自己的身份求值（ 权限不可传递）。
+ """
         self._permission = permission
 
     # ---------------- 生命周期 ---------------- #
@@ -303,7 +303,7 @@ class ToolDispatcher:
 
         spec = self.registry.get(call.name)
 
-        # ---- 权限闸（U43–U45 / U51 / U59）：先求值，后执行，先于重复拦截 ----
+        # ---- 权限闸：先求值，后执行，先于重复拦截 ----
         # 顺序是刻意的：重复拦截会复用上次结果，若权限判定放在它后面，
         # 一次被放行的调用就能靠缓存反复取用，角色切换后仍然畅通。
         gate = self._permission_gate(call, spec, agent, approval_id)
@@ -383,14 +383,14 @@ class ToolDispatcher:
                          approval_id: str | None) -> ToolResult | None:
         """三层权限求值 + 审批凭据。返回 None = 放行；返回 ToolResult = 拒绝（已记账）。
 
-        **未绑定权限上下文一律拒绝**：没有主体、角色、密级齐备的请求无从判定，
-        而无从判定即拒绝（core/permissions.py 模块纪律）。
-        """
+ **未绑定权限上下文一律拒绝**：没有主体、角色、密级齐备的请求无从判定，
+ 而无从判定即拒绝（core/permissions.py 模块纪律）。
+ """
         ctx = self._permission
         if ctx is None:
             return self._deny(
                 call, "未绑定权限上下文（ToolPermission）—— 无从判定即拒绝，不执行（U43–U45）")
-        # U51 权限不可传递：调用方显式给出 agent 身份时，以**调用方自己**的身份求值，
+        # 权限不可传递：调用方显式给出 agent 身份时，以**调用方自己**的身份求值，
         # 不继承调度器绑定的身份 —— 否则调用链就是一条借道提权的梯子。
         identity = agent if agent is not None else ctx.agent
         sensitivity = (spec.sensitivity if spec.sensitivity is not None
@@ -412,13 +412,13 @@ class ToolDispatcher:
     def _approval_gate(self, call: ToolCall, spec: ToolSpec,
                        identity: AgentIdentity, ctx: ToolPermission,
                        tier: int, approval_id: str | None) -> ToolResult | None:
-        """Tier1/Tier2 的放行路径（U59）。
+        """Tier1/Tier2 的放行路径。
 
-        三条分支，没有第四条：
-        1. 带了 approval_id → 消费凭据（一次性/签名/主体三重校验），通过才放行；
-        2. 没带且审批服务已绑 → 创建待审批票，返回挂起结果（携带 approval_id）；
-        3. 审批服务未绑 → 维持 U45：一律不执行。
-        """
+ 三条分支，没有第四条：
+ 1. 带了 approval_id → 消费凭据（一次性/签名/主体三重校验），通过才放行；
+ 2. 没带且审批服务已绑 → 创建待审批票，返回挂起结果（携带 approval_id）；
+ 3. 审批服务未绑 → 维持：一律不执行。
+ """
         if approval_id:
             if self._approval is None:
                 return self._deny(
@@ -468,10 +468,10 @@ class ToolDispatcher:
 
     @staticmethod
     def _execute(spec: ToolSpec, payload: dict[str, Any]) -> Any:
-        """执行 handler；声明了 timeout_seconds 即走线程协作式超时（U60）。
+        """执行 handler；声明了 timeout_seconds 即走线程协作式超时。
 
-        不限时时**不开线程**——与接线前行为逐字节一致，零额外开销。
-        """
+ 不限时时**不开线程**——与接线前行为逐字节一致，零额外开销。
+ """
         if spec.timeout_seconds is None:
             return spec.handler(**payload)
         pool = ThreadPoolExecutor(max_workers=1)
@@ -505,9 +505,9 @@ class ToolDispatcher:
                 "denied": sum(1 for r in self._calls
                               if not r.ok and r.note.startswith(("权限拒绝", "未绑定权限", "需人工审批", "审批票无效", "携带审批票"))),
                 "approval_held": sum(1 for r in self._calls if r.approval_tier >= 1),
-                #: 审批服务是否绑定（未绑定 = Tier 一律挂起，U45 纪律）
+                #: 审批服务是否绑定（未绑定 = Tier 一律挂起， 纪律）
                 "approval_bound": self._approval is not None,
-                #: 按错误码聚合的失败分布（U60 判责出口，喂评测维度四）
+                #: 按错误码聚合的失败分布（ 判责出口，喂评测维度四）
                 "error_codes": _tally_codes(r.error_code for r in self._calls
                                             if not r.ok),
                 "tools": list(self.registry.names())}

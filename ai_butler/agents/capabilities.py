@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 from typing import Any, Mapping, Sequence
 
-# 能力清单属**实现层命名**：计划书三、P4 只要求「无跨模块越权调用」，
+# 能力清单属**实现层命名**：三、P4 只要求「无跨模块越权调用」，
 # 未枚举具体能力项，故此处按 P1/P2/P4 已点名过的访问路径逐条对应。
 CAP_RETRIEVAL = "retrieval"        # 统一检索 API（P2：供规划 Agent、质检 Agent 调用）
 CAP_WIKI_READ = "wiki_read"        # 读取 Agent-Wiki 页面（公共 Workspace + 本人 Vault）
@@ -19,12 +19,12 @@ CAP_LLM = "llm"                    # LLM 网关（慢思考）
 CAP_JEV = "jev"                    # Jev 高速结构化决策（快思考）
 CAP_DATA_READ = "data_read"        # 数据 SDK 只读（P1「所有 Agent 只读」）
 CAP_PAYMENT = "payment"            # 支付执行能力（垂类 Agent 不得直接持有）
-#: 外部只读（U118）：天气（Open-Meteo）、POI（高德）。计划书表 11「公共数据：
+#: 外部只读：天气（Open-Meteo）、POI（高德）。「公共数据：
 #: 天气 API、景区公开信息」的读侧。与 `data_read` 分开，是因为数据源与配额
 #: 完全在项目之外（外部服务），出故障时排障路径不同。
 CAP_EXTERNAL_READ = "external_read"
 
-# Jev 单列一项能力：计划书三、P3 要求「Jev 调用独立配额统计」，
+# Jev 单列一项能力：三、P3 要求「Jev 调用独立配额统计」，
 # 它与普通大模型调用是两条独立受管的路径（各自的限流桶与配额）。
 CAPABILITIES: tuple[str, ...] = (CAP_RETRIEVAL, CAP_WIKI_READ, CAP_WIKI_WRITE, CAP_LLM,
                                  CAP_JEV, CAP_DATA_READ, CAP_PAYMENT, CAP_EXTERNAL_READ)
@@ -48,7 +48,7 @@ class AgentTools:
     llm: Any = None
     jev: Any = None
     data_read: Any = None
-    #: 外部只读（U118）：天气 / POI 这类项目外部数据源。**只读**，与 `data_read`
+    #: 外部只读：天气 / POI 这类项目外部数据源。**只读**，与 `data_read`
     #: 分开是因为故障域不同（外部 SLA vs 自家数据中台），排障路径完全不同。
     external_read: Any = None
     payment: Any = None
@@ -78,8 +78,8 @@ def grant(agent_cls: type, available: Mapping[str, Any], *,
           allow_forbidden: bool = False) -> AgentTools:
     """按 agent 声明的 capabilities 生成工具面。
 
-    未声明的能力不会出现在工具面上；声明了但装配层没提供的，取用时才会报错。
-    """
+ 未声明的能力不会出现在工具面上；声明了但装配层没提供的，取用时才会报错。
+ """
     declared = tuple(getattr(agent_cls, "capabilities", ()) or ())
     unknown = [c for c in declared if c not in CAPABILITIES]
     if unknown:

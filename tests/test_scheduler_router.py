@@ -47,10 +47,10 @@ LABELS = ("book_hotel", "book_flight", "ask_weather", "cancel_order")
 def loop():
     """模块级事件循环。
 
-    必须 set_event_loop：同进程内其他用例调用 asyncio.run() 后会把当前事件循环置空，
-    若这里只 new_event_loop() 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
-    产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
-    """
+ 必须 set_event_loop：同进程内其他用例调用 asyncio.run 后会把当前事件循环置空，
+ 若这里只 new_event_loop 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
+ 产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
+ """
     lp = asyncio.new_event_loop()
     asyncio.set_event_loop(lp)
     yield lp
@@ -69,7 +69,7 @@ def _run(loop, coro):
 
 # ------------------------------ 冻结契约 ------------------------------ #
 def test_five_layers_order_is_frozen():
-    """计划书三、P3 逐字顺序，不得变更。"""
+    """三、P3 逐字顺序，不得变更。"""
     assert LAYERS == ("hard_rule", "jev", "vector", "vertical_model", "llm_fallback")
     assert (LAYER_HARD_RULE, LAYER_JEV, LAYER_VECTOR, LAYER_VERTICAL, LAYER_LLM) == LAYERS
 
@@ -137,7 +137,7 @@ def test_jev_low_confidence_falls_through(loop):
 
 
 def test_jev_shadow_mode_records_but_does_not_decide(loop):
-    """计划书三、P3：影子模式只记录不决策。"""
+    """影子模式只记录不决策。"""
     recorded = []
     layer = JevLayer(_StubJev(JevDecision("book_hotel", 0.99, "fallback", shadow=True,
                                           reason="jev_shadow_mode=true")),
@@ -150,7 +150,7 @@ def test_jev_shadow_mode_records_but_does_not_decide(loop):
 # ------------------------------ JEV-003 ------------------------------ #
 def test_jev003_clarification_pauses_dispatch_and_lower_layers_are_never_consulted(loop):
     """**JEV-003 核心不变量**：Jev 判定必须澄清后，路由层暂停分发，
-    且任何更低层都不得覆盖该结论（multi_intent_auto_resolve=False）。"""
+ 且任何更低层都不得覆盖该结论（multi_intent_auto_resolve=False）。"""
     consulted = []
 
     class _RecordingLayer:
@@ -183,7 +183,7 @@ def test_jev003_clarification_pauses_dispatch_and_lower_layers_are_never_consult
 
 
 def test_jev003_clarifying_question_is_rendered_from_enum_not_from_model(loop):
-    """decisions.U25：计划书禁止 Jev 输出自由文本，话术由系统按枚举模板渲染。"""
+    """decisions.：禁止 Jev 输出自由文本，话术由系统按枚举模板渲染。"""
     router = IntentRouter([JevLayer(_StubJev(JevDecision(
         "book_hotel", 0.5, "jev", require_clarification=True,
         clarification_category=CLARIFY_MULTI_INTENT,
@@ -317,7 +317,7 @@ class _SlowLayer:
 
 
 def test_layer_failure_degrades_to_the_next_layer(loop):
-    """计划书三、P3：任一环节失败自动降级，不阻断主流程。"""
+    """任一环节失败自动降级，不阻断主流程。"""
     router = IntentRouter([_BoomLayer(),
                            VerticalModelLayer(_VerticalModel(("book_hotel", 0.9)))],
                           layer_timeout_seconds=1.0)

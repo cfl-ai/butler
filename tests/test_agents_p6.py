@@ -167,7 +167,7 @@ def _verifier(wiki, **over):
 
 
 def test_privacy_blocks_cross_user_reference(wiki):
-    """计划书三、P6 表注：检测输出是否混入其他用户隐私；发现即拦截并告警。"""
+    """三、P6 表注：检测输出是否混入其他用户隐私；发现即拦截并告警。"""
     wiki.write_page(new_page(CLAIM, "c-b", confidence=0.9, user_id="user-B",
                              claim_type="fact", description="B 的私事",
                              subject_id="a", object_id="b", evidence_ids=["ev-b"]),
@@ -221,9 +221,9 @@ def test_privacy_allows_the_current_account_mark(wiki):
 def test_privacy_check_never_enumerates_other_users_data(wiki):
     """核心设计约束：隐私校验只能按引用逐条 read_page，**不得遍历任何用户的数据**。
 
-    计划书三、P6 步骤 6 明确「禁止批量遍历全部用户隐私」，
-    因此这里用一个「一旦调用 list_* 就失败」的探针来锁死实现方式。
-    """
+ 三、P6 步骤 6 明确「禁止批量遍历全部用户隐私」，
+ 因此这里用一个「一旦调用 list_* 就失败」的探针来锁死实现方式。
+ """
     class _Spy:
         def __init__(self, inner):
             self._inner = inner

@@ -49,10 +49,10 @@ V2 = "西湖景区公告：冬季开放时间调整为每日七点，门票需�
 def loop():
     """模块级事件循环。
 
-    必须 set_event_loop：同进程内其他用例调用 asyncio.run() 后会把当前事件循环置空，
-    若这里只 new_event_loop() 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
-    产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
-    """
+ 必须 set_event_loop：同进程内其他用例调用 asyncio.run 后会把当前事件循环置空，
+ 若这里只 new_event_loop 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
+ 产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
+ """
     lp = asyncio.new_event_loop()
     asyncio.set_event_loop(lp)
     yield lp
@@ -143,7 +143,7 @@ def test_same_content_again_refreshes_instead_of_new_version(rig, database):
 
 
 def test_changed_content_supersedes_and_archives_the_old_version(rig, database):
-    """计划书三、P2：新旧版本增量融合 + 过期来源标记 archived 归档。"""
+    """新旧版本增量融合 + 过期来源标记 archived 归档。"""
     loop, ingestor, wiki, service = rig
     loop.run_until_complete(ingestor.ingest([_raw(V1)], now=NOW))
     report = loop.run_until_complete(ingestor.ingest([_raw(V2, doc_id="doc-2")],

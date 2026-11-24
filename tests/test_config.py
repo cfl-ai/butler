@@ -25,7 +25,7 @@ def test_missing_authorized_params_are_named(monkeypatch):
 
 
 def test_provenance_records_are_complete():
-    """每个非计划书参数都必须能回溯到：原文引用、授权来源、取值理由。"""
+    """每个非参数都必须能回溯到：原文引用、授权来源、取值理由。"""
     for field, meta in PARAM_PROVENANCE.items():
         for key in ("env", "plan_quote", "status", "authorized_at", "value", "rationale"):
             assert meta.get(key), f"{field} 缺少 {key}"
@@ -35,8 +35,8 @@ def test_provenance_records_are_complete():
 def test_session_params_present_and_satisfy_invariants(settings):
     """不变式：空闲阈值必须严于凭证有效期，否则空闲控制形同虚设。
 
-    本用例只断言关系与合理性，不断言具体数值——数值可按实际情况调整。
-    """
+ 本用例只断言关系与合理性，不断言具体数值——数值可按实际情况调整。
+ """
     assert settings.session_ttl_seconds > 0
     assert settings.session_idle_timeout_seconds > 0
     assert settings.session_refresh_ahead_seconds > 0
@@ -46,7 +46,7 @@ def test_session_params_present_and_satisfy_invariants(settings):
 
 
 def test_jev_frozen_params_match_plan_section_eight(settings):
-    """计划书【八】Jev 配置 4 项：数值必须与文档完全一致，不得改动。"""
+    """【八】Jev 配置 4 项：数值必须与文档完全一致，不得改动。"""
     assert settings.jev_enable is True                     # jev_enable = true
     assert settings.jev_confidence_threshold == 0.82       # jev_confidence_threshold = 0.82
     assert settings.jev_fallback_enable is True            # jev_fallback_enable = true
@@ -54,7 +54,7 @@ def test_jev_frozen_params_match_plan_section_eight(settings):
 
 
 def test_agent_wiki_frozen_params_match_plan_section_eight(settings):
-    """计划书【八】Agent-Wiki v2 配置 6 项：数值必须与文档完全一致，不得改动。"""
+    """【八】Agent-Wiki v2 配置 6 项：数值必须与文档完全一致，不得改动。"""
     assert settings.wiki_public_workspace_enable is True     # wiki_public_workspace_enable = true
     assert settings.wiki_user_vault_per_user is True         # wiki_user_vault_per_user = true
     assert settings.wiki_compile_auto_run is True            # wiki_compile_auto_run = true

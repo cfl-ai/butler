@@ -43,10 +43,10 @@ NOW = datetime(2026, 10, 16, tzinfo=timezone.utc)
 def loop():
     """模块级事件循环。
 
-    必须 set_event_loop：同进程内其他用例调用 asyncio.run() 后会把当前事件循环置空，
-    若这里只 new_event_loop() 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
-    产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
-    """
+ 必须 set_event_loop：同进程内其他用例调用 asyncio.run 后会把当前事件循环置空，
+ 若这里只 new_event_loop 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
+ 产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
+ """
     lp = asyncio.new_event_loop()
     asyncio.set_event_loop(lp)
     yield lp

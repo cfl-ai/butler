@@ -92,7 +92,7 @@ class _NoWritesAgent(SubAgent):
 
 # ============================== 能力 ============================== #
 def test_capability_list_is_implementation_named_but_each_traces_to_the_plan():
-    # external_read（U118）= 计划书表 11「公共数据：天气 API、景区公开信息」的读侧
+    # external_read= 「公共数据：天气 API、景区公开信息」的读侧
     assert CAPABILITIES == ("retrieval", "wiki_read", "wiki_write", "llm", "jev",
                             "data_read", "payment", "external_read")
 
@@ -100,9 +100,9 @@ def test_capability_list_is_implementation_named_but_each_traces_to_the_plan():
 def test_every_capability_constant_has_a_matching_tool_field():
     """回归锁定：CAPABILITIES 与 AgentTools 字段必须一一对应。
 
-    曾经漏加 jev 字段，而 grant() 当时会**静默丢弃**没有字段的能力——
-    Agent 直到运行期 require 时才炸，报错点离病因很远。
-    """
+ 曾经漏加 jev 字段，而 grant 当时会**静默丢弃**没有字段的能力——
+ Agent 直到运行期 require 时才炸，报错点离病因很远。
+ """
     from dataclasses import fields as _fields
 
     declared = set(CAPABILITIES)
@@ -194,7 +194,7 @@ def test_register_and_ledger():
 
 
 def test_registry_rejects_duplicate_name():
-    """计划书三、P4「逐个上线」——同名 Agent 不得重复注册。"""
+    """三、P4「逐个上线」——同名 Agent 不得重复注册。"""
     registry = AgentRegistry()
     registry.register(_RetrievalAgent())
     with pytest.raises(RegistryError) as ei:
@@ -231,10 +231,10 @@ def test_registry_tools_for_only_grants_what_the_agent_declared():
 
 
 def test_registry_has_no_agent_to_agent_dispatch_entry():
-    """计划书三、P4：Agent 之间不得直接互相传递任务，必须走调度层。
+    """Agent 之间不得直接互相传递任务，必须走调度层。
 
-    这是**结构性**保证：注册表里根本没有那个方法，而不是靠文档约定。
-    """
+ 这是**结构性**保证：注册表里根本没有那个方法，而不是靠文档约定。
+ """
     public = {n for n in dir(AgentRegistry) if not n.startswith("_")}
     forbidden = {"dispatch", "call", "invoke", "forward", "delegate", "run_agent",
                  "send_to", "route", "set_router", "add_route", "chain"}
@@ -248,7 +248,7 @@ def test_base_agent_still_exposes_no_dispatch_surface():
 
 # ============================== 产出事实 ============================== #
 def test_fact_requires_claim_and_evidence_binding():
-    """计划书三、P4：输出事实绑定 Claim 声明 ID 与 Evidence 证据 ID。"""
+    """输出事实绑定 Claim 声明 ID 与 Evidence 证据 ID。"""
     base = dict(statement="x", claim_page_id="c", evidence_ids=("e",), confidence=0.9,
                 subject_id="s", object_id="o")
 
@@ -265,7 +265,7 @@ def test_fact_requires_claim_and_evidence_binding():
     with pytest.raises(FactError):
         AgentFact(**{**base, "confidence": 1.5})
 
-    # 本体要求 Claim 说明它关于什么（U17）：subject/object 不得留空
+    # 本体要求 Claim 说明它关于什么：subject/object 不得留空
     with pytest.raises(FactError) as ei3:
         AgentFact(**{**base, "subject_id": ""})
     assert "关于什么" in str(ei3.value)
@@ -303,7 +303,7 @@ def test_fact_writer_refuses_missing_evidence(wiki):
 
 
 def test_fact_writer_writes_into_the_private_vault(wiki):
-    """计划书三、P4：产出事实**优先写入对应用户私有 Vault**。"""
+    """产出事实**优先写入对应用户私有 Vault**。"""
     wiki.write_page(new_page(EVIDENCE, "ev-1", confidence=0.9, user_id="user-A",
                              source_id="src-1", source_text="来源片段", text_unit_id="tu-1"),
                     user_id="user-A")
@@ -386,7 +386,7 @@ def test_trigger_plan_is_empty_when_nothing_changed():
 
 
 def test_trigger_skips_everything_when_session_invalid():
-    """计划书三、P4：会话失效则跳过执行。"""
+    """会话失效则跳过执行。"""
     bus = _bus()
     plan = bus.plan(before={"utterance": "旧"}, after={"utterance": "新"},
                     login_status=False)
@@ -445,7 +445,7 @@ def test_planner_produces_evidence_bound_facts_into_vault(rig):
 
 
 def test_planner_skips_hits_without_evidence_or_confidence(rig):
-    """计划书三、P2「强制所有素材绑定溯源来源」——无证据不得产出事实。"""
+    """三、P2「强制所有素材绑定溯源来源」——无证据不得产出事实。"""
     wiki, service, writer = rig
     service.index_text(doc_id="doc-noev", text="没有绑定证据的素材内容片段。")   # 无证据/无置信
     agent = PlannerAgent(tools=grant(PlannerAgent, {CAP_RETRIEVAL: service,
@@ -479,7 +479,7 @@ def test_planner_reports_searched_scopes(rig):
 
 # ============================== 质检 Agent ============================== #
 def test_qa_finding_kinds_match_plan_item_19():
-    """计划书七、19 点名的四类：矛盾、证据缺失、过期素材 + 置信度。"""
+    """七、19 点名的四类：矛盾、证据缺失、过期素材 + 置信度。"""
     assert FINDING_KINDS == ("证据缺失", "矛盾声明", "过期素材", "低置信声明")
 
 
@@ -550,10 +550,10 @@ def test_qa_requires_wiki_read_capability(wiki, settings):
 def test_untrusted_input_cannot_become_a_confirmed_claim(wiki):
     """不可信输入产出的事实只能落成 SUSPECTED，**不能是 TRUE**。
 
-    这一条是「不得直接沉淀为事实」的**可执行定义**。
-    此前 input_untrusted 只传到状态和结果，**没有任何消费者** ——
-    判定 → 传递 → 无人执行，约束等于没做。
-    """
+ 这一条是「不得直接沉淀为事实」的**可执行定义**。
+ 此前 input_untrusted 只传到状态和结果，**没有任何消费者** ——
+ 判定 → 传递 → 无人执行，约束等于没做。
+ """
     from ai_butler.agent_wiki.ontology import CLAIM, EVIDENCE, new_page
     from ai_butler.agents.facts import AgentFact, FactWriter
 

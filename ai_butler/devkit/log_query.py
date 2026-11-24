@@ -20,7 +20,7 @@ from typing import Any, Iterable
 from ai_butler.core.log_safety import redact
 from ai_butler.core.storage import SCOPE_LOGS, FileStore
 
-#: 计划书三、P0-9：优质 / 错误案例分类；Jev 错误、Wiki 冲突独立分类
+#: 三、P0-9：优质 / 错误案例分类；Jev 错误、Wiki 冲突独立分类
 CASE_CATEGORIES: tuple[str, ...] = ("优质案例", "错误案例", "Jev错误", "Wiki冲突")
 
 
@@ -65,7 +65,7 @@ class AuditLog:
         record = LogRecord(
             record_id=uuid.uuid4().hex[:16], ts=_now(), level=level, event=event,
             user_id=str(user_id), session_id=session_id, task_id=task_id,
-            # 先脱敏再落盘：计划书三、P0-1 日志脱敏规则
+            # 先脱敏再落盘：三、P0-1 日志脱敏规则
             detail=redact(detail or {}),
         )
         day = record.ts[:10]
@@ -80,9 +80,9 @@ class AuditLog:
               day: str | None = None, limit: int = 200) -> list[LogRecord]:
         """按用户检索日志。
 
-        user_id 是**必填**参数：计划书明确「业务接口禁止读取其他用户日志」，
-        因此本模块不提供任何跨用户检索日志正文的入口。
-        """
+ user_id 是**必填**参数：设计明确「业务接口禁止读取其他用户日志」，
+ 因此本模块不提供任何跨用户检索日志正文的入口。
+ """
         if not user_id or not str(user_id).strip():
             raise LogAccessError(
                 "日志检索必须携带 user_id：业务接口禁止读取其他用户日志（计划书三、P0-2）"
@@ -115,12 +115,12 @@ class AuditLog:
     # ---------------- 问题标注 ----------------
     def annotate(self, record_id: str, *, category: str, note: str = "",
                  by: str = "") -> dict[str, Any]:
-        """问题标注。计划书三、P0-9 的四类案例分类。"""
+        """问题标注。三、P0-9 的四类案例分类。"""
         if category not in CASE_CATEGORIES:
             raise ValueError(f"标注分类必须是 {CASE_CATEGORIES} 之一，实际 {category!r}")
         payload = {"record_id": record_id, "category": category,
                    "note": redact(note), "by": by, "ts": _now()}
-        # 计划书三、P0-9 的四类分类相互独立，同一记录可同时命中多类，
+        # 三、P0-9 的四类分类相互独立，同一记录可同时命中多类，
         # 因此按「记录 + 分类」落盘；重复标注同一 (记录, 分类) 才视为覆盖。
         path = self.store.path(SCOPE_LOGS, "annotations", f"{record_id}__{category}.json")
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -137,8 +137,8 @@ class AuditLog:
     def defect_stats(self, *, day: str | None = None) -> dict[str, Any]:
         """缺陷自动统计。
 
-        **只返回聚合计数，不返回任何日志正文**——统计口径不构成跨用户读取。
-        """
+ **只返回聚合计数，不返回任何日志正文**——统计口径不构成跨用户读取。
+ """
         records = list(self._iter(day))
         by_level = Counter(r.level for r in records)
         by_event = Counter(r.event for r in records)

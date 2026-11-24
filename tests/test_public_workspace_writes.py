@@ -58,9 +58,9 @@ def _public_writes() -> dict[str, list[int]]:
 def test_public_workspace_writes_are_explicitly_allowlisted():
     """只有白名单里的位置可以写公共 Workspace。
 
-    这条防的是「以后新加一处 write_page(page)，把用户内容写进了公共库」——
-    那种错误**不会让任何既有测试变红**，却会影响全部用户。
-    """
+ 这条防的是「以后新加一处 write_page(page)，把用户内容写进了公共库」——
+ 那种错误**不会让任何既有测试变红**，却会影响全部用户。
+ """
     writes = _public_writes()
     unexpected = {
         path: lines for path, lines in writes.items()

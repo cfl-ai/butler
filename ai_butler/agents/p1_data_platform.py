@@ -2,7 +2,7 @@
 
 职责边界
 --------
-本 Agent 是**阶段 Agent**：对外代表 P1 的能力面（数据 SDK 只读通道 + 治理参数），
+本 Agent ：对外代表 P1 的能力面（数据 SDK 只读通道 + 治理参数），
 并汇报本账号在数据中台的数据footprint。**不做业务决策**——那是业务子 Agent 的事。"""
 
 from __future__ import annotations

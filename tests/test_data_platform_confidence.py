@@ -56,8 +56,8 @@ def test_evidence_pulls_confidence_toward_evidence_score():
 def test_evidence_fusion_can_lift_a_moderate_base_over_the_persist_threshold(settings):
     """设计不变量：中等基础分 + 高可信证据必须能跨过【八】的入库阈值。
 
-    否则「置信分数融合 Agent-Wiki 证据权重」（三、P1）就是空话。
-    """
+ 否则「置信分数融合 Agent-Wiki 证据权重」（三、P1）就是空话。
+ """
     threshold = settings.jev_confidence_threshold
     r = score_confidence(base=0.5, evidences=[EvidenceRef("e", weight=3.0, reliability=0.95)])
     assert r.confidence >= threshold, f"证据融合后 {r.confidence} 仍低于阈值 {threshold}"
@@ -169,7 +169,7 @@ def test_apply_decay_writes_back_only_changed_records():
 
 # --------------------- 同步更新私有 Vault 实体属性 --------------------- #
 def test_sync_weights_to_vault_updates_the_entity_page(settings, workdir):
-    """计划书三、P1「同步更新私有 Vault 实体属性」。"""
+    """三、P1「同步更新私有 Vault 实体属性」。"""
     store = WikiStore(workdir / "wiki", settings=settings)
     store.write_page(new_page(ENTITY, "ent-pref-1", title="偏好出行", user_id="user-A",
                               name="偏好出行", entity_type="用户偏好"),

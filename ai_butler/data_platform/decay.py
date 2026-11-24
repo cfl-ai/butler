@@ -100,11 +100,11 @@ def apply_decay(records: Sequence, decayed: Sequence[DecayedPreference]) -> int:
 
 
 def sync_weights_to_vault(store, user_id: str, decayed: Sequence[DecayedPreference]) -> int:
-    """计划书三、P1「同步更新私有 Vault 实体属性」。
+    """三、P1「同步更新私有 Vault 实体属性」。
 
-    只更新属于该 user_id 且带 vault_entity_id 的记录对应页面；
-    页面缺失即跳过（不新建页面——新建属采集链路职责）。
-    """
+ 只更新属于该 user_id 且带 vault_entity_id 的记录对应页面；
+ 页面缺失即跳过（不新建页面——新建属采集链路职责）。
+ """
     from ai_butler.agent_wiki.ontology import ENTITY
 
     if not user_id or not str(user_id).strip():

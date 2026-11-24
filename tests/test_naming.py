@@ -16,7 +16,7 @@ SCAN_ROOTS = [PKG_ROOT / "ai_butler", PKG_ROOT / "tests", PKG_ROOT / "scripts"]
 
 
 def test_identifiers_derive_from_plan_title():
-    """命名根必须能回溯到计划书标题「AI管家 Agent 生态体系」。"""
+    """命名根必须能回溯到项目登记标题「AI管家 Agent 生态体系」。"""
     d = naming.describe()
     assert d["ROOT"] == "ai-butler"                       # ← 标题「AI管家」
     assert d["ECOSYSTEM"] == "ai-butler-ecosystem"        # ← 标题全文
@@ -34,7 +34,7 @@ def test_key_and_container_builders_use_namespace():
 
 
 def test_vertical_namespace_is_reusable_without_new_rules():
-    """计划书五：点餐、售后等垂类复用同一套结构 → 新增垂类不新增命名规则。"""
+    """五：点餐、售后等垂类复用同一套结构 → 新增垂类不新增命名规则。"""
     for vertical in ("travel", "food", "aftersale"):
         key = naming.vertical_key(vertical, "session", "abc")
         assert key == f"{naming.NAMESPACE}:{vertical}:session:abc"
@@ -43,9 +43,9 @@ def test_vertical_namespace_is_reusable_without_new_rules():
 def test_compose_identifiers_match_naming_spec():
     """漂移防护：四环境的项目名与容器名必须由命名规范派生，且与环境表一致。
 
-    后期改用 AIBUTLER_NAMESPACE / AIBUTLER_ECOSYSTEM 调整命名时，
-    若忘记同步 deploy/compose 或 .env.<环境>，本用例会立即失败。
-    """
+ 后期改用 AIBUTLER_NAMESPACE / AIBUTLER_ECOSYSTEM 调整命名时，
+ 若忘记同步 deploy/compose 或 .env.<环境>，本用例会立即失败。
+ """
     import yaml
 
     from ai_butler.core import environments as envs

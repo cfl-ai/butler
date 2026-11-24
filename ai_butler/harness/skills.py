@@ -16,14 +16,14 @@ SCOPE_PUBLIC = "public"
 SCOPE_VAULT = "vault"
 SCOPES: tuple[str, ...] = (SCOPE_PUBLIC, SCOPE_VAULT)
 
-#: 工具类别（计划书点名：检索、Git、文件、终端）
+#: 工具类别（设计点名：检索、Git、文件、终端）
 TOOL_RETRIEVAL = "retrieval"
 TOOL_GIT = "git"
 TOOL_FILE = "file"
 TOOL_TERMINAL = "terminal"
 TOOL_CATEGORIES: tuple[str, ...] = (TOOL_RETRIEVAL, TOOL_GIT, TOOL_FILE, TOOL_TERMINAL)
 
-#: 计划书点名新增的 Skill
+#: 设计点名新增的 Skill
 SKILL_AGENT_WIKI = "agent_wiki_maintenance"
 
 
@@ -52,10 +52,10 @@ def assert_skill_scope(skill: SkillSpec, *, scope: str,
                        user_id: str | None = None) -> None:
     """调用前的作用域闸门。
 
-    两条独立检查：
-    1. 作用域必须在 Skill 允许列表内；
-    2. **公共作用域不得携带 user_id**（计划书：公共 Workspace 无用户 ID）。
-    """
+ 两条独立检查：
+ 1. 作用域必须在 Skill 允许列表内；
+ 2. **公共作用域不得携带 user_id**（公共 Workspace 无用户 ID）。
+ """
     if scope not in skill.allowed_scopes:
         raise SkillError(
             f"Skill {skill.name!r} 不允许作用于 {scope!r}（允许 {list(skill.allowed_scopes)}）；"
@@ -68,7 +68,7 @@ def assert_skill_scope(skill: SkillSpec, *, scope: str,
 
 def agent_wiki_maintenance_skill(*, handler: Callable[..., Any] | None = None
                                  ) -> SkillSpec:
-    """计划书点名新增的 MCP Skill：**仅用于维护公共 Workspace**。"""
+    """设计点名新增的 MCP Skill：**仅用于维护公共 Workspace**。"""
     return SkillSpec(
         name=SKILL_AGENT_WIKI,
         description="维护公共 Agent-Wiki Workspace：清理冲突、归档过期来源、生成报告",
@@ -108,7 +108,7 @@ class SkillRegistry:
 
 
 def default_registry() -> SkillRegistry:
-    """预置注册表：覆盖计划书点名的四类工具 + Agent-Wiki 维护 Skill。"""
+    """预置注册表：覆盖设计点名的四类工具 + Agent-Wiki 维护 Skill。"""
     registry = SkillRegistry()
     registry.register(SkillSpec("retrieval_search", "混合检索（P2 服务）",
                                 TOOL_RETRIEVAL))

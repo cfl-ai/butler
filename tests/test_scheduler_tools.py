@@ -36,7 +36,7 @@ from ai_butler.scheduler.tools import (
 def _registry(**handlers):
     reg = ToolRegistry()
     for name, fn in handlers.items():
-        # 玩具工具按**只读**注册：它们不触碰进程外状态，权限语义即 L0（U43）。
+        # 玩具工具按**只读**注册：它们不触碰进程外状态，权限语义即 L0。
         # 权限闸的行为由 tests/test_tool_permissions.py 专门守护，
         # 本文件只测调度机制，故给一个必然放行的上下文。
         reg.register(name, fn, required=CapabilityLevel.L0_READ)
@@ -100,7 +100,7 @@ def test_dispatch_executes_through_the_registry():
 
 
 def test_duplicate_call_is_intercepted_and_not_reexecuted():
-    """计划书三、P3「重复调用拦截」——同签名第二次不得真正执行。"""
+    """三、P3「重复调用拦截」——同签名第二次不得真正执行。"""
     calls: list[str] = []
 
     def handler(text=""):
@@ -118,7 +118,7 @@ def test_duplicate_call_is_intercepted_and_not_reexecuted():
 
 
 def test_no_progress_termination_after_repeated_empty_results():
-    """计划书三、P3「无增量终止」。"""
+    """三、P3「无增量终止」。"""
     dispatcher = _dispatcher(noop=lambda **_: None)
     for i in range(DEFAULT_NO_PROGRESS_LIMIT):
         result = dispatcher.dispatch(ToolCall("noop", {"i": i}))
@@ -146,8 +146,8 @@ def test_progress_resets_the_no_progress_streak():
 def test_custom_progress_predicate():
     """自定义增量判定：默认「有非空输出即增量」不够用时，由工具自己声明。
 
-    例如检索工具返回空结果集——输出非空，但对业务而言等于没查到东西。
-    """
+ 例如检索工具返回空结果集——输出非空，但对业务而言等于没查到东西。
+ """
     registry = ToolRegistry()
     registry.register("fetch", lambda **_: {"items": []},
                       progresses=lambda out: bool(out.get("items")),
@@ -168,7 +168,7 @@ def test_max_calls_ceiling_stops_runaway_loops():
 
 # ------------------------ user_id 自动透传 ------------------------ #
 def test_user_id_is_injected_into_tools_that_need_it():
-    """计划书三、P3「调用数据中台、RAG、Wiki 自动透传 state 中的 user_id」。"""
+    """三、P3「调用数据中台、RAG、Wiki 自动透传 state 中的 user_id」。"""
     seen: dict[str, str] = {}
     reg = ToolRegistry()
     reg.register("data.read_profile", lambda user_id="": seen.setdefault("uid", user_id),
@@ -225,7 +225,7 @@ def test_throttle_policy_validates_every_quota():
 
 
 def test_throttle_requires_user_id_for_account_scoped_quotas():
-    """计划书三、P3「限流按账号维度统计」。"""
+    """三、P3「限流按账号维度统计」。"""
     throttle = ResourceThrottle()
     with pytest.raises(ThrottleError) as ei:
         throttle.consume_tokens("", 100)
@@ -250,7 +250,7 @@ def test_token_quota_is_enforced():
 
 
 def test_jev_quota_is_independent_from_business_quotas():
-    """计划书三、P3「Jev 调用独立配额统计」：业务话务不得挤占 Jev 配额，反之亦然。"""
+    """三、P3「Jev 调用独立配额统计」：业务话务不得挤占 Jev 配额，反之亦然。"""
     throttle = ResourceThrottle(ThrottlePolicy(
         tokens_per_account_per_minute=10, retrievals_per_account_per_minute=1,
         jev_calls_per_account_per_minute=5))
@@ -306,9 +306,9 @@ def test_dispatcher_consults_the_throttle():
 def test_default_quotas_are_pinned():
     """默认配额是**实现参数**，必须被钉住 —— 改动要是有意的，就得同时改这条。
 
-    此前这四条只有「显式传 policy」的用例，**默认值本身没有任何断言**：
-    把 60000 改成 6 也不会有测试变红。
-    """
+ 此前这四条只有「显式传 policy」的用例，**默认值本身没有任何断言**：
+ 把 60000 改成 6 也不会有测试变红。
+ """
     from ai_butler.scheduler import throttle as th
 
     assert th.DEFAULT_TOKENS_PER_ACCOUNT_PER_MINUTE == 60_000
@@ -321,12 +321,12 @@ def test_default_quotas_are_pinned():
 def test_two_tool_call_ceilings_stay_in_step():
     """两处工具调用上限必须同步 —— 它们守的是同一件事的两层。
 
-    · `ToolDispatcher.max_calls`：**单次调度**的上限（调度器自己兜底）
-    · `ThrottlePolicy.tool_calls_per_task`：**按账号**的任务预算（资源节流）
+ · `ToolDispatcher.max_calls`：**单次调度**的上限（调度器自己兜底）
+ · `ThrottlePolicy.tool_calls_per_task`：**按账号**的任务预算（资源节流）
 
-    两者数值相同是有意的。但此前**没有任何测试把它们绑在一起**，
-    改一处、忘另一处，就会出现「同一个上限有两个值」而无人察觉。
-    """
+ 两者数值相同是有意的。但此前**没有任何测试把它们绑在一起**，
+ 改一处、忘另一处，就会出现「同一个上限有两个值」而无人察觉。
+ """
     from ai_butler.scheduler.throttle import DEFAULT_TOOL_CALLS_PER_TASK
 
     assert DEFAULT_MAX_CALLS == DEFAULT_TOOL_CALLS_PER_TASK, (

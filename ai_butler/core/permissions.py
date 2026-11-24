@@ -42,15 +42,15 @@ class PermissionError(RuntimeError):
 
 
 # ================================================================== #
-# 第一层：Agent 能力级（U43）                                          #
+# 第一层：Agent 能力级 #
 # ================================================================== #
 class CapabilityLevel(IntEnum):
     """Agent 能做什么动作。
 
-    与 `SubAgent.capabilities` 的分工：
-    `capabilities` 声明**能拿到哪些工具**（装配层裁剪工具面），
-    本枚举声明**拿到之后能用到什么程度**。两者都要过。
-    """
+ 与 `SubAgent.capabilities` 的分工：
+ `capabilities` 声明**能拿到哪些工具**（装配层裁剪工具面），
+ 本枚举声明**拿到之后能用到什么程度**。两者都要过。
+ """
 
     L0_READ = 0        # 只读：可检索、可推理，不可写任何字段
     L1_WRITE_OWN = 1   # 写自有字段：对应 SubAgent.writes 的现有语义
@@ -58,7 +58,7 @@ class CapabilityLevel(IntEnum):
     L3_CRITICAL = 3    # 高危：支付执行、删数据、改权限、批量外传
 
 
-#: 各能力级默认需要的审批档（U45）。L3 一律双人，无例外。
+#: 各能力级默认需要的审批档。L3 一律双人，无例外。
 #: **按「本动作需要哪一级」查表，不是按「Agent 是哪一级」** ——
 #: 一个 L3 的支付 Agent 做只读检索，依然只需要 L0 的审批档。
 DEFAULT_TIER_BY_LEVEL: Mapping[CapabilityLevel, int] = {
@@ -70,7 +70,7 @@ DEFAULT_TIER_BY_LEVEL: Mapping[CapabilityLevel, int] = {
 
 
 # ================================================================== #
-# 第二层：数据密级（U44）                                              #
+# 第二层：数据密级 #
 # ================================================================== #
 class DataSensitivity(IntEnum):
     """数据敏感程度。决定存储/传输/外传策略，与公私域作用域正交。"""
@@ -81,7 +81,7 @@ class DataSensitivity(IntEnum):
     L4_SECRET = 4       # 凭据、支付要素 —— 端到端加密 + 强制审计
 
 
-#: 各密级的最低处理要求（U44 四级表）。
+#: 各密级的最低处理要求（ 四级表）。
 #: `may_enter_offline_link`：能否进入**脱敏前**的离线进化链路。
 #: P10 红线：L3 及以上不得进 —— 脱敏后另说，但脱敏前的通路必须堵死。
 SENSITIVITY_RULES: Mapping[DataSensitivity, dict[str, bool]] = {
@@ -105,17 +105,17 @@ def requires_encryption(level: DataSensitivity, *, at_rest: bool) -> bool:
 def may_enter_offline_link(level: DataSensitivity) -> bool:
     """能否进入**脱敏前**的离线进化链路（P10 红线）。
 
-    这是单向阀：一旦有 L3/L4 数据想进离线链路，必须在入口就被拦下。
-    脱敏**之后**的数据走另一条通道，与本判定无关。
-    """
+ 这是单向阀：一旦有 L3/L4 数据想进离线链路，必须在入口就被拦下。
+ 脱敏**之后**的数据走另一条通道，与本判定无关。
+ """
     return SENSITIVITY_RULES[level]["may_enter_offline_link"]
 
 
 # ================================================================== #
-# 第三层：用户角色级（U45）                                            #
+# 第三层：用户角色级 #
 # ================================================================== #
 class UserRole(IntEnum):
-    """用户在本账号内的角色。数值越大权限越高，但**不做加权合成**（见 U51）。"""
+    """用户在本账号内的角色。数值越大权限越高，但**不做加权合成**（见 ）。"""
 
     AUDITOR = 0   # 只读：可看审计日志，不可改任何配置
     MEMBER = 1    # 日常使用
@@ -133,7 +133,7 @@ ROLE_CEILING: Mapping[UserRole, CapabilityLevel] = {
 
 
 # ================================================================== #
-# 审批分档（U45）                                                     #
+# 审批分档 #
 # ================================================================== #
 class ApprovalTier(IntEnum):
     """按**副作用**定审批边界，而不是按「这个 Agent 重要不重要」。"""
@@ -145,11 +145,11 @@ class ApprovalTier(IntEnum):
 
 @dataclass(frozen=True)
 class AgentIdentity:
-    """Agent 身份（U43「身份与归属」）。权限判定的主体之一。
+    """Agent 身份（「身份与归属」）。权限判定的主体之一。
 
-    `key` 用 `core.phases` 的阶段键（如 "p1_data_platform"），
-    或垂类的 `vertical:*`，保持与注册表同一套命名。
-    """
+ `key` 用 `core.phases` 的阶段键（如 "p1_data_platform"），
+ 或垂类的 `vertical:*`，保持与注册表同一套命名。
+ """
 
     key: str
     level: CapabilityLevel = CapabilityLevel.L0_READ
@@ -163,8 +163,8 @@ class AgentIdentity:
 class PermissionRequest:
     """一次权限申请。三层齐备才构成一次可判定的请求。
 
-    `required` 是**本动作**需要的能力级，由**调用方显式声明**，不由布尔开关推导。
-    """
+ `required` 是**本动作**需要的能力级，由**调用方显式声明**，不由布尔开关推导。
+ """
 
     agent: AgentIdentity
     role: UserRole
@@ -180,7 +180,7 @@ class PermissionVerdict:
     allowed: bool
     reason: str
     tier: ApprovalTier
-    #: 三层各自的判定。**拒绝时也要填**，否则排查时只知道「被拒了」不知道「哪层拒的」（E-53）。
+    #: 三层各自的判定。**拒绝时也要填**，否则排查时只知道「被拒了」不知道「哪层拒的」。
     by_layer: dict[str, bool] = field(default_factory=dict)
 
     def raise_if_denied(self, *, action: str) -> None:
@@ -194,10 +194,10 @@ class PermissionVerdict:
 
 
 def evaluate(request: PermissionRequest) -> PermissionVerdict:
-    """三层合成判定。**取最严者**（U51 deny-overrides）。
+    """三层合成判定。**取最严者**（ deny-overrides）。
 
-    三层独立算出各自的结论，任一拒绝即拒绝。
-    """
+ 三层独立算出各自的结论，任一拒绝即拒绝。
+ """
     by_layer: dict[str, bool] = {}
     needed = request.required
 
@@ -238,14 +238,14 @@ def evaluate(request: PermissionRequest) -> PermissionVerdict:
 
 def recheck_as(caller: AgentIdentity, callee: AgentIdentity,
                request: PermissionRequest) -> PermissionVerdict:
-    """**权限不可传递**（U51）：被调方必须按自身身份重新判定。
+    """**权限不可传递**：被调方必须按自身身份重新判定。
 
-    A 调 B 时，B 拿到的不是「A 的权限」，而是**B 自己的权限**。
-    这条是借道提权的唯一防线：如果 B 能继承 A 的 L3，
-    那么任何一个 L3 Agent 被攻破，整条调用链上所有 Agent 都变成 L3。
+ A 调 B 时，B 拿到的不是「A 的权限」，而是**B 自己的权限**。
+ 这条是借道提权的唯一防线：如果 B 能继承 A 的 L3，
+ 那么任何一个 L3 Agent 被攻破，整条调用链上所有 Agent 都变成 L3。
 
-    用法：调度层在把任务下发给 B 之前，先用 B 的身份调一次本函数。
-    """
+ 用法：调度层在把任务下发给 B 之前，先用 B 的身份调一次本函数。
+ """
     if request.agent.key != caller.key:
         raise PermissionError(
             f"请求主体是 {request.agent.key}，却声明调用方是 {caller.key} —— 身份不一致，拒绝"
@@ -269,9 +269,9 @@ def recheck_as(caller: AgentIdentity, callee: AgentIdentity,
 def assert_offline_safe(level: DataSensitivity, *, what: str) -> None:
     """离线进化链路的单向阀（P10 红线）。
 
-    凡是要把数据送进**脱敏前**的离线链路，必须先过这一条。
-    L3/L4 一律拒绝 —— 不是「记一笔警告」，是直接抛。
-    """
+ 凡是要把数据送进**脱敏前**的离线链路，必须先过这一条。
+ L3/L4 一律拒绝 —— 不是「记一笔警告」，是直接抛。
+ """
     if not may_enter_offline_link(level):
         raise PermissionError(
             f"密级 {level.name} 的数据不得进入脱敏前的离线进化链路：{what}"
@@ -280,29 +280,29 @@ def assert_offline_safe(level: DataSensitivity, *, what: str) -> None:
 
 
 # ================================================================== #
-# 工具分发上下文（在线编排路径的接线形态）                              #
+# 工具分发上下文（在线编排路径的接线形态） #
 # ================================================================== #
 @dataclass(frozen=True)
 class ToolPermission:
-    """一次工具分发所需的权限上下文（U43 / U44 / U45 / U51）。
+    """一次工具分发所需的权限上下文。
 
-    为什么需要这个类型
-    -----------------
-    三层权限此前只接在**离线独立入口**（`agents/standalone.py` 的 run_standalone）
-    与 CLI 参数枚举上；在线编排路径的 `ToolDispatcher.dispatch` 零求值 ——
-    「声明了权限」与「权限真的生效」是两回事（MEMORY E-21 / E-29 / E-33），
-    本类型把三者补齐到**每一次工具调用**之前。
+ 为什么需要这个类型
+ -----------------
+ 三层权限此前只接在**离线独立入口**（`agents/standalone.py` 的 run_standalone）
+ 与 CLI 参数枚举上；在线编排路径的 `ToolDispatcher.dispatch` 零求值 ——
+ 「声明了权限」与「权限真的生效」是两回事（MEMORY / / ），
+ 本类型把三者补齐到**每一次工具调用**之前。
 
-    **默认拒绝**：未绑定本上下文的分发一律拒绝执行。
-    权限判定的主体、角色、密级齐备才构成一次可判定的请求，
-    缺任何一项都无从判定 —— 无从判定即拒绝（ permissions.py 模块纪律）。
+ **默认拒绝**：未绑定本上下文的分发一律拒绝执行。
+ 权限判定的主体、角色、密级齐备才构成一次可判定的请求，
+ 缺任何一项都无从判定 —— 无从判定即拒绝（ permissions.py 模块纪律）。
 
-    与 U51「权限不可传递」的关系
-    --------------------------
-    本上下文绑定的是**当前调用主体**的身份。子 Agent 经调度器触达工具时，
-    必须以**自己的** `AgentIdentity` 重新求值（`dispatch(..., agent=...)`），
-    不得继承调度器或上游 Agent 的权限。
-    """
+ 与 「权限不可传递」的关系
+ --------------------------
+ 本上下文绑定的是**当前调用主体**的身份。子 Agent 经调度器触达工具时，
+ 必须以**自己的** `AgentIdentity` 重新求值（`dispatch(..., agent=...)`），
+ 不得继承调度器或上游 Agent 的权限。
+ """
 
     #: 当前调用主体（哪个 Agent 在发起这次工具调用）
     agent: AgentIdentity

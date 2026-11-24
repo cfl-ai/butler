@@ -78,12 +78,12 @@ def _has_main_guard(path: Path) -> bool:
 def _has_syspath_bootstrap(path: Path) -> bool:
     """AST 判定：有没有在**业务 import 之前**把项目根补进 sys.path 的引导。
 
-    位置很关键：放在文件末尾的兜底救不了模块顶部的 import ——
-    `python xxx.py` 时 `import ai_butler` 在头部就先失败了。
+ 位置很关键：放在文件末尾的兜底救不了模块顶部的 import ——
+ `python xxx.py` 时 `import ai_butler` 在头部就先失败了。
 
-    `from __future__` 例外：它按语言规范必须位于文件最前，引导不可能排在它前面，
-    所以从它之后开始算。除此之外，引导必须早于任何 import。
-    """
+ `from __future__` 例外：它按语言规范必须位于文件最前，引导不可能排在它前面，
+ 所以从它之后开始算。除此之外，引导必须早于任何 import。
+ """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     for node in tree.body:
         if isinstance(node, ast.ImportFrom) and node.module == "__future__":
@@ -128,9 +128,9 @@ def test_base_modules_are_excluded_on_purpose():
 def test_direct_run_prints_profile_and_exits_zero(module: str):
     """直接运行必须：退出码 0 + 有输出 + 输出里带中文名。
 
-    这一条守的是用户实际遇到的问题：静默退出。
-    退出码 0 而零输出是**最坏的失败形态**——它看起来像成功。
-    """
+ 这一条守的是用户实际遇到的问题：静默退出。
+ 退出码 0 而零输出是**最坏的失败形态**——它看起来像成功。
+ """
     proc = subprocess.run(
         [PY, str(AGENTS_DIR / module)],
         capture_output=True, text=True, encoding="utf-8", timeout=180,
@@ -157,14 +157,14 @@ def test_direct_run_works_via_dash_m():
 def test_partial_identity_is_rejected():
     """只给 --user-id 不给 --session-id 必须报错，不许默认填个假值。
 
-    没有用户上下文的写入无法做行级隔离（计划书三、P0-1）——
-    命令行不能成为绕过隔离的捷径（U48 的边界在命令行的延续）。
+ 没有用户上下文的写入无法做行级隔离（三、P0-1）——
+ 命令行不能成为绕过隔离的捷径（ 的边界在命令行的延续）。
 
-    判据必须是 cli **自己**的用法错误「必须同时给出」：下游
-    `StandaloneContext` 也会因缺 session_id 抛错，但那条错误信息里
-    同样含 session_id 字样 —— 只断言含 session_id 会分不清是谁拦的，
-    cli 层悄悄放行、让下游兜底的守护等于没守（E-27 同族：判据抓不住真问题）。
-    """
+ 判据必须是 cli **自己**的用法错误「必须同时给出」：下游
+ `StandaloneContext` 也会因缺 session_id 抛错，但那条错误信息里
+ 同样含 session_id 字样 —— 只断言含 session_id 会分不清是谁拦的，
+ cli 层悄悄放行、让下游兜底的守护等于没守（ 同族：判据抓不住真问题）。
+ """
     proc = subprocess.run(
         [PY, str(AGENTS_DIR / "p1_data_platform.py"), "--user-id", "u1"],
         capture_output=True, text=True, encoding="utf-8", timeout=180,
@@ -178,9 +178,9 @@ def test_partial_identity_is_rejected():
 def test_no_identity_prints_profile_without_touching_db():
     """不带身份信息时只打印档案，不尝试连数据库。
 
-    判据：连一个不存在的库也能退出码 0 —— 档案路径只读 ClassVar，
-    没有任何存储/网络调用。这也是「右键运行必有输出」的前提。
-    """
+ 判据：连一个不存在的库也能退出码 0 —— 档案路径只读 ClassVar，
+ 没有任何存储/网络调用。这也是「右键运行必有输出」的前提。
+ """
     import os
 
     env = dict(os.environ)
@@ -209,17 +209,17 @@ def test_cluster_module_refuses_business_run():
 # ============================== 业务执行路径 ============================== #
 # 上面几条都在到达枚举转换/业务执行**之前**就拦下了 —— 「带完整身份跑业务」
 # 这条路曾经零覆盖，于是两个真 bug 藏了很久：
-#   ① `_role/_sensitivity/_capability` 用 `Enum(字符串)` 按值查找 IntEnum，
-#      三个选项 100% 崩 ValueError；
-#   ② 异步 Agent 的协程创建后不 await，updates 静默变 {} 却报「已独立执行」。
+# ① `_role/_sensitivity/_capability` 用 `Enum(字符串)` 按值查找 IntEnum，
+# 三个选项 100% 崩 ValueError；
+# ② 异步 Agent 的协程创建后不 await，updates 静默变 {} 却报「已独立执行」。
 # 覆盖缺口本身也是缺陷：这两个测试把路真正走完。
 
 def test_cli_enum_options_map_to_members():
     """--role/--sensitivity/--required 的小写选项必须能映射到枚举成员。
 
-    三个权限枚举都是 IntEnum：`Enum("MEMBER")` 是**按值查找**（值是 0/1/2/3），
-    字符串永远查不到；必须用 `Enum["MEMBER"]` 按名查找。
-    """
+ 三个权限枚举都是 IntEnum：`Enum("MEMBER")` 是**按值查找**（值是 0/1/2/3），
+ 字符串永远查不到；必须用 `Enum["MEMBER"]` 按名查找。
+ """
     from ai_butler.agents.cli import _capability, _role, _sensitivity
     from ai_butler.core.permissions import (
         CapabilityLevel, DataSensitivity, UserRole,
@@ -234,8 +234,8 @@ def test_cli_enum_options_map_to_members():
 def test_full_identity_runs_business_end_to_end():
     """带全身份信息必须真的把业务跑完 —— 退出码 0 + 有执行结果输出。
 
-    样本取 eval_platform：不声明外部能力、同步 run，无需装配即可端到端执行。
-    """
+ 样本取 eval_platform：不声明外部能力、同步 run，无需装配即可端到端执行。
+ """
     proc = subprocess.run(
         [PY, str(AGENTS_DIR / "eval_platform.py"),
          "--user-id", "u1", "--session-id", "s1"],
@@ -251,9 +251,9 @@ def test_full_identity_runs_business_end_to_end():
 def test_business_run_without_tools_fails_cleanly():
     """声明了能力却没绑工具面 → 明确的拒绝，不是 NoneType AttributeError。
 
-    qa 声明 wiki_read；直接命令行跑没有管家装配，必须干净地拒绝
-    （U48：声明了没接上，一律拒绝执行）。
-    """
+ qa 声明 wiki_read；直接命令行跑没有管家装配，必须干净地拒绝
+ （：声明了没接上，一律拒绝执行）。
+ """
     proc = subprocess.run(
         [PY, str(AGENTS_DIR / "qa.py"),
          "--user-id", "u1", "--session-id", "s1"],
@@ -270,8 +270,8 @@ def test_business_run_without_tools_fails_cleanly():
 def test_butler_refuses_business_run_as_governor():
     """管家是管辖者不是被管辖者 —— 对它跑业务是范畴错误，必须干净拒绝。
 
-    曾经的形态：崩 `TypeError: 'ButlerAgent' object is not callable`。
-    """
+ 曾经的形态：崩 `TypeError: 'ButlerAgent' object is not callable`。
+ """
     proc = subprocess.run(
         [PY, str(AGENTS_DIR / "butler.py"),
          "--user-id", "u1", "--session-id", "s1"],

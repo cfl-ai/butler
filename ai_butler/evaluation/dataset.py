@@ -7,9 +7,9 @@ from typing import Any, Mapping, Sequence
 
 from ai_butler.evaluation.redaction import Redactor
 
-#: 允许进训练集的来源（计划书：「公共 Workspace 知识库可用于训练」）
+#: 允许进训练集的来源（「公共 Workspace 知识库可用于训练」）
 SOURCE_PUBLIC_WORKSPACE = "public_workspace"
-#: 计划书点名**禁止**的来源
+#: 设计点名**禁止**的来源
 SOURCE_PRIVATE_VAULT = "private_vault"
 
 ALLOWED_SOURCES: tuple[str, ...] = (SOURCE_PUBLIC_WORKSPACE,)
@@ -25,7 +25,7 @@ class DatasetError(ValueError):
 
 @dataclass(frozen=True)
 class SftSample:
-    """一条指令监督微调样本（Alpaca 格式，裁定 U29）。"""
+    """一条指令监督微调样本（Alpaca 格式，裁定 ）。"""
 
     instruction: str
     output: str
@@ -95,7 +95,7 @@ class SftDataset:
 
 
 def dataset_info_entry(*, name: str, file_name: str) -> dict[str, Any]:
-    """生成 LLaMA-Factory ~{dataset_info.json}~ 里的一条数据集描述（裁定 U29）。"""
+    """生成 LLaMA-Factory ~{dataset_info.json}~ 里的一条数据集描述（裁定 ）。"""
     return {name: {"file_name": file_name,
                    "columns": {"prompt": "instruction", "query": "input",
                                "response": "output", "system": "system",
@@ -105,9 +105,9 @@ def dataset_info_entry(*, name: str, file_name: str) -> dict[str, Any]:
 def assert_offline_source(*, scope: str) -> None:
     """离线链路（增量微调数据集构建）**严禁访问**私有 Vault。
 
-    计划书三、P10「离线链路严禁访问未脱敏用户私有 Vault」——
-    这条约束在离线的入口处就要挡住，不能等到构建阶段。
-    """
+ 三、P10「离线链路严禁访问未脱敏用户私有 Vault」——
+ 这条约束在离线的入口处就要挡住，不能等到构建阶段。
+ """
     if scope in OFFLINE_FORBIDDEN_SCOPES:
         raise DatasetError(
             f"离线链路严禁访问 scope={scope!r}（计划书三、P10 + 三、P9 训练集约束）")

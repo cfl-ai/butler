@@ -62,8 +62,8 @@ class SearchService:
                    evidence_ids: Sequence[str] = ()) -> int:
         """把一段素材切片后写入向量库与 BM25 索引。
 
-        user_id 为空 → 公共 Workspace；非空 → 该账号私有 Vault。
-        """
+ user_id 为空 → 公共 Workspace；非空 → 该账号私有 Vault。
+ """
         chunks = chunk_document(doc_id, text, rule=self.chunking)
         return self.retriever.index(chunks, user_id=user_id, page_id=page_id,
                                     source_id=url, confidence=confidence,
@@ -94,11 +94,11 @@ class SearchService:
 
     def search_for_jev(self, question: str, *, user_id: str, top_k: int = 5
                        ) -> list[dict[str, Any]]:
-        """计划书三、P2「Jev 决策可直接读取声明置信度」。
+        """三、P2「Jev 决策可直接读取声明置信度」。
 
-        只返回 Jev 需要的精简结构：声明 id、置信度、证据 ID —— 不含正文，
-        避免把自由文本塞进结构化决策节点（Skill-01：Jev 只吃枚举与数值）。
-        """
+ 只返回 Jev 需要的精简结构：声明 id、置信度、证据 ID —— 不含正文，
+ 避免把自由文本塞进结构化决策节点（：Jev 只吃枚举与数值）。
+ """
         response = self.search(question, user_id=user_id, top_k=top_k)
         return [{"claim_page_id": h.page_id, "confidence": h.confidence,
                  "evidence_ids": h.evidence_ids, "source_id": h.source_id,

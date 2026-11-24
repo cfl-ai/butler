@@ -81,23 +81,23 @@ from ai_butler.verticals.tour.places import load_places
 logger = get_logger("app")
 
 #: 公开路径白名单：只有基础设施探活 + 登录/访客入口。
-#: **访客凭据不是白名单免鉴权**：它也走同一套中间件校验（U64），
+#: **访客凭据不是白名单免鉴权**：它也走同一套中间件校验，
 #: 这里放行的只是「签发凭据」这个动作本身。
 PUBLIC_PATHS: frozenset[str] = frozenset({
     "/health",
-    # 登录本身不可能携带会话 —— 计划书三、P7 步骤3「账号密码登录」。
+    # 登录本身不可能携带会话 —— 「账号密码登录」。
     "/api/session/login",
-    # 访客入口（U64）：未登录也能进文字查询，但拿到的凭据只有 text_query 一项能力
+    # 访客入口：未登录也能进文字查询，但拿到的凭据只有 text_query 一项能力
     "/api/session/guest",
-    # 注册 / 找回 / 重置（U67/U68）：这三件事**必然发生在登录之前**，
+    # 注册 / 找回 / 重置：这三件事**必然发生在登录之前**，
     # 不放行就永远拿不到会话。注意它们放行的只是"动作本身"，
     # 重置令牌仍然是服务端签发、一次性的。
     "/api/session/register",
     "/api/session/forgot",
     "/api/session/reset",
-    # 昵称建议（U69）：注册前就要能点"随机一个"，无状态、不落库
+    # 昵称建议：注册前就要能点"随机一个"，无状态、不落库
     "/api/accounts/nickname/suggest",
-    # 常规入口的 Web 页面（U116）。**页面本身不含任何数据**，
+    # 常规入口的 Web 页面。**页面本身不含任何数据**，
     # 放行的只是「把这张 HTML 交出去」这个动作；它内部每一个业务请求
     # 仍然带 Bearer 凭据、仍然走同一套会话校验与能力闸。
     "/ui",
@@ -108,13 +108,13 @@ PUBLIC_PATHS: frozenset[str] = frozenset({
 #: 手机直出照片 3~8MB，留了余量；再大就该在端上先压缩，而不是让云端硬吃。
 MAX_BASE64_CHARS: int = 12_000_000
 
-#: Web 对话页（U116）的单文件产物。**读文件而不是把 HTML 嵌进 Python 字符串**：
+#: Web 对话页的单文件产物。**读文件而不是把 HTML 嵌进 Python 字符串**：
 #: 页面改版不该让后端模块跟着重编译，也不该在 Python 里维护一段转义过的 HTML。
 UI_INDEX_PATH: Path = Path(__file__).with_name("web") / "index.html"
 
 
 def build_chat_context_manager(files, settings: Settings) -> ContextManager:
-    """装配多轮上下文（U73）。**唯一装配点**，测试直接断言它。"""
+    """装配多轮上下文。**唯一装配点**，测试直接断言它。"""
     return ContextManager(files, policy=ContextPolicy(
         max_turns=settings.chat_history_max_turns,
         max_chars=settings.chat_history_max_chars,
@@ -131,18 +131,18 @@ def build_chat_orchestrator(*, gateway, search, settings: Settings,
                             tool_answer=None,
                             scene=None,
                             ) -> ChatOrchestrator:
-    """文字查询链路的**唯一装配点**（U73 / U74）。
+    """文字查询链路的**唯一装配点**。
 
-    为什么单独立一个函数：E-77 的教训是「`ContextManager` 有实现、有测试，
-    但全项目没有一个地方构造它」—— 测试只能证明类可用，证明不了链路在用。
-    把构造收成一个可导入的函数后，「有没有插电」就能被一条断言钉住
-    （`test_chat_history.py::test_orchestrator_is_wired_with_context`）。
+ 为什么单独立一个函数： 的教训是「`ContextManager` 有实现、有测试，
+ 但全项目没有一个地方构造它」—— 测试只能证明类可用，证明不了链路在用。
+ 把构造收成一个可导入的函数后，「有没有插电」就能被一条断言钉住
+ （`test_chat_history.py::test_orchestrator_is_wired_with_context`）。
 
-    注意 `context_manager` 允许为 None：那是**显式**的单轮模式（测试缝），
-    不是「忘了接」。生产路径由 `create_app` 无条件传入。
-    `intent_router` 同理，但多一条纪律：**开关开着却没装配，直接报错**。
-    否则「路由没插上」会退化成一个安静的性能问题（每次都按正则分类）。
-    """
+ 注意 `context_manager` 允许为 None：那是**显式**的单轮模式（测试缝），
+ 不是「忘了接」。生产路径由 `create_app` 无条件传入。
+ `intent_router` 同理，但多一条纪律：**开关开着却没装配，直接报错**。
+ 否则「路由没插上」会退化成一个安静的性能问题（每次都按正则分类）。
+ """
     if settings.intent_router_enable and intent_router is None:
         raise ValueError(
             "intent_router_enable=true 但未装配意图路由："
@@ -158,21 +158,21 @@ def build_chat_orchestrator(*, gateway, search, settings: Settings,
         history_enable=settings.chat_history_enable,
         intent_router=intent_router,
         intent_labels=intent_wiring.INTENT_LABELS,
-        # U115：wiki 编译产物注入源（None = 没装，对话会如实说明未注入）
+        #：wiki 编译产物注入源（None = 没装，对话会如实说明未注入）
         wiki_digest=wiki_digest,
-        # U114：对话入口的 function calling 承接层（None = 未装，走既有链路）
+        #：对话入口的 function calling 承接层（None = 未装，走既有链路）
         tool_answer=tool_answer,
-        # U111：主状态机入口（None = 未装，垂类链路不存在）
+        #：主状态机入口（None = 未装，垂类链路不存在）
         scene=scene,
     )
 
 
 def build_entry_wiki_digest(settings: Settings):
-    """装配对话链路的 `wiki_digest` 供给器（U115）。**唯一装配点**。
+    """装配对话链路的 `wiki_digest` 供给器。**唯一装配点**。
 
-    与 `build_chat_orchestrator` 同样的理由（E-77）：构造收成可导入的函数，
-    「有没有插电」才能被一条断言钉住。
-    """
+ 与 `build_chat_orchestrator` 同样的理由：构造收成可导入的函数，
+ 「有没有插电」才能被一条断言钉住。
+ """
     from ai_butler.agent_wiki.wiring import WikiDigestProvider
 
     try:
@@ -183,11 +183,11 @@ def build_entry_wiki_digest(settings: Settings):
 
 
 def build_entry_tool_answer(settings: Settings, *, gateway, wiki_store):
-    """装配对话入口的 function calling 承接层（U114）。**唯一装配点**。
+    """装配对话入口的 function calling 承接层。**唯一装配点**。
 
-    **开关关闭时返回 None**：不装配 = 该路径在生产里根本不存在。
-    这与「装了但开关关了」不同 —— 后者在排障时会让人以为链路是好的。
-    """
+ **开关关闭时返回 None**：不装配 = 该路径在生产里根本不存在。
+ 这与「装了但开关关了」不同 —— 后者在排障时会让人以为链路是好的。
+ """
     if not settings.function_calling_enable:
         return None
     from ai_butler.retrieval.wiring import SearchWiring
@@ -196,7 +196,7 @@ def build_entry_tool_answer(settings: Settings, *, gateway, wiki_store):
 
     # 检索是懒装配的：传工厂而不是现成 service，缺 embedding 权重时
     # 只让「这一次工具调用」失败，不会把整个入口装配打断。
-    # `settings` 一并传下去：外部只读工具（天气/POI，U118）要按配置决定是否注册 ——
+    # `settings` 一并传下去：外部只读工具（天气/POI，）要按配置决定是否注册 ——
     # 没有高德 key 就不注册 search_poi，让模型看不见一个必然失败的工具。
     registry = build_tool_registry(
         search_service=SearchWiring(settings).service, wiki_store=wiki_store,
@@ -217,21 +217,21 @@ def build_entry_tool_answer(settings: Settings, *, gateway, wiki_store):
 
 
 def build_entry_scene(settings: Settings):
-    """装配主状态机的对话入口（U111）。**唯一装配点**。
+    """装配主状态机的对话入口。**唯一装配点**。
 
-    这补的是一个真实的缺口：`SceneScheduler` 之前全项目只在脚本与测试里被构造，
-    「L4 命中 → 垂类执行」有实现、有守护、能跑，但**没有入口**（E-86 完整形态）。
+ 这补的是一个真实的缺口：`SceneScheduler` 之前全项目只在脚本与测试里被构造，
+ 「L4 命中 → 垂类执行」有实现、有守护、能跑，但**没有入口**（ 完整形态）。
 
-    装配的三件事
-    ------------
-    - 路由：只装 L4 垂类层。阶段链（`DispatchPlan.chains`）在生产里仍由既有对话
-      链路承担，这里再建一套等于同一句话说两遍；空 `chains` 让非垂类命中
-      直接终止，不会误派给未注册的子 Agent。
-    - 垂类：`VerticalDispatcher()`（惰性解析 `build_tour_agent`，命中才付装配成本）。
-    - 取点：景点候选走高德官方 POI（无 key 时不装配取点，垂类会如实说取不到点）。
+ 装配的三件事
+ ------------
+ - 路由：只装 L4 垂类层。阶段链（`DispatchPlan.chains`）在生产里仍由既有对话
+ 链路承担，这里再建一套等于同一句话说两遍；空 `chains` 让非垂类命中
+ 直接终止，不会误派给未注册的子 Agent。
+ - 垂类：`VerticalDispatcher`（惰性解析 `build_tour_agent`，命中才付装配成本）。
+ - 取点：景点候选走高德官方 POI（无 key 时不装配取点，垂类会如实说取不到点）。
 
-    开关关闭时返回 None：**不装** = 这条链路在生产里不存在，而不是「装了但没开」。
-    """
+ 开关关闭时返回 None：**不装** = 这条链路在生产里不存在，而不是「装了但没开」。
+ """
     if not getattr(settings, "scene_scheduler_enable", False):
         return None
 
@@ -273,12 +273,12 @@ def _amap_ready(settings: Settings) -> bool:
 
 
 def _build_poi_searcher(settings: Settings):
-    """景点候选检索：高德 `v3/place/text` → `candidate_stops` 行（U111）。
+    """景点候选检索：高德 `v3/place/text` → `candidate_stops` 行。
 
-    返回的是 `TourAgent._stops()` 认的行结构，坐标取高德的 `[经度, 纬度]`。
-    票价为 0（高德 POI 不提供票价）：**不填一个编出来的价格**，
-    合计门票因此只反映真实取到的部分。
-    """
+ 返回的是 `TourAgent._stops` 认的行结构，坐标取高德的 `[经度, 纬度]`。
+ 票价为 0（高德 POI 不提供票价）：**不填一个编出来的价格**，
+ 合计门票因此只反映真实取到的部分。
+ """
     from ai_butler.scheduler.external_tools import build_amap_source, search_poi
 
     source = build_amap_source(settings)
@@ -310,12 +310,12 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
                chat_search=None) -> FastAPI:
     """装配应用。
 
-    `chat_gateway` / `chat_search` 是**测试缝**：文字查询链路的模型与检索
-    都可以从外部注入。生产路径不传，走 `LLMGateway` 与 P2 混合检索；
-    测试注入假实现，就能在不连 Ollama、不加载 embedding 的前提下验证
-    「访客只能文字」「额度用完要提示」「事件契约」这些规则。
-    没有这条缝，这些规则只能靠人工点着试，回归不了。
-    """
+ `chat_gateway` / `chat_search` 是**测试缝**：文字查询链路的模型与检索
+ 都可以从外部注入。生产路径不传，走 `LLMGateway` 与 P2 混合检索；
+ 测试注入假实现，就能在不连 Ollama、不加载 embedding 的前提下验证
+ 「访客只能文字」「额度用完要提示」「事件契约」这些规则。
+ 没有这条缝，这些规则只能靠人工点着试，回归不了。
+ """
     # 日志存储（三、P0-1「统一文件存储、日志存储」）：同时落 stdout 与统一存储作用域
     files = FileStore(settings.storage_root, settings=settings)
     logger = setup_logging(settings.log_level, log_file=str(files.log_path()))
@@ -327,9 +327,9 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     users = UserRegistry(Path(settings.storage_root) / "users.json")
 
-    # ---- 账号 / 模型 / 地点（U67~U71）----
+    # ---- 账号 / 模型 / 地点（~）----
     # 构造失败**不连坐整个 App**（与视觉网关同一条政策）：只有这几个接口返回 503，
-    # 并说明缺什么。但「重置通道不安全」是例外 —— 那条必须让启动直接失败（U68）。
+    # 并说明缺什么。但「重置通道不安全」是例外 —— 那条必须让启动直接失败。
     accounts_root = Path(settings.account_store_root or settings.storage_root)
     accounts: accounts_mod.AccountStore | None = None
     model_access: model_mod.ModelAccess | None = None
@@ -376,12 +376,12 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
     @app.get("/ui")
     @app.get("/ui/")
     async def web_ui() -> Any:
-        """常规入口的 Web 对话页（U116，dsh 形态：左会话 / 中对话 / 右过程）。
+        """常规入口的 Web 对话页（，dsh 形态：左会话 / 中对话 / 右过程）。
 
-        单文件静态页，无构建链 —— 它只消费 `/api/chat/stream` 的 SSE 事件，
-        不引入第二套后端契约。页面在 `PUBLIC_PATHS` 里，但页面里的每个请求
-        仍然要 Bearer 凭据（登录或访客），鉴权没有被绕过。
-        """
+ 单文件静态页，无构建链 —— 它只消费 `/api/chat/stream` 的 SSE 事件，
+ 不引入第二套后端契约。页面在 `PUBLIC_PATHS` 里，但页面里的每个请求
+ 仍然要 Bearer 凭据（登录或访客），鉴权没有被绕过。
+ """
         from fastapi.responses import HTMLResponse
 
         return HTMLResponse(UI_INDEX_PATH.read_text(encoding="utf-8"))
@@ -393,11 +393,11 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     @app.post("/api/session/login")
     async def session_login(request: Request) -> JSONResponse:
-        """账号密码登录（计划书三、P7 步骤3「账号密码登录」）。
+        """账号密码登录（「账号密码登录」）。
 
-        口令只在此处校验一次，**不写入任何日志或响应**。
-        成功返回会话 Token 与有效期，客户端据此发起后续业务请求。
-        """
+ 口令只在此处校验一次，**不写入任何日志或响应**。
+ 成功返回会话 Token 与有效期，客户端据此发起后续业务请求。
+ """
         try:
             body = await request.json()
         except Exception:
@@ -412,7 +412,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
                                  "message": "account / password / device_id 均必填"},
                                 status_code=400)
 
-        # 带 kind 的请求走账号体系（U67：手机号/邮箱）；不带的仍走 U42 的
+        # 带 kind 的请求走账号体系（：手机号/邮箱）；不带的仍走 的
         # storage_root/users.json 旧账号 —— 两条路都保留，避免已注册用户突然登不上。
         # 新增注册一律进账号体系，旧表只减不增。
         if kind in accounts_mod.IDENT_KINDS:
@@ -452,11 +452,11 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     @app.post("/api/device/report")
     async def device_report(request: Request) -> JSONResponse:
-        """设备信息上报（计划书三、P7 步骤7「上报携带会话身份」）。
+        """设备信息上报（「上报携带会话身份」）。
 
-        **user_id 以会话为准，不采信请求体**：body 里的 user_id 与会话不一致即拒绝，
-        防止一方用自己的会话替别人上报。
-        """
+ **user_id 以会话为准，不采信请求体**：body 里的 user_id 与会话不一致即拒绝，
+ 防止一方用自己的会话替别人上报。
+ """
         authed = str(getattr(request.state, "user_id", "") or "")
         try:
             body = await request.json()
@@ -472,10 +472,10 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
         if not authed:
             return JSONResponse({"code": "unauthorized", "message": "缺少会话身份"},
                                 status_code=401)
-        # 当前只做身份校验与受理；落库形态见台账 U42（与账号表同属未定义项）。
+        # 当前只做身份校验与受理；落库形态见（与账号表同属未定义项）。
         return JSONResponse({"status": "accepted", "user_id": authed})
 
-    # ================= 账号与隐私（U67 / U68 / U69）================= #
+    # ================= 账号与隐私================= #
     def _accounts_or_503() -> JSONResponse | None:
         if accounts is None:
             return JSONResponse(
@@ -501,11 +501,11 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     @app.post("/api/session/register")
     async def session_register(request: Request) -> JSONResponse:
-        """注册（U67）。手机号或邮箱二选一，注册成功直接签发成员会话。
+        """注册。手机号或邮箱二选一，注册成功直接签发成员会话。
 
-        注册接口**会**暴露"这个号已被占用" —— 这是必要的：否则用户永远登不上
-        也不知道为什么。防刷靠限流，不靠含糊其辞（登录/找回才做不可枚举）。
-        """
+ 注册接口**会**暴露"这个号已被占用" —— 这是必要的：否则用户永远登不上
+ 也不知道为什么。防刷靠限流，不靠含糊其辞（登录/找回才做不可枚举）。
+ """
         unavailable = _accounts_or_503()
         if unavailable:
             return unavailable
@@ -542,7 +542,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     @app.post("/api/session/forgot")
     async def session_forgot(request: Request) -> JSONResponse:
-        """申请重置（U68）。**无论账号是否存在，响应完全一致**。"""
+        """申请重置。**无论账号是否存在，响应完全一致**。"""
         unavailable = _accounts_or_503()
         if unavailable:
             return unavailable
@@ -564,14 +564,14 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
             "status": "accepted",
             "message": f"如果 {masked} 已注册，重置方式已发送，请在 15 分钟内完成",
         }
-        # 开发通道才回显令牌；生产通道拿不到（U68 的护栏在 build_channel 里）
+        # 开发通道才回显令牌；生产通道拿不到（ 的护栏在 build_channel 里）
         if token and accounts._channel.dev_token_visible():  # type: ignore[union-attr]
             payload["dev_token"] = token
         return JSONResponse(payload)
 
     @app.post("/api/session/reset")
     async def session_reset(request: Request) -> JSONResponse:
-        """用令牌设置新密码（U68）。成功后**吊销该账号全部会话**。"""
+        """用令牌设置新密码。成功后**吊销该账号全部会话**。"""
         unavailable = _accounts_or_503()
         if unavailable:
             return unavailable
@@ -608,7 +608,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     @app.post("/api/accounts/nickname")
     async def account_set_nickname(request: Request) -> JSONResponse:
-        """自定义昵称（U69）。"""
+        """自定义昵称。"""
         unavailable = _accounts_or_503()
         if unavailable:
             return unavailable
@@ -627,7 +627,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     @app.post("/api/accounts/nickname/random")
     async def account_random_nickname(request: Request) -> JSONResponse:
-        """随机刷新昵称（U69），带频控。"""
+        """随机刷新昵称，带频控。"""
         unavailable = _accounts_or_503()
         if unavailable:
             return unavailable
@@ -644,19 +644,19 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
     async def account_nickname_suggest() -> JSONResponse:
         """注册前随机取一个昵称建议。**公开接口**：无状态、不落库、不涉及隐私。
 
-        放在这里而不是端侧各写一份词表：词表只该有**一处**，
-        否则端侧词表迟早和服务端的规则（长度、禁用字符）不一致 ——
-        然后用户会遇到「界面上能填、提交却报非法」。
-        """
+ 放在这里而不是端侧各写一份词表：词表只该有**一处**，
+ 否则端侧词表迟早和服务端的规则（长度、禁用字符）不一致 ——
+ 然后用户会遇到「界面上能填、提交却报非法」。
+ """
         return JSONResponse({"nickname": accounts_mod.random_nickname()})
 
     @app.post("/api/accounts/prefs")
     async def account_set_prefs(request: Request) -> JSONResponse:
-        """改画像标签（U70 ②）。它同时喂两处：默认模型的匹配理由、以及推荐排序。
+        """改画像标签（ ②）。它同时喂两处：默认模型的匹配理由、以及推荐排序。
 
-        没有这个接口时，「按用户画像匹配」只在注册那一刻成立 —— 之后用户
-        永远改不了自己的偏好，等于把画像钉死在注册表单上。
-        """
+ 没有这个接口时，「按用户画像匹配」只在注册那一刻成立 —— 之后用户
+ 永远改不了自己的偏好，等于把画像钉死在注册表单上。
+ """
         unavailable = _accounts_or_503()
         if unavailable:
             return unavailable
@@ -709,7 +709,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
         revoked = await force_logout(store=store, user_id=uid)
         return JSONResponse({"status": "ok", "revoked_sessions": revoked})
 
-    # ================= 模型接入（U70）================= #
+    # ================= 模型接入================= #
     def _models_or_503() -> JSONResponse | None:
         if model_access is None:
             return JSONResponse(
@@ -724,10 +724,10 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
     async def models_list(request: Request) -> JSONResponse:
         """可选模型 + 当前绑定 + 剩余额度。`api_key` 只以掩码出现。
 
-        同时挂 GET 与 POST：端侧的 `TransportPort` 只有 `post` / `stream`
-        （见 ports.dart，为的是让传输层保持最小面），所以给一个 POST 别名，
-        不必为了一个列表接口去扩传输层。GET 留着供 curl 排查。
-        """
+ 同时挂 GET 与 POST：端侧的 `TransportPort` 只有 `post` / `stream`
+ （见 ports.dart，为的是让传输层保持最小面），所以给一个 POST 别名，
+ 不必为了一个列表接口去扩传输层。GET 留着供 curl 排查。
+ """
         unavailable = _models_or_503()
         if unavailable:
             return unavailable
@@ -763,7 +763,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     @app.post("/api/models/byok")
     async def models_byok(request: Request) -> JSONResponse:
-        """接入自带模型（U70）。key 加密落盘，**响应里只有掩码**。"""
+        """接入自带模型。key 加密落盘，**响应里只有掩码**。"""
         unavailable = _models_or_503()
         if unavailable:
             return unavailable
@@ -798,14 +798,14 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
         removed = model_access.unbind(user_id=uid)  # type: ignore[union-attr]
         return JSONResponse({"removed": removed})
 
-    # ================= 定位 / 推荐 / 导航（U71）================= #
+    # ================= 定位 / 推荐 / 导航================= #
     @app.post("/api/location/recommend")
     async def location_recommend(request: Request) -> JSONResponse:
-        """按所在地 + 喜好推荐。**坐标先粗化再参与计算**（U71 ①）。
+        """按所在地 + 喜好推荐。**坐标先粗化再参与计算**（ ①）。
 
-        没有地图 key，所以响应里**不含**任何底图或地址反查结果，
-        只给坐标、距离与理由，并由 `map_available=false` 明确告知。
-        """
+ 没有地图 key，所以响应里**不含**任何底图或地址反查结果，
+ 只给坐标、距离与理由，并由 `map_available=false` 明确告知。
+ """
         uid, tier = _authed(request)
         access.require(tier, access.Capability.LOCATION_SHARE)
         body = await _read_json(request)
@@ -849,7 +849,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     @app.post("/api/location/navigation")
     async def location_navigation(request: Request) -> JSONResponse:
-        """生成三大导航 App 的跳转链接（U71 ③）。本地拼 URL，不需要 key。"""
+        """生成三大导航 App 的跳转链接（ ③）。本地拼 URL，不需要 key。"""
         _uid, tier = _authed(request)
         access.require(tier, access.Capability.LOCATION_SHARE)
         body = await _read_json(request)
@@ -869,12 +869,12 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
             return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
         return JSONResponse({
             "links": [link.as_dict() for link in links],
-            # 起点默认交给导航 App 自己取，我方坐标不外传（U71 ③）
+            # 起点默认交给导航 App 自己取，我方坐标不外传（ ③）
             "origin_shared": body.get("origin_lat") is not None,
         })
 
 
-    # ---- 图文识别 / 图文输出（台账 U61/U62；计划书未定义，人工指令追加）----
+    # ---- 图文识别 / 图文输出----
     # 网关构造失败**不许连坐整个 App**：视觉不可用时其它业务照常跑，
     # 只有这几个接口按月返回 503 并给出可执行原因（例如「先 ollama pull」）。
     try:
@@ -964,7 +964,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
             "notes": result.notes,
         })
 
-    # ---- 访客凭据 + 能力档案（台账 U64）----
+    # ---- 访客凭据 + 能力档案----
     # 「未登录只能文字查询」不是放宽鉴权，而是**另发一种能力受限期短的凭据**：
     # 访客同样过 SessionAuthMiddleware，只是能力表里只有 text_query。
     guest_budget = access.GuestBudget(
@@ -985,9 +985,9 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
     async def session_guest(request: Request) -> JSONResponse:
         """签发访客凭据。
 
-        **能力受限 + 期限更短 + 有额度**，三件事缺一都不能叫「安全地允许未登录查询」：
-        期限防长期占用，额度防匿名刷模型，能力表防越界。
-        """
+ **能力受限 + 期限更短 + 有额度**，三件事缺一都不能叫「安全地允许未登录查询」：
+ 期限防长期占用，额度防匿名刷模型，能力表防越界。
+ """
         if not settings.guest_enable:
             return JSONResponse({"code": "guest_disabled",
                                  "message": "访客模式已关闭，请登录后使用"},
@@ -1029,7 +1029,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
             payload["text_query_remaining"] = guest_budget.remaining(user_id)
         return JSONResponse(payload)
 
-    # ---- 检索规划（U66）：分类 + 工具选择，可单独调用以核对判据 ----
+    # ---- 检索规划：分类 + 工具选择，可单独调用以核对判据 ----
     @app.post("/api/retrieval/plan")
     async def retrieval_plan_endpoint(request: Request) -> JSONResponse:
         """给一句话，返回「它属于哪一类、该用哪些工具、为什么」。"""
@@ -1052,7 +1052,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
                              "categories": describe_categories(),
                              "tools": describe_tools()})
 
-    # ---- 语音链路（P7；U63/U65）----
+    # ---- 语音链路（P7；）----
     # 运行时构造**不加载模型**（懒加载），所以这里失败只可能是路径/参数问题。
     try:
         speech: SpeechRuntime | None = SpeechRuntime(
@@ -1101,7 +1101,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     @app.post("/api/voice/asr")
     async def voice_asr(request: Request) -> JSONResponse:
-        """语音 → 文字。**登录后才可用**（U64：语音能力属成员层级）。"""
+        """语音 → 文字。**登录后才可用**（：语音能力属成员层级）。"""
         _require(request, access.Capability.VOICE_INPUT)
         try:
             body = await request.json()
@@ -1122,7 +1122,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     @app.post("/api/voice/tts")
     async def voice_tts(request: Request) -> JSONResponse:
-        """文字 → 语音（WAV base64）。端侧没有本地 TTS 模型时由此兜底（U21）。"""
+        """文字 → 语音（WAV base64）。端侧没有本地 TTS 模型时由此兜底。"""
         _require(request, access.Capability.VOICE_OUTPUT)
         try:
             body = await request.json()
@@ -1152,7 +1152,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     @app.post("/api/voice/speaker/enroll")
     async def speaker_enroll(request: Request) -> JSONResponse:
-        """声纹登记（U63）。**只存 embedding，不存音频原件**。"""
+        """声纹登记。**只存 embedding，不存音频原件**。"""
         _require(request, access.Capability.SPEAKERPRINT)
         user_id = str(getattr(request.state, "user_id", "") or "")
         try:
@@ -1178,9 +1178,9 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
     async def speaker_verify(request: Request) -> JSONResponse:
         """声纹校验（1:1，只比对自己的登记样本）。
 
-        **1:N 只在本账号内做**：跨账号比对会让「谁是谁」变成全库检索，
-        一旦阈值偏松就是大规模冒认。跨账号场景不在本阶段范围内。
-        """
+ **1:N 只在本账号内做**：跨账号比对会让「谁是谁」变成全库检索，
+ 一旦阈值偏松就是大规模冒认。跨账号场景不在本阶段范围内。
+ """
         _require(request, access.Capability.SPEAKERPRINT)
         user_id = str(getattr(request.state, "user_id", "") or "")
         try:
@@ -1210,7 +1210,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
         payload["code"] = "voiceprint_matched" if verdict.matched else "voiceprint_rejected"
         return JSONResponse(payload, status_code=200 if verdict.matched else 403)
 
-    # ---- 文字查询（U64/U66）：访客可用的唯一业务链路 ----
+    # ---- 文字查询：访客可用的唯一业务链路 ----
     # 网关与检索都**懒装配**：模型/向量库加载失败只影响本链路，
     # 不连坐登录、设备上报、图文识别。
     gateway: LLMGateway | None = chat_gateway
@@ -1223,12 +1223,12 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
 
     search = chat_search if chat_search is not None else build_search_fn(settings)
     context_manager = build_chat_context_manager(files, settings)
-    # 意图路由（U74）：装配完立刻**后台预热**向量层（冷启动约 9.7s，不能在请求里做）
+    # 意图路由：装配完立刻**后台预热**向量层（冷启动约 9.7s，不能在请求里做）
     intent_router = intent_wiring.build_intent_router(settings, gateway=gateway)
     if intent_router is None and settings.intent_router_enable:
         logger.error("意图路由装配为空，文字查询将退化为纯正则分类", None)
 
-    # ---- Agent-Wiki 生产装配（U115）----
+    # ---- Agent-Wiki 生产装配----
     # 编译流水线此前**只在 smoke 脚本里跑过**：`wiki_compile_auto_run=true` 是空转，
     # 机器缓存与 `wiki_digest` 在生产里从来没生成过。这里补上生产者与消费者。
     wiki_store = None
@@ -1250,10 +1250,10 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
         logger.error("Wiki 存储装配失败：本次启动不提供已编译事实", exc)
     wiki_digest = build_entry_wiki_digest(settings)
 
-    # ---- 对话入口的 function calling（U114）----
+    # ---- 对话入口的 function calling----
     # 开关关闭时返回 None：该路径在生产里**根本不存在**，而不是「装了但没开」。
     tool_answer = build_entry_tool_answer(settings, gateway=gateway, wiki_store=wiki_store)
-    # ---- 主状态机入口（U111）----
+    # ---- 主状态机入口----
     # 同样是「关掉就不装」：垂类链路要么有一条真入口，要么整个不存在。
     scene = build_entry_scene(settings)
 
@@ -1263,9 +1263,9 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
         intent_router=intent_router, wiki_digest=wiki_digest,
         tool_answer=tool_answer, scene=scene)
 
-    # ---- 会话痕迹埋点（U91）：每次运行结束折一条 AgentTrace 写进事件账本 ----
+    # ---- 会话痕迹埋点：每次运行结束折一条 AgentTrace 写进事件账本 ----
     # 这是 `evaluation/journal_source.py` 声言的「线上链路每次运行结束时（埋点）」
-    # 的**生产侧**。没有它，离线闭环的首轮痕迹来源（U84）永远是空的：
+    # 的**生产侧**。没有它，离线闭环的首轮痕迹来源永远是空的：
     # 闭环会停在 `no_traces`，「评测中台发现错误」只能靠人工喂 traces——
     # 声明有了、能力没有，正是项目铁律要抓的形态。
     #
@@ -1292,9 +1292,9 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
     async def chat_stream(request: Request) -> StreamingResponse:
         """文字查询（SSE）。**访客可用，但只走文字**。
 
-        SSE 事件契约（端侧按 `type` 分支，不猜顺序）：
-        `plan` → `chunk`* → [`revise`] → `done`；异常走 `error` / `clarify`。
-        """
+ SSE 事件契约（端侧按 `type` 分支，不猜顺序）：
+ `plan` → `chunk`* → [`revise`] → `done`；异常走 `error` / `clarify`。
+ """
         user_id = str(getattr(request.state, "user_id", "") or "")
         tier = _tier(request)
 
@@ -1336,7 +1336,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
                             "访客额度已用完，请登录后继续"),
                     media_type="text/event-stream")
 
-        # U73：会话标识**必须由服务端签发并校验归属**。
+        #：会话标识**必须由服务端签发并校验归属**。
         # 不信任客户端自报的任何字段 —— 端侧此前把设备号当 session_id 传，
         # 结果是一台设备上所有对话落进同一分片并永久累积。三种情况一律重签：
         # 从没签发过、格式非法、归属不符（后两者对客户端**不作区分**，
@@ -1363,12 +1363,12 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
                 conversation_note = resolution.note
 
         def _journal_session_trace(events: list) -> None:
-            """流结束：折一条 AgentTrace 写进事件账本（U91）。
+            """流结束：折一条 AgentTrace 写进事件账本。
 
-            **任何异常只记日志**：埋点是手段，回答是目的。为了留痕把
-            用户等着的回答弄坏，或者让一次脱敏断言炸掉整条流，
-            都是把手段当成了目的。
-            """
+ **任何异常只记日志**：埋点是手段，回答是目的。为了留痕把
+ 用户等着的回答弄坏，或者让一次脱敏断言炸掉整条流，
+ 都是把手段当成了目的。
+ """
             if trace_journal is None or not events:
                 return
             try:
@@ -1395,7 +1395,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
                             "memory": settings.chat_history_enable and bool(conversation_id),
                             "note": conversation_note,
                         }})
-            # 埋点（U91）：事件原样转给端侧的同时留一份，流结束后折成痕迹落账。
+            # 埋点：事件原样转给端侧的同时留一份，流结束后折成痕迹落账。
             collected: list = []
             async for event in orchestrator.stream(
                     user_id=user_id, query=utterance, tier=tier,
@@ -1410,9 +1410,9 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
     async def _access_denied(request: Request, exc: access.AccessDenied) -> JSONResponse:
         """能力不足统一回 403 + 机器可读 code。
 
-        端侧据此区分两件事：「去登录就能用」与「真的坏了」——
-        都用 500 或都用 401 会让客户端只能弹一句含糊的「操作失败」。
-        """
+ 端侧据此区分两件事：「去登录就能用」与「真的坏了」——
+ 都用 500 或都用 401 会让客户端只能弹一句含糊的「操作失败」。
+ """
         return JSONResponse(exc.as_dict(), status_code=403)
 
     # 内 → 外添加（Starlette 后加的先执行，最终外层为 RequestLog）
@@ -1423,7 +1423,7 @@ def create_app(settings: Settings, redis, *, chat_gateway=None,
         public_paths=PUBLIC_PATHS,
     )
     # 视觉接口单独放宽：识别要走视觉模型，几十秒是预期内耗时，
-    # 用通用 30s 会必然 504（端到端实测过一次，见台账 U61）。
+    # 用通用 30s 会必然 504（端到端实测过一次，见）。
     # 语音与文字查询同理：前者要跑 VAD/ASR/TTS 推理，后者首次请求要加载
     # embedding 模型。它们都属于「预期内计算」，不是「接口卡住」。
     # 注意：流式响应本身按「首字节截止」处理，这些值管的是**首字节之前**的等待。

@@ -113,7 +113,7 @@ __all__ = [
 #: 不借用真实用户的话务与配额。
 REPAIR_USER_ID = "system:p10-repair"
 
-#: 一轮闭环最多跑几轮（实现参数，计划书未给刻度）。
+#: 一轮闭环最多跑几轮（实现参数，未给刻度）。
 #:
 #: 取 3 而非更大的理由不是成本，是**归因能力**：第 4 轮开始时，第一轮改动
 #: 的上下文已经被两轮补丁盖住，人类复核时无法判断「现在这行是谁写的」。
@@ -125,7 +125,7 @@ DEFAULT_MAX_ROUNDS = 3
 #: `chat.py` 里写的是 `from ai_butler.retrieval.planner import plan as plan_query`：
 #: 名字在 **import 时**就绑进了 chat 的模块全局。所以只 reload planner 不够——
 #: chat 仍指向旧函数；必须再把 chat 也 reload 一遍，它才会重新 import。
-#: 漏一个不会报错，只会安静地评旧代码（E-83）。
+#: 漏一个不会报错，只会安静地评旧代码。
 CHAT_PIPELINE_MODULES: tuple[str, ...] = (
     "ai_butler.retrieval.planner",
     "ai_butler.material_center.verification",
@@ -140,10 +140,10 @@ CHAT_PIPELINE_MODULES: tuple[str, ...] = (
 class PipelineHolder:
     """持有「当前这条管道」，可在补丁落盘后重载模块并重建。
 
-    `builder` 是**延迟导入**的：它在函数体内 `from ... import ChatOrchestrator`，
-    而不是在模块顶部 import 好再传进来。写成顶部导入就白 reload 了——
-    顶部那个名字指向旧类，重建出来的还是旧实例。
-    """
+ `builder` 是**延迟导入**的：它在函数体内 `from ... import ChatOrchestrator`，
+ 而不是在模块顶部 import 好再传进来。写成顶部导入就白 reload 了——
+ 顶部那个名字指向旧类，重建出来的还是旧实例。
+ """
 
     builder: Callable[[], Any]
     base_modules: Sequence[str] = CHAT_PIPELINE_MODULES
@@ -171,11 +171,11 @@ class PipelineHolder:
 def _reload_module(name: str) -> bool:
     """reload 一个已加载的模块。**没加载过就跳过**（没什么可刷新的）。
 
-    主路径是 `importlib.reload`。它按模块名重新找 spec，所以从任意路径
-    加载的模块（`spec_from_file_location`，测试里的管道替身就是这么进来的）
-    会 `ModuleNotFoundError`；那种情况退回「用原 loader 重执行」——
-    效果等价（同一次模块对象上重跑一遍源码），只是不刷新 `__spec__`。
-    """
+ 主路径是 `importlib.reload`。它按模块名重新找 spec，所以从任意路径
+ 加载的模块（`spec_from_file_location`，测试里的管道替身就是这么进来的）
+ 会 `ModuleNotFoundError`；那种情况退回「用原 loader 重执行」——
+ 效果等价（同一次模块对象上重跑一遍源码），只是不刷新 `__spec__`。
+ """
     module = sys.modules.get(name)
     if module is None:
         return False
@@ -200,9 +200,9 @@ def build_pipeline_producer(*, builder: Callable[[], Any],
                             ) -> StreamTraceProducer:
     """装配**真实对话管道**的痕迹生产端。
 
-    装配期就建一次管道：`builder` 里的导入错误当场暴露，
-    而不是等复评跑到一半才炸（那时会被记成「复评失败」，很难指向真正的原因）。
-    """
+ 装配期就建一次管道：`builder` 里的导入错误当场暴露，
+ 而不是等复评跑到一半才炸（那时会被记成「复评失败」，很难指向真正的原因）。
+ """
     holder = PipelineHolder(builder=builder, base_modules=tuple(modules),
                             user_id=user_id)
     holder.refresh()
@@ -217,11 +217,11 @@ def reload_targets(diff: str, *,
                    base: Sequence[str] = CHAT_PIPELINE_MODULES) -> tuple[str, ...]:
     """本次补丁碰到的模块 + 管道自身，按「被依赖者在前」排好序。
 
-    补丁可能改在管道依赖链之外（例如 `scheduler/router.py`，chat 从它那里
-    import `IntentRouter`）。那种模块必须在管道之前 reload，否则管道重新
-    import 到的还是旧符号。解析失败时**只回 base**：宁可多 reload，
-    不可漏——漏了就是安静地评旧代码。
-    """
+ 补丁可能改在管道依赖链之外（例如 `scheduler/router.py`，chat 从它那里
+ import `IntentRouter`）。那种模块必须在管道之前 reload，否则管道重新
+ import 到的还是旧符号。解析失败时**只回 base**：宁可多 reload，
+ 不可漏——漏了就是安静地评旧代码。
+ """
     touched: list[str] = []
     try:
         from ai_butler.harness.patch import parse_unified_diff
@@ -246,10 +246,10 @@ def reload_targets(diff: str, *,
 class RepairStage:
     """闭环里的一段。**三段都留痕**：停在哪一段，就是结论的全部。
 
-    `round_id` 单独一列而不是拼进 `name`：多轮时会出现多个同名段
-    （`evaluate` / `recheck` 每轮各一次），把轮次拼进名字会让
-    「按 stage 名统计」立刻失效——那是下游看板正在做的事。
-    """
+ `round_id` 单独一列而不是拼进 `name`：多轮时会出现多个同名段
+ （`evaluate` / `recheck` 每轮各一次），把轮次拼进名字会让
+ 「按 stage 名统计」立刻失效——那是下游看板正在做的事。
+ """
 
     name: str                     # evaluate / repair / recheck / fingerprint / boundary
     ok: bool
@@ -263,21 +263,21 @@ class RepairStage:
 
 @dataclass(frozen=True)
 class RoundScope:
-    """一轮的**边界**：这一轮只许动什么、什么被锁住（U81）。
+    """一轮的**边界**：这一轮只许动什么、什么被锁住。
 
-    用户的要求是「保障修改的代码只负责自己的板块」。落到判据上是三条：
+ 用户的要求是「保障修改的代码只负责自己的板块」。落到判据上是三条：
 
-    - `allowed_prefixes`：本轮受理的缺陷类别所对应的子系统（并集）。
-      多个缺陷时取并集而不是交集——交集会让「同时有两个板块的缺陷」变成
-      谁都改不了，那不是收紧，是卡死。
-    - `locked_paths`：前几轮**已提交**补丁动过的文件。本轮不可再改。
-    - `conflicts`：本轮缺陷**直接指向**、却已被锁住的文件。
-      非空 = 要修就必须先撤销，而撤销要人签字。
+ - `allowed_prefixes`：本轮受理的缺陷类别所对应的子系统（并集）。
+ 多个缺陷时取并集而不是交集——交集会让「同时有两个板块的缺陷」变成
+ 谁都改不了，那不是收紧，是卡死。
+ - `locked_paths`：前几轮**已提交**补丁动过的文件。本轮不可再改。
+ - `conflicts`：本轮缺陷**直接指向**、却已被锁住的文件。
+ 非空 = 要修就必须先撤销，而撤销要人签字。
 
-    `conflicts` 之所以必须单独列出来而不是「碰巧被 locked 拦下就好」：
-    两者的处置相反——前者是「等你签字我就能干」，后者是「这不是你该碰的」。
-    混成一个「越界」会让审批的人不知道该批什么。
-    """
+ `conflicts` 之所以必须单独列出来而不是「碰巧被 locked 拦下就好」：
+ 两者的处置相反——前者是「等你签字我就能干」，后者是「这不是你该碰的」。
+ 混成一个「越界」会让审批的人不知道该批什么。
+ """
 
     round_id: str
     allowed_prefixes: tuple[str, ...] = ()
@@ -303,10 +303,10 @@ class RoundScope:
 class RepairOutcome:
     """一次闭环运行的全部结论。
 
-    `verdict` 为空字符串表示**没走到复评**——那不是一种复评结论，
-    是「这一轮不需要/不允许复评」。把它硬填成 `accepted` 或
-    `rejected_*` 都会骗人，所以留空并让 `reason` 说清楚为什么。
-    """
+ `verdict` 为空字符串表示**没走到复评**——那不是一种复评结论，
+ 是「这一轮不需要/不允许复评」。把它硬填成 `accepted` 或
+ `rejected_*` 都会骗人，所以留空并让 `reason` 说清楚为什么。
+ """
 
     user_id: str
     stages: tuple[RepairStage, ...] = ()
@@ -316,7 +316,7 @@ class RepairOutcome:
     clean: bool = False
     #: 停在半路，需要人接手
     requires_manual: bool = False
-    #: 停在一张审批票上（撤销已提交补丁需要人工确认，U81）
+    #: 停在一张审批票上（撤销已提交补丁需要人工确认，）
     requires_approval: bool = False
     #: 需要人工批准的那张票（`requires_approval=True` 时非空）
     approval_request: Mapping[str, Any] = field(default_factory=dict)
@@ -328,7 +328,7 @@ class RepairOutcome:
     repair: Mapping[str, Any] = field(default_factory=dict)
     #: 复评段的摘要（fixed / regressed / after_defects / new_kinds / remaining）
     recheck: Mapping[str, Any] = field(default_factory=dict)
-    #: 每轮的溯源摘要（U81）。全文在 `RepairTrail` 里，这里只放能直接读的部分。
+    #: 每轮的溯源摘要。全文在 `RepairTrail` 里，这里只放能直接读的部分。
     rounds: tuple[Mapping[str, Any], ...] = ()
     #: 本轮实际执行的撤销（撤销成功后才有）
     undone: tuple[Mapping[str, Any], ...] = ()
@@ -376,30 +376,30 @@ def build_repair_loop(*, builder: Callable[[], Any] | None = None,
                       user_id: str = REPAIR_USER_ID) -> RepairLoop:
     """装配「评测中台 → harness → 复评」这条闭环。**唯一装配点。**
 
-    `builder`（重建对话管道的工厂）与 `producer`（痕迹生产端）二选一：
+ `builder`（重建对话管道的工厂）与 `producer`（痕迹生产端）二选一：
 
-    - 给了 `builder`：装配真实管道生产端，复评会**真跑**用例；
-    - 只给 `producer`：用调用方给的生产端（测试替身 / 别的管道）；
-    - 都不给：`producer` 为 None。这时复评只能给 `UNVERIFIED`——
-      **这是刻意的默认**，不是忘了接：拿「补丁已应用」推断「修好了」
-      正是这条链路最容易撒的谎。
+ - 给了 `builder`：装配真实管道生产端，复评会**真跑**用例；
+ - 只给 `producer`：用调用方给的生产端（测试替身 / 别的管道）；
+ - 都不给：`producer` 为 None。这时复评只能给 `UNVERIFIED`——
+ **这是刻意的默认**，不是忘了接：拿「补丁已应用」推断「修好了」
+ 正是这条链路最容易撒的谎。
 
-    跨轮设施（U81）也在这里装配，且**默认值是「能记但撤不了」**：
+ 跨轮设施也在这里装配，且**默认值是「能记但撤不了」**：
 
-    - `ledger` 缺省按 `patch_root` 建（有 root 就能撤销，因为撤销要写盘）；
-    - `trail` 缺省只留内存（不给路径就不落盘，测试与一次性运行不该留垃圾）；
-    - `approvals` 缺省为 None。此时若有冲突文件需要撤销，闭环**停**并说明
-      「需要人工确认但没有审批服务」——不给捷径。
+ - `ledger` 缺省按 `patch_root` 建（有 root 就能撤销，因为撤销要写盘）；
+ - `trail` 缺省只留内存（不给路径就不落盘，测试与一次性运行不该留垃圾）；
+ - `approvals` 缺省为 None。此时若有冲突文件需要撤销，闭环**停**并说明
+ 「需要人工确认但没有审批服务」——不给捷径。
 
-    持久化（U83）由两个路径参数控制，**建议一起给**：
+ 持久化由两个路径参数控制，**建议一起给**：
 
-    - `ledger_path`：版本账落盘。跨进程撤销必需（`before` 正文跟着落盘）；
-    - `trail_path`：溯源账落盘。跨进程的轮次编号必需。
-      只给前者会让编号从 R1 重来，而账本里 R1 已存在——第二次运行提交不了补丁。
+ - `ledger_path`：版本账落盘。跨进程撤销必需（`before` 正文跟着落盘）；
+ - `trail_path`：溯源账落盘。跨进程的轮次编号必需。
+ 只给前者会让编号从 R1 重来，而账本里 R1 已存在——第二次运行提交不了补丁。
 
-    首轮痕迹（U84）由 `journal` 控制：给了会话账本就装配
-    `JournalTraceSource`，`run(traces=...)` 可以省略。
-    """
+ 首轮痕迹由 `journal` 控制：给了会话账本就装配
+ `JournalTraceSource`，`run(traces=...)` 可以省略。
+ """
     if producer is not None and builder is not None:
         # 两个都给：不安静地挑一个。挑哪个都可能是错的，而错的方式是
         # 「复评跑的是另一条管道」——结论看起来完全正常，只是不对。
@@ -417,7 +417,7 @@ def build_repair_loop(*, builder: Callable[[], Any] | None = None,
     if ledger is None and (patch_root or ledger_path):
         # 有工作根才建带 root 的账本：账本的价值一半是「知道改过什么」，
         # 另一半是「能撤回去」。没有 root 的那一半如实缺席，不假装。
-        # 给了 `ledger_path` 才落盘——不给就只活在内存里（U83：跨进程撤销
+        # 给了 `ledger_path` 才落盘——不给就只活在内存里（：跨进程撤销
         # 需要 before 正文一起落盘，见 harness/revision.py 的持久化一节）。
         ledger = RevisionLedger(
             root=Path(patch_root) if patch_root else None,
@@ -425,12 +425,12 @@ def build_repair_loop(*, builder: Callable[[], Any] | None = None,
     if trail is None and trail_path:
         # 溯源账落盘才有「跨轮的轮次号」。两者要一起给：只持久化版本账
         # 会让编号在重启后从 R1 重来，而版本账里 R1 已存在——第二次运行
-        # 提交不了补丁（U82 的真机症状，只是换了个触发场景）。
+        # 提交不了补丁（ 的真机症状，只是换了个触发场景）。
         trail = RepairTrail(path=trail_path)
     return RepairLoop(evaluator=evaluator, harness=harness, user_id=user_id,
                       max_rounds=max_rounds, ledger=ledger, trail=trail,
                       approvals=approvals,
-                      # 首轮痕迹的来源（U84）：给了会话账本，`run(traces=...)`
+                      # 首轮痕迹的来源：给了会话账本，`run(traces=...)`
                       # 就可以不传——首轮读的是**已经发生过的会话**。
                       source=(JournalTraceSource(journal) if journal is not None
                               else None))
@@ -443,35 +443,35 @@ def build_repair_loop(*, builder: Callable[[], Any] | None = None,
 class RepairLoop:
     """把两个 Agent 按固定顺序驱动，失败就再来一轮（有界）。
 
-    `evaluator` / `harness` 允许注入替身（测试用），但**顺序不留参数**：
-    它是这条链路的安全属性，不是可配置项。
+ `evaluator` / `harness` 允许注入替身（测试用），但**顺序不留参数**：
+ 它是这条链路的安全属性，不是可配置项。
 
-    `max_rounds=1` 时行为与 U80 完全一致（单轮）。这不是兼容性妥协，
-    是为了让「多轮」这件事可被**对照测试**：同一批输入，一轮与三轮的差别
-    必须只来自轮次本身。
-    """
+ `max_rounds=1` 时行为与 完全一致（单轮）。这不是兼容性妥协，
+ 是为了让「多轮」这件事可被**对照测试**：同一批输入，一轮与三轮的差别
+ 必须只来自轮次本身。
+ """
 
     evaluator: Any
     harness: Any
     user_id: str = REPAIR_USER_ID
-    #: 最多跑几轮。1 = 单轮（与 U80 行为完全一致）。
+    #: 最多跑几轮。1 = 单轮（与 行为完全一致）。
     max_rounds: int = DEFAULT_MAX_ROUNDS
-    #: 已提交补丁的版本账（U81）。为 None 时「能记但撤不了」——
+    #: 已提交补丁的版本账。为 None 时「能记但撤不了」——
     #: 本轮若出现需要撤销的冲突，闭环会停并说明缺什么。
     ledger: RevisionLedger | None = None
     #: 轮次溯源账。为 None 时按需建一个内存账本（`explain` 仍然可用）。
     trail: RepairTrail | None = None
-    #: 首轮痕迹的来源（U84）。`run(traces=...)` 为空时用它产出。
+    #: 首轮痕迹的来源。`run(traces=...)` 为空时用它产出。
     #: 与 `producer`（复评现跑）是两件事：首轮读**已经发生过的会话**，
     #: 复评读**刚刚改完之后重跑的会话**。混成一个参数会让「评的是哪一版代码」
     #: 在跨轮里变得说不清。
     source: Any = None
-    #: 人工审批服务。撤销已提交补丁**必须**经它签票（U59/U81）。
+    #: 人工审批服务。撤销已提交补丁**必须**经它签票。
     approvals: ApprovalService | None = None
-    #: 撤销票的申请主体（票与 agent/role 绑定，U51 不可传递）
+    #: 撤销票的申请主体（票与 agent/role 绑定， 不可传递）
     approval_agent: str = REPAIR_USER_ID
     approval_role: str = "p10-harness"
-    #: 撤销票有效期（秒）。无人应答即拒（U59），不设「永久有效」。
+    #: 撤销票有效期（秒）。无人应答即拒，不设「永久有效」。
     approval_ttl: float = 24 * 3600
 
     # ------------------------------------------------------------------ #
@@ -487,7 +487,7 @@ class RepairLoop:
         if self.trail is None:
             self.trail = RepairTrail()
         # 每个读口都先回读一次：给了 `path` 的溯源账在**跨进程**时才有历史，
-        # 而编号续接（`_next_round_no`）正是靠这份历史。`load()` 是幂等的
+        # 而编号续接（`_next_round_no`）正是靠这份历史。`load` 是幂等的
         # （内存里已有记录就直接返回），所以放在这里不会重复载入。
         self.trail.load()
         return self.trail
@@ -496,11 +496,11 @@ class RepairLoop:
             self, cases: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
         """首轮痕迹：从来源取，转成 State 形态。**同一个 trace 只收一次。**
 
-        按用例取而不是按 question 去重，是因为来源的端口就是 `produce(case)`；
-        多个用例问同一个问题时，同一个 trace 会被取到多次——按 `trace_id`
-        去重，否则稳定性维度的分母会被凭空放大：看起来「跑了两次」，
-        其实只有一次，判出来的「稳定」是假的。
-        """
+ 按用例取而不是按 question 去重，是因为来源的端口就是 `produce(case)`；
+ 多个用例问同一个问题时，同一个 trace 会被取到多次——按 `trace_id`
+ 去重，否则稳定性维度的分母会被凭空放大：看起来「跑了两次」，
+ 其实只有一次，判出来的「稳定」是假的。
+ """
         seen: set[str] = set()
         out: list[dict[str, Any]] = []
         for case in cases:
@@ -511,16 +511,16 @@ class RepairLoop:
                     continue
                 seen.add(trace.trace_id)
                 # 出口走 `trace_to_dict` 而不是自己拼：State 的字段名与
-                # `trace_from_dict` 是一对，两处各拼一次必然分叉（E-44）。
+                # `trace_from_dict` 是一对，两处各拼一次必然分叉。
                 out.append(trace_to_dict(trace))
         return out
 
     def _next_round_no(self) -> int:
         """本次运行从第几轮开始编号：接在账本里已有轮次之后。
 
-        只看 `R<n>` 形态并取最大者 + 1：账本里可能有别人写进来的其它前缀，
-        那些不该影响编号；而缺口（R1、R3）不影响——重号才是问题，跳号不是。
-        """
+ 只看 `R<n>` 形态并取最大者 + 1：账本里可能有别人写进来的其它前缀，
+ 那些不该影响编号；而缺口（R1、R3）不影响——重号才是问题，跳号不是。
+ """
         highest = 0
         for record in self._trail().rounds():
             suffix = record.round_id[1:]
@@ -536,13 +536,13 @@ class RepairLoop:
                   undo_rounds: Sequence[str] = ()) -> RepairOutcome:
         """跑闭环。每一轮都完整走「评 → 修 → 复评」，最多 `max_rounds` 轮。
 
-        `cases` / `traces` 是 State 形态的 dict（可 JSON 化）。
-        `traces` 可以不给：那时由 `source`（首轮痕迹来源，U84）从会话账本取。
+ `cases` / `traces` 是 State 形态的 dict（可 JSON 化）。
+ `traces` 可以不给：那时由 `source`（首轮痕迹来源，）从会话账本取。
 
-        `undo_approval` / `undo_rounds` 是**人工已批准**的撤销：只有
-        「本轮要改的文件被前几轮锁住」或「上一轮改坏了要回到基线」时才用得上。
-        一张票只撤一次（U59），且签名绑定轮次——拿 R1 的票撤 R2 一律拒。
-        """
+ `undo_approval` / `undo_rounds` 是**人工已批准**的撤销：只有
+ 「本轮要改的文件被前几轮锁住」或「上一轮改坏了要回到基线」时才用得上。
+ 一张票只撤一次，且签名绑定轮次——拿 R1 的票撤 R2 一律拒。
+ """
         case_list = [dict(c) for c in cases]
         trace_list = [dict(t) for t in traces]
         stages: list[RepairStage] = []
@@ -551,9 +551,9 @@ class RepairLoop:
         prev_fp: DefectFingerprint | None = None
         carried: tuple[PlatformReport, ...] = ()
         total_rounds = max(1, int(self.max_rounds))
-        # 轮次号**跨次运行续接**：同一个闭环实例第二次 `run()` 不能又从 R1 开始。
-        # 撞号的后果两处都是硬的——溯源账里两条不同的 R1（`get()` 只看得见第一条），
-        # 版本账那边更直接：`record()` 拒绝同一轮二次提交，第二次根本提交不了补丁。
+        # 轮次号**跨次运行续接**：同一个闭环实例第二次 `run` 不能又从 R1 开始。
+        # 撞号的后果两处都是硬的——溯源账里两条不同的 R1（`get` 只看得见第一条），
+        # 版本账那边更直接：`record` 拒绝同一轮二次提交，第二次根本提交不了补丁。
         base = self._next_round_no()
 
         if not trace_list and self.source is not None:
@@ -897,15 +897,15 @@ class RepairLoop:
                   why: str = "") -> RepairOutcome:
         """改不下去、又必须动被锁文件 → 申请撤销票并停下。
 
-        **只有到这一步才打扰人**：只要本轮别的板块还能改，就不该来要审批。
-        这也是「边界」与「撤销审批」两件事的分界——前者是自动化自己能守的，
-        后者必须有人签字。
+ **只有到这一步才打扰人**：只要本轮别的板块还能改，就不该来要审批。
+ 这也是「边界」与「撤销审批」两件事的分界——前者是自动化自己能守的，
+ 后者必须有人签字。
 
-        `undone` 是**本次运行前面几轮已经撤掉的**：从这里提前返回时也要带上，
-        否则「撤销生效了」这件事会随早退一起消失，人只能看到文件变了却查不到
-        是谁撤的。`tag` 与 `round_no` 分开收：前者是账本上的唯一编号（跨次
-        运行续接），后者是本次运行跑了几轮。
-        """
+ `undone` 是**本次运行前面几轮已经撤掉的**：从这里提前返回时也要带上，
+ 否则「撤销生效了」这件事会随早退一起消失，人只能看到文件变了却查不到
+ 是谁撤的。`tag` 与 `round_no` 分开收：前者是账本上的唯一编号（跨次
+ 运行续接），后者是本次运行跑了几轮。
+ """
         request = self._request_undo(list(scope.undo_rounds),
                                      reason=(f"{list(scope.conflicts)} 已被 "
                                              f"{list(scope.undo_rounds)} 改动过，"
@@ -967,8 +967,8 @@ class RepairLoop:
                     approval_id: str) -> tuple[tuple[Any, ...], str]:
         """按票撤销。**先全部成功再返回**，任何一份失败都不继续。
 
-        返回 `(撤销凭证, 失败原因)`。失败原因为空字符串表示全部成功。
-        """
+ 返回 `(撤销凭证, 失败原因)`。失败原因为空字符串表示全部成功。
+ """
         if self.ledger is None:
             return (), "没有版本账（ledger），无从撤销"
         if not round_ids:
@@ -1039,9 +1039,9 @@ class RepairLoop:
                  case_count: int) -> dict[str, Any]:
         """把上一轮复评的报告晋升为本轮基线。
 
-        用 `EvaluationPlatformAgent.section_from_reports` 而不是自己拼：
-        两处拼同一段结构，迟早分叉（E-44）。
-        """
+ 用 `EvaluationPlatformAgent.section_from_reports` 而不是自己拼：
+ 两处拼同一段结构，迟早分叉。
+ """
         builder = getattr(self.evaluator, "section_from_reports", None)
         if builder is None:
             raise TypeError(
@@ -1084,12 +1084,12 @@ class RepairLoop:
     def _focus_on(self, diff: str) -> None:
         """按本次补丁触碰的模块，收窄下一轮的重载目标。
 
-        不改这里的后果：补丁改在 `scheduler/router.py` 这类管道**依赖**上时，
-        只 reload 管道本身仍会拿到旧的被导入符号——复评安静地评旧代码（E-83）。
+ 不改这里的后果：补丁改在 `scheduler/router.py` 这类管道**依赖**上时，
+ 只 reload 管道本身仍会拿到旧的被导入符号——复评安静地评旧代码。
 
-        只对 `PipelineHolder`（真实管道）生效。别的生产端自己负责刷新：
-        本模块不知道它是怎么造出来的，替它猜只会把「没刷新」藏得更深。
-        """
+ 只对 `PipelineHolder`（真实管道）生效。别的生产端自己负责刷新：
+ 本模块不知道它是怎么造出来的，替它猜只会把「没刷新」藏得更深。
+ """
         producer = getattr(self.evaluator, "producer", None)
         holder = getattr(producer, "stream_factory", None)
         if isinstance(holder, PipelineHolder):
@@ -1117,16 +1117,16 @@ def _section(state: Mapping[str, Any], key: str) -> dict[str, Any]:
 def _patch_view(patch: Mapping[str, Any] | None) -> dict[str, Any]:
     """溯源账里的补丁视图：**不含源码正文**（`committed.before`）。
 
-    `before` 只在撤销时需要，由版本账（`harness/revision.py`）单独持有。
-    溯源账是给人反复读的，塞进整份源码只会让人找不到重点，
-    而且它会把账本体积放大到无法按轮翻阅。
+ `before` 只在撤销时需要，由版本账（`harness/revision.py`）单独持有。
+ 溯源账是给人反复读的，塞进整份源码只会让人找不到重点，
+ 而且它会把账本体积放大到无法按轮翻阅。
 
-    同时把 `paths` / `touched` 补齐：账要回答「改了哪些文件、改了几行」，
-    这两个键必须有唯一来源。生产端（`agents/p10_harness.py`）给的是**成功
-    应用结果的并集**；只给 `committed` 的替身在这里补齐，免得每个读账的
-    地方各自兜底一次（E-44 的老毛病）。两处都缺就留空——没有凭据时
-    **不猜文件名**，账宁可少写，不能编。
-    """
+ 同时把 `paths` / `touched` 补齐：账要回答「改了哪些文件、改了几行」，
+ 这两个键必须有唯一来源。生产端（`agents/p10_harness.py`）给的是**成功
+ 应用结果的并集**；只给 `committed` 的替身在这里补齐，免得每个读账的
+ 地方各自兜底一次（ 的老毛病）。两处都缺就留空——没有凭据时
+ **不猜文件名**，账宁可少写，不能编。
+ """
     view = dict(patch or {})
     committed = view.get("committed")
     if isinstance(committed, Mapping):
@@ -1141,9 +1141,9 @@ def _patch_view(patch: Mapping[str, Any] | None) -> dict[str, Any]:
 def _batch(section: Mapping[str, Any]) -> DefectBatch:
     """从 `eval_platform` 段还原缺陷批次。
 
-    **形态不对就抛**，不吞成空批：空批会让「数据坏了」看起来像「全部通过」，
-    而这条链路后面紧接着就是「自动改代码」。
-    """
+ **形态不对就抛**，不吞成空批：空批会让「数据坏了」看起来像「全部通过」，
+ 而这条链路后面紧接着就是「自动改代码」。
+ """
     raw = section.get("defects")
     if not isinstance(raw, Mapping):
         return DefectBatch()
@@ -1152,7 +1152,7 @@ def _batch(section: Mapping[str, Any]) -> DefectBatch:
 
 def _reports(section: Mapping[str, Any]) -> list[PlatformReport]:
     """复评段里的 after 报告。**没有就返回空**——空表示「没有新基线」，
-    与本轮「全好了」是两件事，调用方必须分开处理。"""
+ 与本轮「全好了」是两件事，调用方必须分开处理。"""
     raw = section.get("reports")
     if not isinstance(raw, (list, tuple)):
         return []

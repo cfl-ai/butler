@@ -76,7 +76,7 @@ def test_public_path_needs_no_token(settings, redis_client):
 
 
 def test_force_logout_kills_all_devices(settings, redis_client):
-    """计划书：支持单账号多端登录、强制踢下线。"""
+    """支持单账号多端登录、强制踢下线。"""
 
     async def main():
         s, store, client = _build(settings, redis_client)
@@ -95,11 +95,11 @@ def test_force_logout_kills_all_devices(settings, redis_client):
 def test_logout_revokes_only_its_own_session(settings, redis_client):
     """单端登出：只吊销自己那一个 jti，别的设备不受影响。
 
-    为什么补这条：logout() 与 login()/force_logout() 同属会话生命周期 API，
-    但**既没被调用过也没被测过**（死代码审计发现的）。
-    登录与强制踢下线都有覆盖，唯独它没有 —— 而它处理的是「凭证主动作废」，
-    正是最不该未经验证的那类路径。
-    """
+ 为什么补这条：logout 与 login/force_logout 同属会话生命周期 API，
+ 但**既没被调用过也没被测过**（死代码审计发现的）。
+ 登录与强制踢下线都有覆盖，唯独它没有 —— 而它处理的是「凭证主动作废」，
+ 正是最不该未经验证的那类路径。
+ """
 
     async def main():
         s, store, client = _build(settings, redis_client)
@@ -117,7 +117,7 @@ def test_logout_revokes_only_its_own_session(settings, redis_client):
 
 
 def test_idle_session_is_rejected(settings, redis_client):
-    """计划书：长时间无交互会话自动失效，失效后客户端提示重新登录。"""
+    """长时间无交互会话自动失效，失效后客户端提示重新登录。"""
 
     async def main():
         s, store, client = _build(settings, redis_client)
@@ -131,7 +131,7 @@ def test_idle_session_is_rejected(settings, redis_client):
 
 
 def test_token_is_refreshed_before_expiry(settings, redis_client):
-    """计划书：会话 Token 自动刷新。"""
+    """会话 Token 自动刷新。"""
     ttl, idle, ahead = 900, 800, 300
 
     async def main():

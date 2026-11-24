@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SPEC_PATH = ROOT / "docs" / "统一架构规范文档.md"
 CI_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 
-#: 含凭据的环境文件。计划书三、P0-1 要求隐私字段独立加密，
+#: 含凭据的环境文件。三、P0-1 要求隐私字段独立加密，
 #: 这些文件无论如何都不能进版本库 —— **只允许 .env.example 入库**。
 SECRET_ENV_FILES = (".env", ".env.dev", ".env.test", ".env.staging", ".env.prod")
 
@@ -76,9 +76,9 @@ def test_no_environment_file_is_tracked():
 def test_gitignore_rules_actually_work():
     """.gitignore 必须**真的**排除掉这些路径。
 
-    只看「当前有没有被跟踪」是不够的：文件不存在时断言恒绿，
-    而规则可能从来没写过。这里用 git check-ignore 直接问规则本身。
-    """
+ 只看「当前有没有被跟踪」是不够的：文件不存在时断言恒绿，
+ 而规则可能从来没写过。这里用 git check-ignore 直接问规则本身。
+ """
     unchecked: list[str] = []
     for rel in (*SECRET_ENV_FILES, *BULKY_PATHS):
         proc = _git("check-ignore", "-q", rel)
@@ -94,14 +94,14 @@ def test_gitignore_rules_actually_work():
 def test_shipped_assets_are_not_swallowed_by_model_ignore_rule():
     """端侧随包模型必须**不被**忽略 —— 否则新克隆的仓库编不出 APK。
 
-    真事：`.gitignore` 里写的是 `models/`（无前导斜杠），它按「任意层级名为 models
-    的目录」匹配，于是 `mobile/assets/models/` 被一并吞掉。表现极具迷惑性：
-    本机上文件都在、`flutter build apk` 也照样成功，只有 `git ls-files mobile/assets`
-    是空的 —— **换台机器 clone 下来才会发现 VAD 和唤醒词都没有**。
+ 真事：`.gitignore` 里写的是 `models/`（无前导斜杠），它按「任意层级名为 models
+ 的目录」匹配，于是 `mobile/assets/models/` 被一并吞掉。表现极具迷惑性：
+ 本机上文件都在、`flutter build apk` 也照样成功，只有 `git ls-files mobile/assets`
+ 是空的 —— **换台机器 clone 下来才会发现 VAD 和唤醒词都没有**。
 
-    与 `test_gitignore_rules_actually_work` 正好互补：那条守「该排的要排掉」，
-    这条守「不该排的别误伤」。同一条规则的两个方向都得有人看着。
-    """
+ 与 `test_gitignore_rules_actually_work` 正好互补：那条守「该排的要排掉」，
+ 这条守「不该排的别误伤」。同一条规则的两个方向都得有人看着。
+ """
     swallowed: list[str] = []
     for rel in SHIPPED_ASSET_PATHS:
         proc = _git("check-ignore", "-q", rel)
@@ -142,12 +142,12 @@ def _ci_trigger_branches() -> set[str]:
 def test_spec_branch_model_matches_ci_triggers():
     """规范 12.1 的每一个分支，都必须在 CI 触发条件里有对应项。
 
-    规范第 13 章写着「分支表与 CI 触发条件一致（`tests/test_ci_pipeline.py`）」，
-    但那个文件**并没有这条断言** —— 又一处「写了却没接上」。这里补上。
+ 规范第 13 章写着「分支表与 CI 触发条件一致（`tests/test_ci_pipeline.py`）」，
+ 但那个文件**并没有这条断言** —— 又一处「写了却没接上」。这里补上。
 
-    映射说明：CI 触发用 `**` 匹配含斜杠的分支名（GitHub Actions 与 Gitea 一致），
-    故规范的 `feature/*` 对应 CI 的 `feature/**`。
-    """
+ 映射说明：CI 触发用 `**` 匹配含斜杠的分支名（GitHub Actions 与 Gitea 一致），
+ 故规范的 `feature/*` 对应 CI 的 `feature/**`。
+ """
     spec = _spec_branches()
     assert spec, "未能从架构规范 12.1 解析出分支表（表格格式可能已变更）"
 

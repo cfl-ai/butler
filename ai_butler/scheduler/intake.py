@@ -68,9 +68,9 @@ _CATEGORY_VALUES = frozenset(c.value for c in QueryCategory)
 class SlotKind(str, Enum):
     """信息类型（槽位种类）。
 
-    与 `QueryCategory` 正交：那一轴是「查询形态」（决定工具序列），
-    这一轴是「信息种类」（决定由谁处理、要不要碰私有数据）。
-    """
+ 与 `QueryCategory` 正交：那一轴是「查询形态」（决定工具序列），
+ 这一轴是「信息种类」（决定由谁处理、要不要碰私有数据）。
+ """
 
     LOCATION = "location"        # 地点
     TIME = "time"                # 时间 / 日期
@@ -111,9 +111,9 @@ _MIN_UNIT_CHARS = 4
 class IntakeContext:
     """消解指代所依赖的会话上下文。
 
-    **只在这一层被消费**：补全完成后，下游拿到的是自包含单元，不再需要它。
-    全空 = 没有上下文可用，此时含指代的单元如实标 `unresolved`。
-    """
+ **只在这一层被消费**：补全完成后，下游拿到的是自包含单元，不再需要它。
+ 全空 = 没有上下文可用，此时含指代的单元如实标 `unresolved`。
+ """
 
     location: str = ""
     topic: str = ""
@@ -153,7 +153,7 @@ class Assignment:
     agent: str                        # 阶段 Agent 名，或 `vertical:<key>` 形态的垂类
     capabilities: tuple[str, ...]     # 工具能力（真值源：agents.capabilities）
     note: str = ""
-    #: U118：是否来自「未命中调配表」的只读兜底。命中表时恒为 False。
+    #:：是否来自「未命中调配表」的只读兜底。命中表时恒为 False。
     fallback: bool = False
 
     @property
@@ -167,7 +167,7 @@ class Assignment:
 #: (任务类型, 信息类型) → (Agent, 工具能力)
 #: 不给「大概归它管」留默认值：查不到就是查不到，宁可走兜底也不要猜着派。
 #:
-#: 只读能力集（U118）——**绝不含 `CAP_WIKI_WRITE` / `CAP_PAYMENT`**：
+#: 只读能力集——**绝不含 `CAP_WIKI_WRITE` / `CAP_PAYMENT`**：
 #: 兜底可以「多给一个只读工具」，绝不能「顺手给一个写权限」。
 #: 定义在表之前：表里的条目要引用它，放着后面会 NameError（模块级求值顺序）。
 READ_ONLY_CAPABILITIES: tuple[str, ...] = (CAP_RETRIEVAL, CAP_WIKI_READ,
@@ -223,7 +223,7 @@ ASSIGNMENTS: dict[tuple[str, str], Assignment] = {
     # 判不出来：走**最宽的只读集合**，不是最窄的。
     # 原先是只给检索 —— 结果是「杭州明天会下雨吗」这类句子（unknown + none）
     # 拿到一份只有 `search_materials` 的清单，模型据此如实回答
-    # 「我没有天气查询工具」。工具明明注册着，只是被裁剪掉了（E-108 同族）。
+    # 「我没有天气查询工具」。工具明明注册着，只是被裁剪掉了（ 同族）。
     # 判不出的语义本来就是「不知道该归谁」，此时把只读全集给出去才对；
     # 命中具体格子的组合**仍然按最小权限**给。
     (QueryCategory.UNKNOWN.value, SlotKind.NONE.value): Assignment(
@@ -243,20 +243,20 @@ _NO_FALLBACK_CATEGORIES: frozenset[str] = frozenset({
 def assign(unit: InformationUnit) -> Assignment | None:
     """查调配表。返回 None = **不派发**。
 
-    U118 起有第二段：表上查不到时给**只读兜底**（`fallback=True`）。
+ 起有第二段：表上查不到时给**只读兜底**（`fallback=True`）。
 
-    为什么要兜底（如实记录动机）
-    ---------------------------
-    表上只有 15 个组合，而真实口语几乎都落在格子外面：
-    「杭州天气怎么样」判成 `unknown + location`、「报销流程是什么」判成
-    `procedure + none` —— 两者都不在表里。结果就是 function calling 开关
-    打开了也**一个单元都进不了回路**，开关变成装饰。这不是「猜着派」，
-    而是「查不到具体归属时，交给通用规划单元，且只给只读工具」：
+ 为什么要兜底（如实记录动机）
+ ---------------------------
+ 表上只有 15 个组合，而真实口语几乎都落在格子外面：
+ 「杭州天气怎么样」判成 `unknown + location`、「报销流程是什么」判成
+ `procedure + none` —— 两者都不在表里。结果就是 function calling 开关
+ 打开了也**一个单元都进不了回路**，开关变成装饰。这不是「猜着派」，
+ 而是「查不到具体归属时，交给通用规划单元，且只给只读工具」：
 
-    - 兜底**不含任何写能力**，最坏结果是「多调了一次只读工具」；
-    - 兜底**留痕**（`fallback=True` 会出现在 `IntakeReport` 里），
-      事后能统计「兜底率」，据此补表 —— 而不是让盲区永远看不见。
-    """
+ - 兜底**不含任何写能力**，最坏结果是「多调了一次只读工具」；
+ - 兜底**留痕**（`fallback=True` 会出现在 `IntakeReport` 里），
+ 事后能统计「兜底率」，据此补表 —— 而不是让盲区永远看不见。
+ """
     hit = ASSIGNMENTS.get((unit.category, unit.slot_kind.value))
     if hit is not None:
         return hit
@@ -275,9 +275,9 @@ def resolve_references(text: str, context: IntakeContext | None = None
                        ) -> tuple[str, tuple[str, ...], tuple[str, ...], dict[str, Any]]:
     """把指代补成自包含值，返回 (补全后文本, 消解痕迹, 未解决指代, 槽位)。
 
-    消解**留痕**：单元里带 `resolved`，谁被替换过一目了然 ——
-    悄悄替换等于让下游无法判断这个值有多可信。
-    """
+ 消解**留痕**：单元里带 `resolved`，谁被替换过一目了然 ——
+ 悄悄替换等于让下游无法判断这个值有多可信。
+ """
     ctx = context or IntakeContext()
     resolved: list[str] = []
     unresolved: list[str] = []
@@ -323,10 +323,10 @@ def resolve_references(text: str, context: IntakeContext | None = None
 def split_units(text: str) -> tuple[str, ...]:
     """按并列/追加信号把一句拆成多件事。
 
-    **先验是「切成有意义的几件事」，不是「见到连接词就切」**：
-    过切会产生无法独立理解的碎片，那比不切更糟。所以太短的片段会被丢弃，
-    且切完只剩一段时直接返回原句。
-    """
+ **先验是「切成有意义的几件事」，不是「见到连接词就切」**：
+ 过切会产生无法独立理解的碎片，那比不切更糟。所以太短的片段会被丢弃，
+ 且切完只剩一段时直接返回原句。
+ """
     pieces: list[str] = [text]
     for marker in _SPLIT_MARKERS:
         nxt: list[str] = []
@@ -389,15 +389,15 @@ def discretize(utterance: str, *, context: IntakeContext | None = None,
                intent_label: str | None = None) -> tuple[InformationUnit, ...]:
     """把一次用户输入变成一组**自包含的离散单元**。
 
-    `intent_label` 只在规则型分类落空时作为兜底（与 `planner.classify` 同口径：
-    先确定性后概率性）。
+ `intent_label` 只在规则型分类落空时作为兜底（与 `planner.classify` 同口径：
+ 先确定性后概率性）。
 
-    **但不是任何标签都能当兜底**：调度器给的意图标签是 `DispatchPlan` 的键
-    （如 `"weather_q"`），那是「谁执行」的分派名，不是 `QueryCategory`（「怎么处理」）。
-    把分派名当查询分类塞进来，`ASSIGNMENTS` 永远查不到 —— 表面「接通了」，
-    实际每个单元都被记成 unassigned。所以只接受**合法的 QueryCategory 值**，
-    其余一律不理，让分类器自己判。
-    """
+ **但不是任何标签都能当兜底**：调度器给的意图标签是 `DispatchPlan` 的键
+ （如 `"weather_q"`），那是「谁执行」的分派名，不是 `QueryCategory`（「怎么处理」）。
+ 把分派名当查询分类塞进来，`ASSIGNMENTS` 永远查不到 —— 表面「接通了」，
+ 实际每个单元都被记成 unassigned。所以只接受**合法的 QueryCategory 值**，
+ 其余一律不理，让分类器自己判。
+ """
     text = (utterance or "").strip()
     if not text:
         return ()
@@ -407,7 +407,7 @@ def discretize(utterance: str, *, context: IntakeContext | None = None,
     for piece in split_units(text):
         resolved_text, resolved, unresolved, slots = resolve_references(piece, context)
         kind = detect_slot_kind(resolved_text)
-        # 任务类型**复用既有分类器**（E-44：另造一套必漂移）
+        # 任务类型**复用既有分类器**（：另造一套必漂移）
         category, _reason, _signals = classify(resolved_text, intent_label=hint)
         if category is QueryCategory.UNKNOWN and hint:
             category_value = hint
@@ -431,18 +431,18 @@ def plan_assignments(units: Sequence[InformationUnit]
 
 
 # --------------------------------------------------------------------------- #
-# ⑤ 接通：离散单元 → 裁剪后的工具清单 → function calling 回路（U114）
+# ⑤ 接通：离散单元 → 裁剪后的工具清单 → function calling 回路
 # --------------------------------------------------------------------------- #
 def build_tools_for(assignment: Assignment, registry: Any) -> list[dict[str, Any]]:
     """把调配结论落成**实际下发给模型**的工具清单。
 
-    两道闸都必须过：
-    1. 工具声明的能力 ∈ 调配给的能力集合（计划书三、P4：按职责授予，不是全量下发）；
-    2. 工具写了参数契约（`exposed_to_model`）。
+ 两道闸都必须过：
+ 1. 工具声明的能力 ∈ 调配给的能力集合（按职责授予，不是全量下发）；
+ 2. 工具写了参数契约（`exposed_to_model`）。
 
-    **只下发该 Agent 职责内的工具** —— 若让模型看见全部工具，权限边界就从
-    「按职责授予」退化成「模型自觉」，那是把护栏交给了概率。
-    """
+ **只下发该 Agent 职责内的工具** —— 若让模型看见全部工具，权限边界就从
+ 「按职责授予」退化成「模型自觉」，那是把护栏交给了概率。
+ """
     from ai_butler.scheduler.tools import spec_as_openai_tool
 
     allowed = set(assignment.capabilities)
@@ -502,9 +502,9 @@ def _brief(value: Any, limit: int = CALL_BRIEF_MAX_CHARS) -> str:
 def _is_empty_result(output: Any) -> bool:
     """工具「跑成功了，但什么都没查到」。
 
-    **必须与「调用失败」分开**：`ok=True` 且 `count=0` 是最容易被当成
-    「有依据」的情况 —— 它其实意味着答案没有数据支撑（E-92 同族）。
-    """
+ **必须与「调用失败」分开**：`ok=True` 且 `count=0` 是最容易被当成
+ 「有依据」的情况 —— 它其实意味着答案没有数据支撑（ 同族）。
+ """
     if not isinstance(output, Mapping):
         return False
     if output.get("found") is False:
@@ -544,16 +544,16 @@ class IntakeReport:
 
     @property
     def fallback_count(self) -> int:
-        """走过只读兜底的单元数（U118）。命中调配表的不计。"""
+        """走过只读兜底的单元数。命中调配表的不计。"""
         return sum(1 for o in self.outcomes if o.assignment is not None
                    and o.assignment.fallback)
 
     def as_dict(self) -> dict[str, Any]:
         """落成可进 State 的普通字典。
 
-        **只带结论，不带活对象**：进 State 的东西会被下游 Agent、聚合、账本看到，
-        把 `ToolResult` / dataclass 原样塞进去等于让下游去猜内部结构。
-        """
+ **只带结论，不带活对象**：进 State 的东西会被下游 Agent、聚合、账本看到，
+ 把 `ToolResult` / dataclass 原样塞进去等于让下游去猜内部结构。
+ """
         units = []
         for o in self.outcomes:
             res = o.result
@@ -566,8 +566,8 @@ class IntakeReport:
                 "unresolved": list(o.unit.unresolved),
                 "self_contained": o.unit.self_contained,
                 "agent": o.assignment.agent if o.assignment else "",
-                #: U118：这个单元是「命中调配表」还是「只读兜底」——兜底率高
-                #: 说明表该补了。不暴露这个标记，盲区就永远是盲区（E-87 同族）。
+                #:：这个单元是「命中调配表」还是「只读兜底」——兜底率高
+                #: 说明表该补了。不暴露这个标记，盲区就永远是盲区（ 同族）。
                 "assignment_fallback": bool(o.assignment.fallback) if o.assignment else False,
                 "tools": [t["function"]["name"] for t in o.tools],
                 "skipped": o.skipped,
@@ -577,7 +577,7 @@ class IntakeReport:
                 "truncated": bool(res.truncated) if res else False,
                 "tool_calls": len(res.tool_results) if res else 0,
                 "degradation": list(res.degradation) if res else [],
-                #: U119：每次调用的明细（工具名 / 入参 / 成败 / 结果摘要）。
+                #:：每次调用的明细（工具名 / 入参 / 成败 / 结果摘要）。
                 #: 只报「调了 3 次」等于让用户看不见过程 —— 而过程正是他要的。
                 "calls": [_call_view(r) for r in (res.tool_results if res else ())],
             })
@@ -596,20 +596,20 @@ async def run_units(*, gateway: Any, dispatcher: Any, registry: Any,
                     chat_kwargs: Mapping[str, Any] | None = None) -> IntakeReport:
     """接通：输入 → 离散单元 → 裁剪工具 → 每个单元一条 function calling 回路。
 
-    `intent_label` 是**五层意图路由（U74）已经给出的结论**。本层不取代路由：
-    路由负责「这是什么任务」，离散化负责「拆开、补全指代、按类型调配」。
-    两者协作才对 —— 让离散化去重复猜一次意图，等于把概率结论覆盖确定性结论。
+ `intent_label` 是**五层意图路由已经给出的结论**。本层不取代路由：
+ 路由负责「这是什么任务」，离散化负责「拆开、补全指代、按类型调配」。
+ 两者协作才对 —— 让离散化去重复猜一次意图，等于把概率结论覆盖确定性结论。
 
-    **每个单元单独起一条回路**：单元之间是并列关系（「查天气」+「订酒店」），
-    不该共用同一轮对话上下文 —— 否则前一个单元的中间结论会污染下一个单元的判断（E-88）。
+ **每个单元单独起一条回路**：单元之间是并列关系（「查天气」+「订酒店」），
+ 不该共用同一轮对话上下文 —— 否则前一个单元的中间结论会污染下一个单元的判断。
 
-    **开关关闭时返回 disabled=True 且不消费任何模型调用**：
-    行为与接通前逐字一致，调用方据此走既有路径。
+ **开关关闭时返回 disabled=True 且不消费任何模型调用**：
+ 行为与接通前逐字一致，调用方据此走既有路径。
 
-    `chat_kwargs` 原样转给网关（模型 / 凭据 / 供应商）。**必须能穿过这一层**：
-    用户选的模型在 `model_access` 里，回路若丢掉它，就会用默认模型回答一个
-    由另一个模型选出来的工具结果 —— 那是两个模型拼出来的答案。
-    """
+ `chat_kwargs` 原样转给网关（模型 / 凭据 / 供应商）。**必须能穿过这一层**：
+ 用户选的模型在 `model_access` 里，回路若丢掉它，就会用默认模型回答一个
+ 由另一个模型选出来的工具结果 —— 那是两个模型拼出来的答案。
+ """
     from ai_butler.scheduler.tool_loop import FunctionCallLoop, loop_system_prompt
 
     cfg = settings or get_settings()
@@ -630,7 +630,7 @@ async def run_units(*, gateway: Any, dispatcher: Any, registry: Any,
                                         skipped="no_tools_for_capabilities"))
             continue
         loop = FunctionCallLoop(gateway, dispatcher, settings=cfg, max_rounds=max_rounds)
-        # 系统提示必须写清「什么时候用哪个工具」（U119）：只列名字时，
+        # 系统提示必须写清「什么时候用哪个工具」：只列名字时，
         # 模型会把天气问题交给素材检索，然后如实答「我没有天气能力」——
         # 工具明明在清单里，只是没被选中。
         system = loop_system_prompt(tools)

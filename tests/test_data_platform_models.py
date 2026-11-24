@@ -31,10 +31,10 @@ from ai_butler.data_platform.models import (
 def loop():
     """模块级事件循环。
 
-    必须 set_event_loop：同进程内其他用例调用 asyncio.run() 后会把当前事件循环置空，
-    若这里只 new_event_loop() 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
-    产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
-    """
+ 必须 set_event_loop：同进程内其他用例调用 asyncio.run 后会把当前事件循环置空，
+ 若这里只 new_event_loop 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
+ 产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
+ """
     lp = asyncio.new_event_loop()
     asyncio.set_event_loop(lp)
     yield lp
@@ -69,7 +69,7 @@ def db(settings, loop):
         await seed("user-B", suffix="B")
 
         async with database.session_scope(user_id=None) as s:
-            # 公共域知识：计划书 P1「公共域：景点、天气、公开资讯，全账号可读」
+            # 公共域知识： P1「公共域：景点、天气、公开资讯，全账号可读」
             s.add(KnowledgeGraphRecord(user_id=None, subject="西湖", predicate="位于",
                                        object="杭州", statement="西湖位于杭州", confidence=0.95))
             s.add(MaterialSourceRecord(source_key="src-1", url="https://example.com/a",
@@ -82,7 +82,7 @@ def db(settings, loop):
 
 # ------------------------------ 域归属 ------------------------------ #
 def test_four_core_tables_match_plan_section_p1():
-    """计划书三、P1 逐字点名的四张表。"""
+    """三、P1 逐字点名的四张表。"""
     assert set(CORE_TABLES) == {"用户画像库", "知识图谱库", "素材溯源库", "设备状态库"}
 
 
@@ -128,7 +128,7 @@ def test_device_state_is_isolated_between_accounts(db, loop):
 
 
 def test_private_tables_refuse_unbound_query(db, loop):
-    """计划书七、10：绕过业务层也无法越权读取。"""
+    """七、10：绕过业务层也无法越权读取。"""
 
     async def main():
         for model in (UserProfileRecord, DeviceStateRecord):
@@ -141,7 +141,7 @@ def test_private_tables_refuse_unbound_query(db, loop):
 
 # --------------------------- 公共域：无 user_id --------------------------- #
 def test_material_source_is_public(db, loop):
-    """计划书三、P1：素材溯源库属于公共 Workspace，无用户 ID，全账号可读。"""
+    """素材溯源库属于公共 Workspace，无用户 ID，全账号可读。"""
 
     async def main():
         async with db.session_scope(user_id=None) as s:
@@ -153,7 +153,7 @@ def test_material_source_is_public(db, loop):
 
 # --------------------------- 双域：知识图谱库 --------------------------- #
 def test_dual_domain_bound_account_sees_public_plus_own(db, loop):
-    """计划书 P1：公共域全账号可读；私有域严格归属 user_id。"""
+    """公共域全账号可读；私有域严格归属 user_id。"""
 
     async def main():
         async with db.session_scope(user_id="user-A") as s:

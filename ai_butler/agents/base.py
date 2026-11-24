@@ -17,7 +17,7 @@ async def resolve(result: Any) -> dict[str, Any]:
 
 
 class WriteScopeError(RuntimeError):
-    """Agent 试图写入自有字段之外的 State 字段。计划书：仅写入自有字段。"""
+    """Agent 试图写入自有字段之外的 State 字段。仅写入自有字段。"""
 
 
 class SubAgent(ABC):
@@ -27,7 +27,7 @@ class SubAgent(ABC):
     writes: ClassVar[tuple[str, ...]] = ()
     #: 允许读取的 State 字段（必填字段始终可读）
     reads: ClassVar[tuple[str, ...]] = ()
-    #: 计划书三、P4「无跨模块越权调用」：本 Agent 需要的外部能力。
+    #: 三、P4「无跨模块越权调用」：本 Agent 需要的外部能力。
     #: 装配层按此声明裁剪工具面，未声明的能力**根本不会发到手上**。
     capabilities: ClassVar[tuple[str, ...]] = ()
 
@@ -42,15 +42,15 @@ class SubAgent(ABC):
     # ---------------------------- 命名 ---------------------------- #
     @property
     def display_name(self) -> str:
-        """人读中文名 = 计划书里那个项目名（P1 就叫「数据中台」）。
+        """人读中文名 = 登记的项目名（P1 就叫「数据中台」）。
 
-        **派生而非手写**：`name` 是机读 key（registry 字典键、State 字段前缀），
-        必须是 ASCII；中文名统一到 `core.naming` 查表，任何 Agent 都不许自己
-        另起一个中文名——否则名册、日志、文档会各自叫一套（E-44）。
+ **派生而非手写**：`name` 是机读 key（registry 字典键、State 字段前缀），
+ 必须是 ASCII；中文名统一到 `core.naming` 查表，任何 Agent 都不许自己
+ 另起一个中文名——否则名册、日志、文档会各自叫一套。
 
-        未登记的 key 退回英文名，由 `tests/test_module_naming.py`
-        断言「一个都不许漏」，而不是等运行时才炸。
-        """
+ 未登记的 key 退回英文名，由 `tests/test_module_naming.py`
+ 断言「一个都不许漏」，而不是等运行时才炸。
+ """
         from ai_butler.core.naming import agent_title
         try:
             return agent_title(self.name)
@@ -61,14 +61,14 @@ class SubAgent(ABC):
     def __call__(self, state: dict[str, Any]) -> Any:
         """执行本 Agent。
 
-        返回值**可能是 dict，也可能是 awaitable** —— 取决于 run 是同步还是异步。
-        异步 run 是必需的：asyncpg 连接与事件循环绑定，同步 Agent 里换线程跑新循环
-        会得到「Future attached to a different loop」。
-        调用方请用 ~{resolve()}~ 统一取值（P3 调度器即如此）。
-        """
+ 返回值**可能是 dict，也可能是 awaitable** —— 取决于 run 是同步还是异步。
+ 异步 run 是必需的：asyncpg 连接与事件循环绑定，同步 Agent 里换线程跑新循环
+ 会得到「Future attached to a different loop」。
+ 调用方请用 ~{resolve}~ 统一取值（P3 调度器即如此）。
+ """
         validate_state(state)                      # 必填契约 + user_id 非空
         if not state.get("login_status"):
-            # 计划书三、P4：会话失效则跳过执行（不抛错，由调度层按 P3 终止 Graph）
+            # 会话失效则跳过执行（不抛错，由调度层按 P3 终止 Graph）
             return {}
         outcome = self.run(state)
         if inspect.isawaitable(outcome):
@@ -92,7 +92,7 @@ class SubAgent(ABC):
 
     @classmethod
     def wiki_digest(cls, state: dict[str, Any]) -> Any:
-        """计划书三、P3：下发任务携带 wiki_digest。"""
+        """下发任务携带 wiki_digest。"""
         return state.get("wiki_digest")
 
     # ------------------------- 写作用域 ------------------------- #

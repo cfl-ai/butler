@@ -178,8 +178,8 @@ _DECODERS = (
 def decode_layers(text: str, *, max_depth: int = MAX_DECODE_DEPTH) -> list[tuple[str, str]]:
     """逐层解码，返回 [(编码方式, 解码结果), ...]。
 
-    一旦某层没有新内容就停止 —— 防无限递归。
-    """
+ 一旦某层没有新内容就停止 —— 防无限递归。
+ """
     found: list[tuple[str, str]] = []
     seen = {text}
     current = text
@@ -280,15 +280,15 @@ def _scan(text: str, patterns: tuple[tuple[re.Pattern[str], str], ...],
 class InputGuard:
     """前置风控闸门。
 
-    用法：
+ 用法：
 
-        guard = InputGuard()
-        verdict = guard.guard(user_text)
-        if not verdict.allowed:
-            ...            # 拒绝，不进入路由
-        if verdict.untrusted:
-            ...            # 可对话，但产出的事实不得直接入库
-    """
+ guard = InputGuard
+ verdict = guard.guard(user_text)
+ if not verdict.allowed:
+ ... # 拒绝，不进入路由
+ if verdict.untrusted:
+ ... # 可对话，但产出的事实不得直接入库
+ """
 
     #: 带证据位的输入可以免除「未验证」标记
     honor_evidence: bool = True

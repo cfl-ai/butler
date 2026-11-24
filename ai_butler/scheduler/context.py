@@ -27,7 +27,7 @@ class ContextError(ValueError):
 
 @dataclass(frozen=True)
 class ContextPolicy:
-    """窗口与压缩参数（计划书未给数值 → 实现参数）。"""
+    """窗口与压缩参数（未给数值 → 实现参数）。"""
 
     max_turns: int = 20             # 窗口内最多保留的对话轮数
     max_chars: int = 4000           # 窗口总字符上限
@@ -110,8 +110,8 @@ class ConversationContext:
     def window(self, policy: ContextPolicy) -> list[Turn]:
         """上下文窗口控制：先按轮数截断，再按字符上限从旧到新丢弃。
 
-        被丢弃的轮次会先进入摘要（见 ContextManager.compact），不会凭空消失。
-        """
+ 被丢弃的轮次会先进入摘要（见 ContextManager.compact），不会凭空消失。
+ """
         kept = [t for t in self.turns if not t.compacted]
         if len(kept) > policy.max_turns:
             kept = kept[-policy.max_turns:]
@@ -185,13 +185,13 @@ class ContextManager:
     def append_exchange(self, user_id: str, session_id: str, *, question: str,
                         answer: str, intent: str | None = None,
                         trace_id: str = "") -> ConversationContext:
-        """一问一答**一次落盘**（U73 接线用）。
+        """一问一答**一次落盘**（ 接线用）。
 
-        为什么不用两次 `append`：两次意味着 load → save → load → save 四次磁盘动作，
-        中间任一步失败就会留下「有问无答」的半轮。半轮比没有更坏 ——
-        下一轮模型看到「用户问了、没人答」，容易把同一个问题再答一遍或自行脑补。
-        两轮要么一起进，要么都不进。
-        """
+ 为什么不用两次 `append`：两次意味着 load → save → load → save 四次磁盘动作，
+ 中间任一步失败就会留下「有问无答」的半轮。半轮比没有更坏 ——
+ 下一轮模型看到「用户问了、没人答」，容易把同一个问题再答一遍或自行脑补。
+ 两轮要么一起进，要么都不进。
+ """
         if not str(question).strip() or not str(answer).strip():
             raise ContextError("一问一答必须同时非空：不接受半轮写入")
         ctx = self.load(user_id, session_id)
@@ -203,9 +203,9 @@ class ContextManager:
     def render_history(self, user_id: str, session_id: str) -> str:
         """读当前窗口并渲染成给大模型看的文本。空上下文返回空串。
 
-        **没有历史就返回空串，不返回占位话术** —— 「（无历史）」会被模型当成
-        一条真实信息去引用，反而制造出不存在的前文。
-        """
+ **没有历史就返回空串，不返回占位话术** —— 「（无历史）」会被模型当成
+ 一条真实信息去引用，反而制造出不存在的前文。
+ """
         ctx = self.load(user_id, session_id)
         return ctx.render(self.policy)
 
@@ -234,9 +234,9 @@ class ContextManager:
     def compact(self, ctx: ConversationContext) -> ConversationContext:
         """把窗口外的旧轮次压进摘要，最近若干轮原样保留。
 
-        被压缩的轮次**不再留在 turns 里**——它们的内容已由摘要代表，
-        否则上下文文件会随会话无限增长。因此 mark_compacted 只是审计痕迹。
-        """
+ 被压缩的轮次**不再留在 turns 里**——它们的内容已由摘要代表，
+ 否则上下文文件会随会话无限增长。因此 mark_compacted 只是审计痕迹。
+ """
         active = [t for t in ctx.turns if not t.compacted]
         if not active:
             return ctx

@@ -30,7 +30,7 @@ _current_user_id: ContextVar[Optional[str]] = ContextVar("current_user_id", defa
 
 
 class RowLevelIsolationError(RuntimeError):
-    """缺少 user_id 上下文却试图访问归属账号的数据。计划书：禁止不带用户身份的裸数据访问。"""
+    """缺少 user_id 上下文却试图访问归属账号的数据。禁止不带用户身份的裸数据访问。"""
 
 
 def current_user_id() -> Optional[str]:
@@ -44,9 +44,9 @@ class Base(DeclarativeBase):
 class UserScoped:
     """行级隔离标记（严格私有）。
 
-    计划书：全部业务数据表强制增加 user_id 行级隔离字段。
-    用户画像库、设备状态库、私有 Wiki Vault、账单等**必须**继承本类。
-    """
+ 全部业务数据表强制增加 user_id 行级隔离字段。
+ 用户画像库、设备状态库、私有 Wiki Vault、账单等**必须**继承本类。
+ """
 
     user_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
 
@@ -54,17 +54,17 @@ class UserScoped:
 class DomainScoped:
     """公共 / 私有双域标记。
 
-    计划书三、P1：「公共域：景点、天气、公开资讯，全账号可读；
-    私有域：用户偏好、对话、消费、设备信息、私有 Vault，严格归属 user_id，禁止跨用户访问」
+ 「公共域：景点、天气、公开资讯，全账号可读；
+ 私有域：用户偏好、对话、消费、设备信息、私有 Vault，严格归属 user_id，禁止跨用户访问」
 
-    用于**同时承载两域**的表（数据中台的知识图谱库，见 decisions.U24）：
-    - user_id 为 NULL → 公共域，全账号可读；
-    - user_id 非空     → 私有域，仅该账号可读。
+ 用于**同时承载两域**的表（数据中台的知识图谱库，见 decisions.）：
+ - user_id 为 NULL → 公共域，全账号可读；
+ - user_id 非空 → 私有域，仅该账号可读。
 
-    过滤语义（两种绑定情况都安全）：
-    - 绑定了 user_id：可见「公共域 OR 本人私有域」；
-    - 未绑定 user_id：只可见公共域，**绝不泄露任何私有行**。
-    """
+ 过滤语义（两种绑定情况都安全）：
+ - 绑定了 user_id：可见「公共域 OR 本人私有域」；
+ - 未绑定 user_id：只可见公共域，**绝不泄露任何私有行**。
+ """
 
     user_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
 
@@ -97,9 +97,9 @@ class Database:
     async def session_scope(self, *, user_id: Optional[str], readonly: bool = False) -> AsyncIterator[AsyncSession]:
         """事务边界 + user_id 上下文绑定。
 
-        user_id 为 None 时只能访问公共实体；一旦触及 UserScoped 实体即抛
-        RowLevelIsolationError（计划书：禁止不带 user_id 的裸查询）。
-        """
+ user_id 为 None 时只能访问公共实体；一旦触及 UserScoped 实体即抛
+ RowLevelIsolationError（禁止不带 user_id 的裸查询）。
+ """
         if user_id is not None and not str(user_id).strip():
             raise RowLevelIsolationError("user_id 不得为空字符串；不允许硬编码或占位")
         token = _current_user_id.set(user_id)

@@ -50,14 +50,14 @@ def _utcnow() -> datetime:
 class RepairJob:
     """一次离线闭环运行的调度单元。**本进程不起线程。**
 
-    `cases` 是 State 形态的用例 dict；`traces` 通常不给——首轮痕迹由
-    `loop.source`（U84）从会话账本取，这正是「离线运行时读已经发生过的会话」
-    的意思。给了 `traces` 就按调用方给的来（回溯重放某一天的会话时用得上）。
-    """
+ `cases` 是 State 形态的用例 dict；`traces` 通常不给——首轮痕迹由
+ `loop.source`从会话账本取，这正是「离线运行时读已经发生过的会话」
+ 的意思。给了 `traces` 就按调用方给的来（回溯重放某一天的会话时用得上）。
+ """
 
     loop: RepairLoop
     #: 两次运行之间的最小间隔（秒）。必须为正：
-    #: 0 或负数会让 `due()` 永远为真，等于自己实现了一个忙等循环。
+    #: 0 或负数会让 `due` 永远为真，等于自己实现了一个忙等循环。
     interval_seconds: float
     cases: tuple[Mapping[str, Any], ...] = ()
     traces: tuple[Mapping[str, Any], ...] = ()
@@ -99,9 +99,9 @@ class RepairJob:
                   undo_rounds: Sequence[str] = ()) -> RepairOutcome:
         """跑一次。**不论成败都推进 `last_run_at`。**
 
-        `undo_approval` / `undo_rounds` 透传给闭环：人工批准的撤销票
-        要在下一次运行里用掉（票一次性，所以只能传一次）。
-        """
+ `undo_approval` / `undo_rounds` 透传给闭环：人工批准的撤销票
+ 要在下一次运行里用掉（票一次性，所以只能传一次）。
+ """
         if self._running:
             raise RuntimeError(
                 "这个 RepairJob 正在运行：两名调度器同时驱动会并发改同一批文件，"
@@ -158,12 +158,12 @@ def build_repair_job(loop: RepairLoop, *, interval_seconds: float = 24 * 3600,
                      cases: Sequence[Mapping[str, Any]],
                      traces: Sequence[Mapping[str, Any]] = (),
                      clock: Callable[[], datetime] | None = None) -> RepairJob:
-    """装配一个调度单元。**默认间隔 1 天**（实现参数，计划书未给刻度）。
+    """装配一个调度单元。**默认间隔 1 天**（实现参数，未给刻度）。
 
-    取一天的理由：这条链路一次运行会跑完「评测 → 模型改代码 → 重跑评测」，
-    分钟级间隔会让它永远处在运行中，而两次运行之间根本没有新的会话痕迹
-    可评——「7×24 后台运行」不等于「不停运行」，是「不用人守着」。
-    """
+ 取一天的理由：这条链路一次运行会跑完「评测 → 模型改代码 → 重跑评测」，
+ 分钟级间隔会让它永远处在运行中，而两次运行之间根本没有新的会话痕迹
+ 可评——「7×24 后台运行」不等于「不停运行」，是「不用人守着」。
+ """
     return RepairJob(loop=loop, interval_seconds=interval_seconds,
                      cases=tuple(dict(c) for c in cases),
                      traces=tuple(dict(t) for t in traces),

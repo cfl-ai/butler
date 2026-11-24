@@ -79,9 +79,9 @@ class CharHeuristicCounter:
 class ShadowedItem:
     """被压条目的影子：**让位，不是删除**。
 
-    带脱敏后的原文，因此从账本/返回值即可重建完整上下文；
-    `reason` 记录让位原因（超条数 / 超预算），恢复时可判据。
-    """
+ 带脱敏后的原文，因此从账本/返回值即可重建完整上下文；
+ `reason` 记录让位原因（超条数 / 超预算），恢复时可判据。
+ """
 
     item_id: str
     text: str
@@ -108,9 +108,9 @@ SHADOW_TOKEN_BUDGET = "token_budget"  # 超出 token 预算
 class ContextBreakdown:
     """分项计量：按 source / scope / 相关度分带。
 
-    单维度总数回答不了「哪类内容挤占预算」——分项才能。
-    `estimated_tokens` 的口径由计数器决定（默认估算，如实标注）。
-    """
+ 单维度总数回答不了「哪类内容挤占预算」——分项才能。
+ `estimated_tokens` 的口径由计数器决定（默认估算，如实标注）。
+ """
 
     total_items: int
     by_source: dict[str, int]
@@ -152,9 +152,9 @@ class CompressedContext:
     dropped: int
     summary: str
     model_layer_active: bool
-    #: U58：被压条目的影子（让位记录，内容已脱敏，可恢复）
+    #:：被压条目的影子（让位记录，内容已脱敏，可恢复）
     shadowed: tuple[ShadowedItem, ...] = ()
-    #: U58：分项计量
+    #:：分项计量
     breakdown: ContextBreakdown | None = None
 
     @property
@@ -197,10 +197,10 @@ def compress(items: Sequence[ContextItem], *, redactor: Redactor,
              journal: Any = None) -> CompressedContext:
     """先脱敏 → 再裁剪 → 再摘要 → **最后再验一次**。
 
-    U58 扩展：`token_budget` 给出即按预算裁剪（超预算的条目让位并留影子）；
-    `journal`（EventJournal）传入即把让位记录与分项计量落账——
-    崩溃恢复后知道「压掉了什么、为什么」。
-    """
+ 扩展：`token_budget` 给出即按预算裁剪（超预算的条目让位并留影子）；
+ `journal`（EventJournal）传入即把让位记录与分项计量落账——
+ 崩溃恢复后知道「压掉了什么、为什么」。
+ """
     if max_items <= 0:
         raise ContextError("max_items 必须为正")
     if token_budget is not None and token_budget <= 0:
@@ -264,7 +264,7 @@ def compress(items: Sequence[ContextItem], *, redactor: Redactor,
             token_budget=breakdown.token_budget,
             counter_estimated=breakdown.counter_estimated)
 
-    # ---- 5) 让位记录落账（U58：留痕，可恢复）----
+    # ---- 5) 让位记录落账（：留痕，可恢复）----
     if journal is not None and shadowed:
         journal.append("context_shadow", {
             "kept": len(kept), "shadowed_count": len(shadowed),

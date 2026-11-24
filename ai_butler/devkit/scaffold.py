@@ -144,9 +144,9 @@ def scaffold_agent(agent_name: str, *, root: str | Path, description: str = "",
                    responsibilities: str = "") -> ScaffoldResult:
     """一键生成 Agent 目录、Class 与单元测试。
 
-    default_write 未指定时取 writes 的第一个；两者都为空则报错——
-    计划书要求「仅写入自有字段」，没有写入字段的 Agent 无意义。
-    """
+ default_write 未指定时取 writes 的第一个；两者都为空则报错——
+ 设计要求「仅写入自有字段」，没有写入字段的 Agent 无意义。
+ """
     if not _NAME_RE.match(agent_name):
         raise ScaffoldError(
             f"Agent 名 {agent_name!r} 不合规：只允许小写字母、数字、下划线，且以字母开头"
@@ -223,10 +223,10 @@ def scaffold_wiki_claim(store: WikiStore, *, claim_id: str, subject_id: str, obj
                         contradicts: tuple[str, ...] = ()) -> Path:
     """生成声明页面。
 
-    confidence 与 evidence_ids 由调用方提供：
-    计划书三、P1 要求「每一条增量事实生成 Claim 声明并绑定 Evidence 证据；
-    自动标记置信度」，因此本脚手架**不提供默认置信度**，避免凭空造数。
-    """
+ confidence 与 evidence_ids 由调用方提供：
+ 三、P1 要求「每一条增量事实生成 Claim 声明并绑定 Evidence 证据；
+ 自动标记置信度」，因此本脚手架**不提供默认置信度**，避免凭空造数。
+ """
     page = new_page(CLAIM, claim_id, title=description, confidence=confidence,
                     user_id=user_id, now=now,
                     status=status or DEFAULT_STATUS[CLAIM],

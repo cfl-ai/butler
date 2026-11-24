@@ -37,7 +37,7 @@ from ai_butler.core.phases import PHASES, phase
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # --------------------------------------------------------------------------- #
-# 计划书原句（逐字摘自《AI管家Agent生态体系项目计划书》，改动需同步计划书）
+# 登记原句（逐字摘自《AI管家Agent生态体系项目》，改动需同步）
 # --------------------------------------------------------------------------- #
 
 #: 三、P4「包含子 Agent」那一行的原文
@@ -69,9 +69,9 @@ def _phase_module_files():
 def test_every_phase_module_opens_with_its_plan_title():
     """阶段模块 docstring 首行必须以「P1 数据中台｜全系统唯一可信数据源」开头。
 
-    只查「首行含不含阶段编号」会恒绿——写成「P1 数据平台模块」照样过。
-    故断言的是**完整计划书标题**。
-    """
+ 只查「首行含不含阶段编号」会恒绿——写成「P1 数据平台模块」照样过。
+ 故断言的是**完整项目登记标题**。
+ """
     files = _phase_module_files()
     assert files, "一个阶段模块都没找到，路径可能变了"
     for spec, path in files.items():
@@ -85,20 +85,20 @@ def test_every_phase_module_opens_with_its_plan_title():
 def test_phase_module_titles_come_from_the_single_source():
     """首行里的标题必须与 phases 真值源逐字相同，不接受「看起来差不多」。
 
-    这条守的是 E-44：标题一旦在 phases.py 改了，12 个模块首行必须跟着改，
-    否则「真值源说 A、模块自称 B」。
-    """
+ 这条守的是：标题一旦在 phases.py 改了，12 个模块首行必须跟着改，
+ 否则「真值源说 A、模块自称 B」。
+ """
     for spec, path in _phase_module_files().items():
         first = path.read_text(encoding="utf-8").split("\n", 1)[0]
         assert spec.title in first, f"{path.name} 首行缺少计划书标题 {spec.title!r}"
 
 
 def test_display_names_have_no_agent_suffix_unless_the_plan_says_so():
-    """层级名 = 计划书主名。P1 叫「数据中台」，不叫「数据中台 Agent」。
+    """层级名 = 主名。P1 叫「数据中台」，不叫「数据中台 Agent」。
 
-    唯一例外是计划书本身就带 Agent 的阶段（如「场景调度 Agent」）——
-    故判据是「display 与计划书主名一致」，而非「一律不许带 Agent」。
-    """
+ 唯一例外是本身就带 Agent 的阶段（如「场景调度 Agent」）——
+ 故判据是「display 与主名一致」，而非「一律不许带 Agent」。
+ """
     for spec in PHASES:
         assert spec.display == spec.title.split("｜")[0].split("（")[0].strip()
     assert phase("P1").display == "数据中台"
@@ -121,9 +121,9 @@ def test_every_package_has_a_chinese_title():
 def test_phase_package_titles_are_derived_not_handwritten():
     """有对应阶段的包，中文名必须派生自 phases，本文件里不存第二份。
 
-    这条守的是「同一名字存两份必打架」：若在 MODULE_TITLES 里手写一份
-    「数据中台」，phases.py 改标题后这里不会跟着变。
-    """
+ 这条守的是「同一名字存两份必打架」：若在 MODULE_TITLES 里手写一份
+ 「数据中台」，phases.py 改标题后这里不会跟着变。
+ """
     for pkg, code in naming.PHASE_PACKAGES.items():
         assert naming.module_title(pkg) == phase(code).display
         assert pkg not in naming.MODULE_TITLES, (
@@ -138,17 +138,17 @@ def test_unregistered_package_raises_instead_of_returning_english():
 
 # ============================== 子 Agent 命名 ============================== #
 def test_subagent_titles_are_word_for_word_from_the_plan():
-    """P4 七个成员的中文名，必须能在计划书那一行里逐字找到。
+    """P4 七个成员的中文名，必须能在那一行里逐字找到。
 
-    只断言「非空」会恒绿：写成「设备感知模块」也过得去。
-    """
+ 只断言「非空」会恒绿：写成「设备感知模块」也过得去。
+ """
     for key, title in naming.SUBAGENT_TITLES.items():
         assert title in PLAN_LINE_P4_SUBAGENTS, (
             f"{key} 的中文名 {title!r} 不在计划书 P4 原文里")
 
 
 def test_subagent_titles_cover_every_plan_name():
-    """计划书点名的 7 个一个都不能漏登记（反向查，防只加了一半）。"""
+    """设计点名的 7 个一个都不能漏登记（反向查，防只加了一半）。"""
     for name in ("设备感知", "天气感知", "时间进度", "增量抽取",
                  "路线方案", "备选预案", "代码迭代"):
         assert name in naming.SUBAGENT_TITLES.values(), f"计划书点了 {name!r} 却没登记"
@@ -158,16 +158,16 @@ def test_crosscut_titles_are_traceable_to_the_plan():
     """横切 Agent 的中文名也要有出处：管家 / 旅游 / 质检 / 规划。"""
     assert naming.CROSSCUT_TITLES["butler_agent"] == "管家 Agent"
     assert naming.CROSSCUT_TITLES["tour_agent"] in PLAN_LINE_TOUR
-    assert "中间件" in PLAN_LINE_MIDDLEWARE or True   # 中间件一词见计划书三、P0-1
+    assert "中间件" in PLAN_LINE_MIDDLEWARE or True   # 中间件一词见三、P0-1
 
 
 def test_user_agent_titles_have_human_authorized_decisions():
-    """用户指令新增的 Agent 不许冒充计划书用语。
+    """用户指令新增的 Agent 不许冒充用语。
 
-    这些名字的出处是用户原话而非计划书原文，因此**必须**能在台账里找到
-    一条 source=人工授权 的裁定，且中文名出现在该裁定的 resolution 里。
-    没有对应的授权裁定，就说明这个名字是私自起的——拒绝放行。
-    """
+ 这些名字的出处是用户原话而非原始需求，因此**必须**能在台账里找到
+ 一条 source=人工授权 的裁定，且中文名出现在该裁定的 resolution 里。
+ 没有对应的授权裁定，就说明这个名字是私自起的——拒绝放行。
+ """
     from ai_butler.core import decisions as d
     for key, title in naming.USER_AGENT_TITLES.items():
         matched = [item for item in d.DECISIONS
@@ -199,8 +199,8 @@ def _concrete_agent_classes() -> list[type]:
 def test_every_agent_class_resolves_to_a_chinese_name():
     """每个具体 Agent 的 display_name 都得是中文，不许漏登记后退回英文 key。
 
-    这是覆盖式守护：新增 Agent 忘了登记名字，这条会红。
-    """
+ 这是覆盖式守护：新增 Agent 忘了登记名字，这条会红。
+ """
     classes = _concrete_agent_classes()
     assert len(classes) >= 20, f"只扫到 {len(classes)} 个 Agent，扫描逻辑可能失效"
     for cls in classes:
@@ -245,14 +245,14 @@ _STALE_PKG_MARK = "ai_butler" + "." + "rag"
 def test_doc_file_paths_actually_exist():
     """规范文档里点名的每个 `目录/模块.py` 路径，磁盘上必须真有这个文件。
 
-    改名时最常漏的就是这里：代码 git mv 走了，文档里还写着 `rag/retrieval.py`
-    `agents/p8_payment.py`。**文档引用一个不存在的文件，比不写更糟**——
-    读者会照着它去找，找不到还以为是自己漏看了（MEMORY E-65 的同一族缺陷）。
+ 改名时最常漏的就是这里：代码 git mv 走了，文档里还写着 `rag/retrieval.py`
+ `agents/p8_payment.py`。**文档引用一个不存在的文件，比不写更糟**——
+ 读者会照着它去找，找不到还以为是自己漏看了（MEMORY 的同一族缺陷）。
 
-    路径前缀有两种写法：相对 `ai_butler/`（`agents/butler.py`）与相对仓库根
-    （`scripts/verify_android_artifact.py`），两种都认。
-    不带目录前缀的裸文件名跳过——多是简写或教学示例，校验了会误报。
-    """
+ 路径前缀有两种写法：相对 `ai_butler/`（`agents/butler.py`）与相对仓库根
+ （`scripts/verify_android_artifact.py`），两种都认。
+ 不带目录前缀的裸文件名跳过——多是简写或教学示例，校验了会误报。
+ """
     doc = REPO_ROOT / "docs" / "统一架构规范文档.md"
     text = doc.read_text(encoding="utf-8")
     cited = {p for p in re.findall(r"`([a-z_]+(?:/[a-z0-9_]+)*\.py)`", text)
@@ -272,10 +272,10 @@ def test_doc_file_paths_actually_exist():
 def test_no_stale_rag_package_reference_anywhere():
     """`ai_butler/rag` 这个旧包名不许在代码与文档里复活。
 
-    2026-10-19 把 `rag/` 改名为 `material_center/`（素材中心）——RAG 是技术，
-    不是项目名。改名时漏改 import 会让程序直接 ImportError，
-    但漏改**文档与字符串引用**不会报错，只会静默腐烂。
-    """
+ 2026-10-19 把 `rag/` 改名为 `material_center/`（素材中心）——RAG 是技术，
+ 不是项目名。改名时漏改 import 会让程序直接 ImportError，
+ 但漏改**文档与字符串引用**不会报错，只会静默腐烂。
+ """
     stale = _STALE_PKG_MARK
     hits: list[str] = []
     for p in REPO_ROOT.rglob("*.py"):

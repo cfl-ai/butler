@@ -24,16 +24,16 @@ REQUEST_TIMEOUT_MESSAGE = "请求超时，请稍后重试"
 class TimeoutMiddleware:
     """接口超时。语义为「首字节截止」：
 
-    - 响应尚未开始时超时 → 取消请求并返回 504；
-    - 响应已开始（http.response.start 已发出）→ 解除截止，让流式转发自然结束。
-      否则逐字文字渲染与同步 TTS 播报会被中途掐断（计划书三、P0-7）。
-    """
+ - 响应尚未开始时超时 → 取消请求并返回 504；
+ - 响应已开始（http.response.start 已发出）→ 解除截止，让流式转发自然结束。
+ 否则逐字文字渲染与同步 TTS 播报会被中途掐断（三、P0-7）。
+ """
 
     def __init__(self, app: ASGIApp, *, timeout_seconds: float,
                  path_timeouts: Mapping[str, float] | None = None) -> None:
         self.app = app
         self.timeout = float(timeout_seconds)
-        # 按路径前缀单独给超时（台账 U61）：
+        # 按路径前缀单独给超时：
         # 视觉推理要走模型，几十秒是常态，用通用 30s 会**必然** 504 ——
         # 这不是配置调优，而是语义不同：通用超时防的是「接口卡住」，
         # 视觉接口的等待是**预期内的计算**。所以按路径区分，而不是把全局值调大。
@@ -83,10 +83,10 @@ class TimeoutMiddleware:
 class RequestLogMiddleware:
     """请求日志 + 脱敏。
 
-    **只记录元数据**：方法、路径、状态码、耗时、user_id、客户端标识。
-    不记录请求体、不记录查询串——两者都可能携带口令或令牌；
-    路径本身再过一遍模式级脱敏，兜住「手机号出现在 URL 里」这类场景。
-    """
+ **只记录元数据**：方法、路径、状态码、耗时、user_id、客户端标识。
+ 不记录请求体、不记录查询串——两者都可能携带口令或令牌；
+ 路径本身再过一遍模式级脱敏，兜住「手机号出现在 URL 里」这类场景。
+ """
 
     def __init__(self, app: ASGIApp, *, logger: Any = None, slow_ms: int = 2000) -> None:
         self.app = app
@@ -116,7 +116,7 @@ class RequestLogMiddleware:
                 "path": redact_text(scope.get("path", "")),
                 "status": status_holder.get("status"),
                 "duration_ms": duration_ms,
-                # 计划书：保留 user_id 用于排障
+                # 保留 user_id 用于排障
                 "user_id": state.get("user_id"),
                 "client": (scope.get("client") or ("unknown",))[0],
             }

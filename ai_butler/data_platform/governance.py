@@ -45,7 +45,7 @@ class DataGovernor:
     """三条数据治理规则。"""
 
     def __init__(self, *, settings) -> None:
-        #: 计划书【八】已有的置信阈值，不新造第二个数字
+        #: 【八】已有的置信阈值，不新造第二个数字
         self.threshold = float(settings.jev_confidence_threshold)
 
     def decide(self, *, confidence: float, conflict_status: str = CONFLICT_NONE,
@@ -97,11 +97,11 @@ def _now() -> str:
 class ReviewQueue:
     """冲突复核队列。
 
-    隔离口径：列出待复核项时，
-    - 不传 user_id → **只返回公共知识库的项**（user_id 为 None），拿不到任何用户私有项；
-    - 传 user_id   → 只返回该账号的项。
-    与计划书三、P6「人工后台只能按 user_id 查看对应账号业务，禁止批量遍历全部用户隐私」一致。
-    """
+ 隔离口径：列出待复核项时，
+ - 不传 user_id → **只返回公共知识库的项**（user_id 为 None），拿不到任何用户私有项；
+ - 传 user_id → 只返回该账号的项。
+ 与三、P6「人工后台只能按 user_id 查看对应账号业务，禁止批量遍历全部用户隐私」一致。
+ """
 
     def __init__(self, store: FileStore) -> None:
         self.store = store
@@ -123,10 +123,10 @@ class ReviewQueue:
         return item
 
     def enqueue_wiki_contradictions(self, report, *, user_id: str | None = None) -> list[ReviewItem]:
-        """计划书三、P1「Wiki 检测到矛盾自动送入冲突复核队列」。
+        """三、P1「Wiki 检测到矛盾自动送入冲突复核队列」。
 
-        入参为 agent_wiki.compiler.CompileReport。
-        """
+ 入参为 agent_wiki.compiler.CompileReport。
+ """
         items = []
         for claim_id in getattr(report, "contradictions", ()) or ():
             items.append(self.enqueue(

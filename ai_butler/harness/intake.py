@@ -169,12 +169,12 @@ _PATH_IN_TEXT = re.compile(r"[A-Za-z0-9_./\\-]+\.py(?![A-Za-z0-9_])")
 def files_from_hint(hint: str) -> tuple[str, ...]:
     """从收敛提示里挑出**真正的文件路径**。
 
-    `target_hint` 是人读的一句话（「retrieval/planner.py 的 CATEGORY_TOOLS 与……」
-    或「core/permissions.py、agents/（越权路径的调用点）」）。直接塞进
-    `Change.files` 会把描述文字当文件名——`risk.assess` 会拿它数文件个数、
-    下游会拿它当改动范围，一个中文字符串混在路径列表里迟早出事。
-    这里只保留形如 `xxx/yyy.py` 的片段，认不出就返回空（空比错好）。
-    """
+ `target_hint` 是人读的一句话（「retrieval/planner.py 的 CATEGORY_TOOLS 与……」
+ 或「core/permissions.py、agents/（越权路径的调用点）」）。直接塞进
+ `Change.files` 会把描述文字当文件名——`risk.assess` 会拿它数文件个数、
+ 下游会拿它当改动范围，一个中文字符串混在路径列表里迟早出事。
+ 这里只保留形如 `xxx/yyy.py` 的片段，认不出就返回空（空比错好）。
+ """
     text = str(hint or "").replace("\\", "/")
     out: list[str] = []
     for token in _PATH_IN_TEXT.findall(text):
@@ -187,10 +187,10 @@ def files_from_hint(hint: str) -> tuple[str, ...]:
 def _change_for(defect: Defect) -> Change:
     """把缺陷转成一条**变更意图**。
 
-    `diff` 刻意留空：本模块不能凭空生成补丁（谁生成的补丁谁负责），
-    并由 `extra["diff_pending"]` 显式标注。留空的后果由受理口径兜——
-    工单的 `requires_human_patch` 恒为 True，不把「没有补丁」当成「没有风险」。
-    """
+ `diff` 刻意留空：本模块不能凭空生成补丁（谁生成的补丁谁负责），
+ 并由 `extra["diff_pending"]` 显式标注。留空的后果由受理口径兜——
+ 工单的 `requires_human_patch` 恒为 True，不把「没有补丁」当成「没有风险」。
+ """
     return Change(
         change_id=f"fix:{defect.defect_id}",
         description=(f"修复 {defect.title}。{HINT_DISCLAIMER}：{defect.target_hint}；"
@@ -280,10 +280,10 @@ class RepairIntake:
 def qa_verdict_from_batch(batch: DefectBatch) -> dict[str, Any]:
     """把缺陷单转成「质检结论」，供 `HookChain` 联动（三、P10 步骤3）。
 
-    为什么由评测中台出这个结论：计划书要求 Hook「联动质检 Agent 完成风险
-    分级校验」，而缺陷单本身就是质检结论——再让另一个组件重新算一遍，
-    只会得到两份可能不一致的结论（E-44 同一教训）。
-    """
+ 为什么由评测中台出这个结论：设计要求 Hook「联动质检 Agent 完成风险
+ 分级校验」，而缺陷单本身就是质检结论——再让另一个组件重新算一遍，
+ 只会得到两份可能不一致的结论（ 同一教训）。
+ """
     if batch.blocked_by_security:
         alerts = [d.evidence for d in batch.defects
                   if d.kind is DefectKind.SECURITY_VIOLATION]

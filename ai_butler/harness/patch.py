@@ -115,9 +115,9 @@ class ParsedPatch:
 #: **全局禁改**，与缺陷类别无关。
 #:
 #: `tests/` —— 允许模型改测试，它最省力的「修复」就是删掉失败断言，
-#:            于是测试全绿而缺陷原样存在。这正是「胡乱修改」的典型形态。
+#: 于是测试全绿而缺陷原样存在。这正是「胡乱修改」的典型形态。
 #: `ai_butler/evaluation/` —— 评测判据。让被评的一方改判据，
-#:            等于让被告改判决书（表 10 第一条红线的同一逻辑）。
+#: 等于让被告改判决书（表 10 第一条红线的同一逻辑）。
 #: 门禁自身（risk / hooks / patch / permissions / decisions）—— 同理。
 FORBIDDEN_PATHS: tuple[str, ...] = (
     "tests/",
@@ -173,9 +173,9 @@ _FENCE_RE = re.compile(r"^\s*```(?:diff|patch)?\s*$")
 def normalize_path(raw: str) -> str:
     """把 diff 头里的路径规范成仓库相对路径。
 
-    模型会写 `a/x.py`、`b/x.py`、`./x.py`、`x\\y.py`、`/abs/x.py`——
-    这些都必须归一到同一个键，否则白名单会漏判（漏判即防线失效）。
-    """
+ 模型会写 `a/x.py`、`b/x.py`、`./x.py`、`x\\y.py`、`/abs/x.py`——
+ 这些都必须归一到同一个键，否则白名单会漏判（漏判即防线失效）。
+ """
     path = raw.strip().replace("\\", "/")
     # 去掉 `--- a/x.py\t2026-01-01` 这类时间戳后缀
     path = path.split("\t")[0].strip()
@@ -200,9 +200,9 @@ def normalize_path(raw: str) -> str:
 def parse_unified_diff(text: str) -> ParsedPatch:
     """解析统一 diff。**任何歧义都报错**，不做「尽力解析」。
 
-    失败比误解析好：误解析的后果是把补丁应用到错误的位置，
-    而错误位置往往仍是合法 Python——测试可能过了，逻辑已经坏了。
-    """
+ 失败比误解析好：误解析的后果是把补丁应用到错误的位置，
+ 而错误位置往往仍是合法 Python——测试可能过了，逻辑已经坏了。
+ """
     if not text or not text.strip():
         raise PatchError("空补丁")
 
@@ -284,13 +284,13 @@ def parse_unified_diff(text: str) -> ParsedPatch:
 class PatchGuard:
     """改动范围校验。**违规即整份补丁作废**，不挑「能改的改」。
 
-    `frozen_paths`（U81）是**跨轮**的边界：前几轮已经提交过补丁的文件，
-    本轮不许再改。要改必须先撤销（撤销需人工确认，见 `harness/revision.py`）。
+ `frozen_paths`是**跨轮**的边界：前几轮已经提交过补丁的文件，
+ 本轮不许再改。要改必须先撤销（撤销需人工确认，见 `harness/revision.py`）。
 
-    为什么「同一文件再改一次」也要拦：第二轮补丁的上下文行是第一轮改过之后
-    的内容，两份补丁叠在一起后，出问题时无法说清是哪一轮造成的。
-    责任不可分割的自动化改动，比改错更难处理。
-    """
+ 为什么「同一文件再改一次」也要拦：第二轮补丁的上下文行是第一轮改过之后
+ 的内容，两份补丁叠在一起后，出问题时无法说清是哪一轮造成的。
+ 责任不可分割的自动化改动，比改错更难处理。
+ """
 
     kind: str
     max_files: int = MAX_FILES
@@ -329,7 +329,7 @@ class PatchGuard:
                 out.append(f"{f.path} 不在缺陷类别 {self.kind} 允许的范围 "
                            f"{list(allowed)} 内")
                 continue
-            # 跨轮边界（U81）。放在范围校验**之后**：先判「这块该不该你管」，
+            # 跨轮边界。放在范围校验**之后**：先判「这块该不该你管」，
             # 再判「这块虽然归你管，但这轮归你改吗」——两个问题的处置不同，
             # 理由也必须不同（前者是越权，后者是等待撤销审批）。
             if any(f.path == p for p in self.frozen_paths):
@@ -342,11 +342,11 @@ class PatchGuard:
     def frozen_hits(self, patch: ParsedPatch) -> tuple[str, ...]:
         """补丁触碰到的跨轮锁定文件。空 = 没越界。
 
-        单独一个方法而不是从 `violations()` 里过滤：调用方要区分
-        「越权改别的板块」与「改了自己的板块但这轮归别人」，两者的
-        处置完全不同（前者作废，后者等撤销审批）。从中文句子里筛
-        ——那是 E-44 的老路。
-        """
+ 单独一个方法而不是从 `violations` 里过滤：调用方要区分
+ 「越权改别的板块」与「改了自己的板块但这轮归别人」，两者的
+ 处置完全不同（前者作废，后者等撤销审批）。从中文句子里筛
+ ——那是 的老路。
+ """
         return tuple(f.path for f in patch.files
                      if any(f.path == p for p in self.frozen_paths))
 
@@ -377,9 +377,9 @@ class PatchResult:
     rolled_back: bool = False
     #: 应用**前**的各文件原文（None = 原本不存在）。`ok=True` 时才有内容。
     #:
-    #: 它是「撤销一份已提交补丁」的唯一依据（U81）：`commit()` 之后
+    #: 它是「撤销一份已提交补丁」的唯一依据：`commit` 之后
     #: `PatchApplier` 的备份就丢了，而撤销发生在更晚的时候。
-    #: 刻意**不进 `as_dict()`**：那是源码正文，会顺着 State 一路传下去；
+    #: 刻意**不进 `as_dict`**：那是源码正文，会顺着 State 一路传下去；
     #: 需要它的只有记账环节，由调用方直接读属性。
     before: Mapping[str, str | None] = field(default_factory=dict)
 
@@ -394,10 +394,10 @@ class PatchResult:
 class PatchApplier:
     """在指定根目录上应用补丁，全程保留回滚能力。
 
-    `root` 是**可配置的工作根**：生产指向项目根，验证时指向可丢弃的副本。
-    复制一份最小工作区来验证「自动改代码」这件事本身是否成立，
-    比在真仓库上试要安全——虽然两者都会备份。
-    """
+ `root` 是**可配置的工作根**：生产指向项目根，验证时指向可丢弃的副本。
+ 复制一份最小工作区来验证「自动改代码」这件事本身是否成立，
+ 比在真仓库上试要安全——虽然两者都会备份。
+ """
 
     root: Path
     #: 备份：路径 → 原内容（None 表示原本不存在）
@@ -443,9 +443,9 @@ class PatchApplier:
     def apply(self, patch: ParsedPatch | Change) -> PatchResult:
         """校验并落盘。**先全部算好再写**，避免半个补丁落地。
 
-        接受 `Change` 或 `ParsedPatch`：调用方（loop）手上只有 `Change`，
-        让它自己先解析会把「解析失败」这一支的处理逻辑散到两处。
-        """
+ 接受 `Change` 或 `ParsedPatch`：调用方（loop）手上只有 `Change`，
+ 让它自己先解析会把「解析失败」这一支的处理逻辑散到两处。
+ """
         if isinstance(patch, Change):
             try:
                 patch = patch_from_change(patch)
@@ -524,7 +524,7 @@ class PatchApplier:
         return restored
 
     def commit(self) -> None:
-        """确认保留改动，丢弃备份。此后 `rollback()` 不再能还原。"""
+        """确认保留改动，丢弃备份。此后 `rollback` 不再能还原。"""
         self._backup.clear()
 
     @property
@@ -538,11 +538,11 @@ def _with_newlines(new_block: Sequence[str],
                    old_block: Sequence[str]) -> list[str]:
     """给新块的行补回换行符。
 
-    `splitlines(keepends=True)` 得到的行自带换行；而 diff 里的 `+` 行不带。
-    末行没有换行的情形（`\\ No newline at end of file`）这里统一按「跟随原文件」
-    处理：原文件末行有换行就补，没有就不补。不做这个归一，
-    应用出来的文件会少一个换行，下一次 diff 就永远对不上了。
-    """
+ `splitlines(keepends=True)` 得到的行自带换行；而 diff 里的 `+` 行不带。
+ 末行没有换行的情形（`\\ No newline at end of file`）这里统一按「跟随原文件」
+ 处理：原文件末行有换行就补，没有就不补。不做这个归一，
+ 应用出来的文件会少一个换行，下一次 diff 就永远对不上了。
+ """
     out: list[str] = []
     for i, text in enumerate(new_block):
         src_index = pos + i if i < len(old_block) else pos + len(old_block) - 1
@@ -556,10 +556,10 @@ def _locate(lines: Sequence[str], old_block: Sequence[str],
             expected: int, cursor: int) -> int:
     """在 `expected` 附近找 old_block 的**逐行精确**匹配位置。
 
-    只在 `[cursor, expected + CONTEXT_DRIFT_LIMIT]` 里找：
-    - 不往前找：前面的行已被上一个 hunk 消费，回跳会造成重复插入；
-    - 不无限往后找：模糊命中比找不到更危险。
-    """
+ 只在 `[cursor, expected + CONTEXT_DRIFT_LIMIT]` 里找：
+ - 不往前找：前面的行已被上一个 hunk 消费，回跳会造成重复插入；
+ - 不无限往后找：模糊命中比找不到更危险。
+ """
     if not old_block:
         return min(max(expected, cursor), len(lines))
     limit = min(len(lines) - len(old_block), max(expected, cursor) + CONTEXT_DRIFT_LIMIT)

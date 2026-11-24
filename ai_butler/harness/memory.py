@@ -15,7 +15,7 @@ from typing import Any, Sequence
 
 from ai_butler.evaluation.redaction import Redactor
 
-#: 记忆类别（计划书点名后两类）
+#: 记忆类别（设计点名后两类）
 MEMORY_DEFECT = "defect"
 MEMORY_JEV_FAILURE = "jev_failure"
 MEMORY_WIKI_CONFLICT = "wiki_conflict"
@@ -104,9 +104,9 @@ class MemoryStore:
 def from_qa_report(*, report: dict[str, Any], recorded_at: str = "") -> list[MemoryEntry]:
     """把 P9 的评估报告转成待沉淀记忆。
 
-    **只沉淀「模式」，不沉淀「个案」**：记的是「Jev 在某类意图上易错」，
-    而不是「某个用户被误判成了什么」。
-    """
+ **只沉淀「模式」，不沉淀「个案」**：记的是「Jev 在某类意图上易错」，
+ 而不是「某个用户被误判成了什么」。
+ """
     out: list[MemoryEntry] = []
     jev = report.get("jev") or {}
     errors = int(jev.get("error_cases") or 0)

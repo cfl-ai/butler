@@ -98,9 +98,9 @@ def test_secrets_are_not_shared_between_environments():
 def _need(data: dict, key: str, where: str) -> str:
     """取一个必需键；缺失时点名**哪个文件缺哪个键**。
 
-    裸 data[key] 抛的 KeyError 不告诉你是哪个文件，
-    在四个环境里排查要多跑几轮。
-    """
+ 裸 data[key] 抛的 KeyError 不告诉你是哪个文件，
+ 在四个环境里排查要多跑几轮。
+ """
     if key not in data:
         raise AssertionError(where + " 缺少必需变量 " + key)
     return data[key]
@@ -109,11 +109,11 @@ def _need(data: dict, key: str, where: str) -> str:
 def test_env_files_match_their_environment_declaration():
     """每个 `.env.*` 里的资源值必须与 environments 的声明一致。
 
-    此前只验了「四个文件都存在」与「密钥互不相同」，
-    **文件里的端口 / 库 / 存储根从未被校验过** ——
-    把 .env.prod 改成 dev 的端口与库，不会有任何测试变红。
-    而「四环境完全独立隔离」是一条计划书硬要求（三、P0-1）。
-    """
+ 此前只验了「四个文件都存在」与「密钥互不相同」，
+ **文件里的端口 / 库 / 存储根从未被校验过** ——
+ 把 .env.prod 改成 dev 的端口与库，不会有任何测试变红。
+ 而「四环境完全独立隔离」是一条硬要求（三、P0-1）。
+ """
     for name in envs.ENV_NAMES:
         decl = envs.get(name)
         data = _read_env_file(decl.env_file)
@@ -132,9 +132,9 @@ def test_env_files_match_their_environment_declaration():
 def test_env_files_share_no_resource_either():
     """四个**文件**之间也不得共用资源 —— 不能只看声明。
 
-    `assert_disjoint()` 校验的是声明对象；这里校验的是**真正被加载的文件**。
-    两者都要成立，「完全独立隔离」才算落实。
-    """
+ `assert_disjoint` 校验的是声明对象；这里校验的是**真正被加载的文件**。
+ 两者都要成立，「完全独立隔离」才算落实。
+ """
     data = {name: _read_env_file(f".env.{name}") for name in envs.ENV_NAMES}
     fields = ("POSTGRES_PORT", "REDIS_PORT", "API_PORT", "POSTGRES_DB",
               "STORAGE_ROOT", "WIKI_ROOT")
@@ -147,10 +147,10 @@ def test_env_files_share_no_resource_either():
 def test_every_variable_referenced_by_compose_exists_in_every_env_file():
     """compose 里用 ${VAR} 引用的变量，四个 env 文件都必须提供。
 
-    compose 对**未定义变量**的处理是静默替换成空串 ——
-    `${API_PORT}:8000` 会变成 `:8000`，配置错了却不报错，
-    直到 docker compose 起不来或起错端口才被发现。
-    """
+ compose 对**未定义变量**的处理是静默替换成空串 ——
+ `${API_PORT}:8000` 会变成 `:8000`，配置错了却不报错，
+ 直到 docker compose 起不来或起错端口才被发现。
+ """
     import re
 
     compose = (ROOT / "deploy" / "compose" / "local-ports.yml").read_text(

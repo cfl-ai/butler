@@ -51,9 +51,9 @@ def build_wiki_compiler(settings: Any, store: WikiStore | None = None) -> WikiCo
 def compile_on_startup(settings: Any, store: WikiStore | None = None) -> dict[str, Any]:
     """启动时编译一次公共 Workspace。**失败只记录，不阻断启动**。
 
-    为什么只编译公共库：私有 Vault 属于各账号，启动时全量遍历等于把所有用户的
-    私有数据读一遍 —— 既慢又踩隔离边界。私有库按需（提问时）编译。
-    """
+ 为什么只编译公共库：私有 Vault 属于各账号，启动时全量遍历等于把所有用户的
+ 私有数据读一遍 —— 既慢又踩隔离边界。私有库按需（提问时）编译。
+ """
     if not getattr(settings, "wiki_compile_auto_run", False):
         return {"skipped": "wiki_compile_auto_run=false：编译流水线未启用"}
     try:
@@ -85,12 +85,12 @@ class DigestSnapshot:
 
 
 class WikiDigestProvider:
-    """产出注入对话的 `wiki_digest`（计划书三、P3 State 必填字段）。
+    """产出注入对话的 `wiki_digest`（三、P3 State 必填字段）。
 
-    返回结构**沿用 `WikiCompiler.build_digest`**（claims + max_digest_size +
-    truncated），另加 `scopes` 说明本次合并了哪几个作用域 —— 隔离范围必须可见，
-    否则「怎么只有公共知识」这种问题会变成无从排查的玄学。
-    """
+ 返回结构**沿用 `WikiCompiler.build_digest`**（claims + max_digest_size +
+ truncated），另加 `scopes` 说明本次合并了哪几个作用域 —— 隔离范围必须可见，
+ 否则「怎么只有公共知识」这种问题会变成无从排查的玄学。
+ """
 
     def __init__(self, settings: Any, *, store: WikiStore | None = None) -> None:
         self.settings = settings

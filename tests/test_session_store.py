@@ -30,7 +30,7 @@ def test_register_and_validate(redis_client):
 
 
 def test_idle_timeout_invalidates_session(redis_client):
-    """计划书：长时间无交互会话自动失效。"""
+    """长时间无交互会话自动失效。"""
 
     async def main():
         s = _store(redis_client)
@@ -42,7 +42,7 @@ def test_idle_timeout_invalidates_session(redis_client):
 
 
 def test_multi_device_and_force_logout(redis_client):
-    """计划书：支持单账号多端登录、强制踢下线。"""
+    """支持单账号多端登录、强制踢下线。"""
 
     async def main():
         s = _store(redis_client)
@@ -74,8 +74,8 @@ def test_single_revoke(redis_client):
 def test_configured_idle_timeout_actually_applies(settings, redis_client):
     """用 .env 中实际配置的空闲阈值验证：超过该阈值无交互即失效。
 
-    断言的是「配置真的驱动了行为」，不断言具体数值——数值可按实际情况调整。
-    """
+ 断言的是「配置真的驱动了行为」，不断言具体数值——数值可按实际情况调整。
+ """
 
     async def main():
         store = SessionStore(redis_client,

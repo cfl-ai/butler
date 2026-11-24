@@ -29,7 +29,7 @@ class GatewayError(RuntimeError):
 
 
 class GatewayUnavailableError(GatewayError):
-    """全部供应商均不可用。按计划书要求应可平滑降级。"""
+    """全部供应商均不可用。按设计要求应可平滑降级。"""
 
 
 class GatewayRateLimited(GatewayError):
@@ -37,12 +37,12 @@ class GatewayRateLimited(GatewayError):
 
 
 class ToolUnsupportedError(GatewayError):
-    """该模型/供应商**不支持 function calling**（U112）。
+    """该模型/供应商**不支持 function calling**。
 
-    为什么要单独一个错误类：过去本机 `qwen2.5vl:3b` 无 tools 能力时，
-    表现是「供应商都不可用」——排查方向被指到完全相反的地方。
-    现在必须让「不支持工具」与「服务不可用」是两件事。
-    """
+ 为什么要单独一个错误类：过去本机 `qwen2.5vl:3b` 无 tools 能力时，
+ 表现是「供应商都不可用」——排查方向被指到完全相反的地方。
+ 现在必须让「不支持工具」与「服务不可用」是两件事。
+ """
 
 
 # --------------------------------------------------------------------------- #
@@ -56,11 +56,11 @@ class ChatMessage:
 
 @dataclass(frozen=True)
 class ModelToolCall:
-    """模型表达的「我要调用某个工具」（function calling 的信封，U112）。
+    """模型表达的「我要调用某个工具」（function calling 的信封，）。
 
-    `arguments` 保持**原始 dict**：由调度层负责校验并交给 `ToolDispatcher`。
-    网关不做业务解释 —— 它只把模型的话原样带回来，漏字改字都由它负责。
-    """
+ `arguments` 保持**原始 dict**：由调度层负责校验并交给 `ToolDispatcher`。
+ 网关不做业务解释 —— 它只把模型的话原样带回来，漏字改字都由它负责。
+ """
 
     name: str
     arguments: Mapping[str, Any] = field(default_factory=dict)
@@ -77,7 +77,7 @@ class ChatResult:
     model: str
     latency_ms: int
     usage: dict[str, Any] = field(default_factory=dict)
-    #: 模型本次要求调用的工具（U112）。**空元组 = 模型没有要求调用**，
+    #: 模型本次要求调用的工具。**空元组 = 模型没有要求调用**，
     #: 与「不支持工具」是两回事（后者会在下发前抛 `ToolUnsupportedError`）。
     tool_calls: tuple[ModelToolCall, ...] = ()
 
@@ -85,10 +85,10 @@ class ChatResult:
 def parse_openai_tool_calls(message: Mapping[str, Any]) -> tuple[ModelToolCall, ...]:
     """解析 OpenAI 兼容协议的 `message.tool_calls`。
 
-    `arguments` 在该协议里是 **JSON 字符串**，解析失败就丢弃这一条 ——
-    宁可少一次调用，也不让半截字符串进执行层。同一函数供 deepseek 与
-    openai-compatible 复用：两个就不必各写一套，改一处即两处一致。
-    """
+ `arguments` 在该协议里是 **JSON 字符串**，解析失败就丢弃这一条 ——
+ 宁可少一次调用，也不让半截字符串进执行层。同一函数供 deepseek 与
+ openai-compatible 复用：两个就不必各写一套，改一处即两处一致。
+ """
     out: list[ModelToolCall] = []
     for raw in (message.get("tool_calls") or ()):
         if not isinstance(raw, Mapping):
@@ -111,10 +111,10 @@ def parse_openai_tool_calls(message: Mapping[str, Any]) -> tuple[ModelToolCall, 
 def _parse_ollama_tool_calls(message: Mapping[str, Any]) -> tuple[ModelToolCall, ...]:
     """解析 Ollama `/api/chat` 的 `message.tool_calls`。
 
-    与 OpenAI 兼容协议唯一的差别：`arguments` 这里是**已经是对象**，不是 JSON 字符串。
-    写成同一个函数靠 `isinstance` 分支也能收场，但那会让两个协议的差异藏在一句话里 ——
-    宁可两个短函数各自说清楚（这也是 OpenAI 兼容两处**共用同一个** parse 的原因）。
-    """
+ 与 OpenAI 兼容协议唯一的差别：`arguments` 这里是**已经是对象**，不是 JSON 字符串。
+ 写成同一个函数靠 `isinstance` 分支也能收场，但那会让两个协议的差异藏在一句话里 ——
+ 宁可两个短函数各自说清楚（这也是 OpenAI 兼容两处**共用同一个** parse 的原因）。
+ """
     out: list[ModelToolCall] = []
     for raw in (message.get("tool_calls") or ()):
         if not isinstance(raw, Mapping):
@@ -133,7 +133,7 @@ def _parse_ollama_tool_calls(message: Mapping[str, Any]) -> tuple[ModelToolCall,
     return tuple(out)
 
 
-#: 澄清类别（枚举）。计划书三、P3「是否多意图冲突」+ U15 借 CLINC150 的 out-of-scope 类。
+#: 澄清类别（枚举）。三、P3「是否多意图冲突」+ 借 CLINC150 的 out-of-scope 类。
 CLARIFY_MULTI_INTENT = "multi_intent"
 CLARIFY_OUT_OF_SCOPE = "out_of_scope"
 CLARIFICATION_CATEGORIES: tuple[str, ...] = (CLARIFY_MULTI_INTENT, CLARIFY_OUT_OF_SCOPE)
@@ -148,20 +148,20 @@ _CAPABILITY_PROBE: tuple[dict[str, Any], ...] = (
 def _model_family(model: str) -> str:
     """取模型族名：`qwen3:8b` → `qwen3`，`gpt-4o-mini` 保持原样。
 
-    只剥**冒号标签**（Ollama 的量化/尺寸标签），不剥连字符 ——
-    `gpt-4o-mini` 与 `gpt-4o` 是两个不同的模型名，剥了就连支持与否一起搞错。
-    """
+ 只剥**冒号标签**（Ollama 的量化/尺寸标签），不剥连字符 ——
+ `gpt-4o-mini` 与 `gpt-4o` 是两个不同的模型名，剥了就连支持与否一起搞错。
+ """
     return (model or "").strip().lower().split(":", 1)[0]
 
 
 def model_supports_tools(model: str | None, whitelist: Sequence[str] | None) -> bool:
-    """按**模型族**判定工具能力（U117）。
+    """按**模型族**判定工具能力。
 
-    相等即命中；否则看白名单项是不是该模型族的**前缀加分隔符**
-    （`deepseek` → `deepseek-chat`）。刻意不用裸 `startswith`：
-    那样 `qwen2.5` 会把 `qwen2.5vl` 也算成支持 —— 而带 vl 的视觉模型恰恰
-    没有任何工具能力，这正是本项目实测踩过的坑（本机 qwen2.5vl:3b）。
-    """
+ 相等即命中；否则看白名单项是不是该模型族的**前缀加分隔符**
+ （`deepseek` → `deepseek-chat`）。刻意不用裸 `startswith`：
+ 那样 `qwen2.5` 会把 `qwen2.5vl` 也算成支持 —— 而带 vl 的视觉模型恰恰
+ 没有任何工具能力，这正是本项目实测踩过的坑（本机 qwen2.5vl:3b）。
+ """
     target = _model_family(model or "")
     if not target:
         return False
@@ -176,11 +176,9 @@ def model_supports_tools(model: str | None, whitelist: Sequence[str] | None) -> 
 
 @dataclass(frozen=True)
 class JevStructured:
-    """Jev 输出的结构化内容。
-
-    U01：主意图 + 候选意图列表；U14：require_clarification + category；
-    计划书：**没有任何自由文本字段**（见 decisions.U25）。
-    """
+    """Jev 输出的结构化内容。：主意图 + 候选意图列表；：require_clarification + category；
+ **没有任何自由文本字段**（见 decisions.）。
+ """
 
     label: str
     confidence: float
@@ -198,7 +196,7 @@ class JevDecision:
     source: Literal["jev", "fallback"]
     shadow: bool = False
     reason: str = ""
-    # --- U01 / U14 追加的结构化字段（仍全为枚举与数值）---
+    # --- 追加的结构化字段（仍全为枚举与数值）---
     candidate_labels: tuple[str, ...] = ()
     require_clarification: bool = False
     clarification_category: str = ""
@@ -213,24 +211,24 @@ class JevDecision:
 # --------------------------------------------------------------------------- #
 class Provider:
     name: str = ""
-    #: **协议层**是否支持 function calling（U112）。模型层的收窄见 `_model_supports_tools`。
+    #: **协议层**是否支持 function calling。模型层的收窄见 `_model_supports_tools`。
     supports_tools: bool = False
 
     def _model_supports_tools(self, model: str | None) -> bool:
         """模型层是否具备工具能力。默认「协议支持即支持」。
 
-        默认放行的理由是**协议层面已确认**（供应商只提供支持 tools 的模型）；
-        需要收窄的供应商（本机 Ollama）自行覆盖为白名单判定。
-        """
+ 默认放行的理由是**协议层面已确认**（供应商只提供支持 tools 的模型）；
+ 需要收窄的供应商（本机 Ollama）自行覆盖为白名单判定。
+ """
         return True
 
     def reject_unsupported_tools(self, tools: Sequence[Mapping[str, Any]] | None,
                                  model: str | None) -> None:
         """下发工具清单前的一道闸：不支持就说清楚**为什么不支持**。
 
-        老教训：本机 qwen2.5vl:3b 没有 function calling 能力时，故障只在最后
-        表现为「供应商都不可用」，看不出真因。这里两级判定必须各自给出可诊断的措辞。
-        """
+ 老教训：本机 qwen2.5vl:3b 没有 function calling 能力时，故障只在最后
+ 表现为「供应商都不可用」，看不出真因。这里两级判定必须各自给出可诊断的措辞。
+ """
         if not tools:
             return
         if not self.supports_tools:
@@ -252,12 +250,12 @@ class Provider:
                    temperature: float | None = None) -> ChatResult:
         """`api_key` / `base_url` 是**按调用传入**的覆盖值。
 
-        `temperature` 为 None 时**不下发该字段**，沿用各厂默认值；
-        判定类调用（Jev）传 0 —— 见 `JevClient.decide` 的说明。
+ `temperature` 为 None 时**不下发该字段**，沿用各厂默认值；
+ 判定类调用（Jev）传 0 —— 见 `JevClient.decide` 的说明。
 
-        它们只允许来自 `core/model_access.ModelAccess.resolve()`（已做过归属校验、
-        且密钥已解密），**绝不能直接取自请求体** —— 否则用户能把任意 key 塞进网关。
-        """
+ 它们只允许来自 `core/model_access.ModelAccess.resolve`（已做过归属校验、
+ 且密钥已解密），**绝不能直接取自请求体** —— 否则用户能把任意 key 塞进网关。
+ """
         raise NotImplementedError
 
     async def stream(self, messages: Sequence[ChatMessage], *, model: str | None,
@@ -408,12 +406,12 @@ class DeepSeekProvider(Provider):
 
 
 class OpenAICompatProvider(Provider):
-    """用户自带的 OpenAI 兼容端点（U70 BYOK）。
+    """用户自带的 OpenAI 兼容端点（ BYOK）。
 
-    与 `DeepSeekProvider` 的差别是**没有全局兜底**：`base_url` 与 `api_key`
-    必须按调用传入。这样它就不可能"不小心"用了平台凭据去跑别人的端点 ——
-    少一个默认值，就少一条越权路径。
-    """
+ 与 `DeepSeekProvider` 的差别是**没有全局兜底**：`base_url` 与 `api_key`
+ 必须按调用传入。这样它就不可能"不小心"用了平台凭据去跑别人的端点 ——
+ 少一个默认值，就少一条越权路径。
+ """
 
     name = "openai-compatible"
     supports_tools = True
@@ -505,7 +503,7 @@ class LLMGateway:
     def __init__(self, settings: Settings, redis=None, resilience: Resilience | None = None) -> None:
         self.settings = settings
         self._redis = redis
-        # 计划书三、P0-1「接口熔断、超时、降级、防雪崩」——按供应商维度建立闸门
+        # 三、P0-1「接口熔断、超时、降级、防雪崩」——按供应商维度建立闸门
         self.resilience = resilience or Resilience(settings=settings, redis=redis)
         self._providers = {
             name: cls(settings) for name, cls in PROVIDERS.items()
@@ -523,7 +521,7 @@ class LLMGateway:
             )
         return str(user_id)
 
-    # ---- 限流：按账号维度统计（计划书三、P3「限流按账号维度统计」）----
+    # ---- 限流：按账号维度统计（三、P3「限流按账号维度统计」）----
     async def _check_rate(self, user_id: str, *, bucket: str, limit: int) -> None:
         if self._redis is None or limit <= 0:
             return
@@ -539,13 +537,13 @@ class LLMGateway:
         order = [p for p in self.settings.provider_order if p in self._providers]
         return order or list(self._providers)
 
-    # ---- 工具请求的专用路由（U117）----
+    # ---- 工具请求的专用路由----
     def _tool_model(self, name: str, model: str | None) -> str | None:
         """该供应商在**工具请求**里实际会用的模型名；None = 用它自己的默认模型。
 
-        `function_calling_model` **只作用于** `function_calling_provider`：
-        否则会出现「拿 deepseek 的模型名去问 ollama」这种自相矛盾的请求。
-        """
+ `function_calling_model` **只作用于** `function_calling_provider`：
+ 否则会出现「拿 deepseek 的模型名去问 ollama」这种自相矛盾的请求。
+ """
         if model:
             return model
         preferred = str(getattr(self.settings, "function_calling_provider", "") or "").strip()
@@ -570,11 +568,11 @@ class LLMGateway:
     def _tool_order(self, model: str | None = None) -> list[str]:
         """工具请求的候选顺序：**具备工具能力的排前面**，不支持的留作最后。
 
-        这一段就是「开关不是装饰」的落点：本机 Ollama 只有 qwen2.5vl:3b（无 tools），
-        若不做这一步排队，带工具的请求会先撞一次必然失败的本机模型。
-        指定 `function_calling_provider` 时它排第一（可不在 provider_order 里，
-        `_provider()` 会按需构造），**普通对话的供应商顺序不受任何影响**。
-        """
+ 这一段就是「开关不是装饰」的落点：本机 Ollama 只有 qwen2.5vl:3b（无 tools），
+ 若不做这一步排队，带工具的请求会先撞一次必然失败的本机模型。
+ 指定 `function_calling_provider` 时它排第一（可不在 provider_order 里，
+ `_provider` 会按需构造），**普通对话的供应商顺序不受任何影响**。
+ """
         preferred = str(getattr(self.settings, "function_calling_provider", "") or "").strip()
         base = self._order()
         ranked = ([preferred] if preferred else []) + [n for n in base if n != preferred]
@@ -586,19 +584,19 @@ class LLMGateway:
             (capable if ok else rest).append(name)
         return capable + rest
 
-    # ---- 能力协商的可观测出口（U112 / U117）----
+    # ---- 能力协商的可观测出口----
     def tool_capability(self, model: str | None = None,
                         provider: str | None = None) -> tuple[bool, str]:
         """本网关当前能否下发工具清单；不可用时给出**可诊断的原因**。
 
-        返回 `(可用, 说明)`。把「不可用」的原因分成两类，因为修法完全不同：
-        - 供应商协议不支持 → 换供应商；
-        - 模型不在 `function_calling_models` 白名单 → 登记模型或换模型。
+ 返回 `(可用, 说明)`。把「不可用」的原因分成两类，因为修法完全不同：
+ - 供应商协议不支持 → 换供应商；
+ - 模型不在 `function_calling_models` 白名单 → 登记模型或换模型。
 
-        只在**不真的发起请求**的前提下探测：探针工具名不会被下发出去。
-        **报告的是工具请求真实会走的那个供应商**，不是 provider_order 的第一位 ——
-        两者在生产里可以不同（本机 ollama 不支持工具、工具请求走 deepseek）。
-        """
+ 只在**不真的发起请求**的前提下探测：探针工具名不会被下发出去。
+ **报告的是工具请求真实会走的那个供应商**，不是 provider_order 的第一位 ——
+ 两者在生产里可以不同（本机 ollama 不支持工具、工具请求走 deepseek）。
+ """
         if provider:
             ok, why = self._tool_capable(provider, model, _CAPABILITY_PROBE)
             target = self._tool_model(provider, model) or "默认模型"
@@ -626,26 +624,26 @@ class LLMGateway:
                    base_url: str | None = None,
                    temperature: float | None = None,
                    tools: Sequence[Mapping[str, Any]] | None = None) -> ChatResult:
-        """`provider` / `api_key` / `base_url` 来自 `ModelAccess.resolve()`。
+        """`provider` / `api_key` / `base_url` 来自 `ModelAccess.resolve`。
 
-        三者一旦显式给出，就**只走这一个供应商、不做降级**：
-        用户选了"我的模型"，出故障时悄悄换到平台模型，费用与数据去向都变了 ——
-        那属于"未经允许"。宁可报错让用户自己换。
+ 三者一旦显式给出，就**只走这一个供应商、不做降级**：
+ 用户选了"我的模型"，出故障时悄悄换到平台模型，费用与数据去向都变了 ——
+ 那属于"未经允许"。宁可报错让用户自己换。
 
-        `tools` 为 models 的工具清单（U112，来自 `ToolRegistry.as_openai_tools()`）。
-        带工具的请求按 `_tool_order()` 排队（U117）：**具备工具能力的供应商先走**，
-        本机 Ollama 那类无工具能力的留在后面 —— 否则每次工具请求都要先撞一次
-        必然失败的模型，还把真因埋在降级日志里。
-        用户显式指定了供应商（BYOK）时**不改道**：费用与数据去向都不许悄悄变。
-        """
+ `tools` 为 models 的工具清单（，来自 `ToolRegistry.as_openai_tools`）。
+ 带工具的请求按 `_tool_order` 排队：**具备工具能力的供应商先走**，
+ 本机 Ollama 那类无工具能力的留在后面 —— 否则每次工具请求都要先撞一次
+ 必然失败的模型，还把真因埋在降级日志里。
+ 用户显式指定了供应商（BYOK）时**不改道**：费用与数据去向都不许悄悄变。
+ """
         uid = self._require_user(user_id)
-        # bucket 可切换：计划书三、P3 要求「Jev 调用独立配额统计」，
+        # bucket 可切换：三、P3 要求「Jev 调用独立配额统计」，
         # 若与普通调用共用 llm 桶，Jev 的配额就会被业务话务挤占，等于没有独立配额。
         await self._check_rate(uid, bucket=rate_bucket,
                                limit=rate_limit or self.settings.llm_rate_limit_per_minute)
         errors: list[str] = []
         tool_unsupported: list[str] = []
-        # 工具请求走能力排序；普通请求与接线前完全一致（U117 只动带工具这一条路）
+        # 工具请求走能力排序；普通请求与接线前完全一致（ 只动带工具这一条路）
         order = self._targets(provider) if (provider or not tools) else self._tool_order(model)
         for name in order:                              # 负载均衡 / 故障降级
             provider_impl = self._provider(name)
@@ -680,7 +678,7 @@ class LLMGateway:
                     if attempt < self.settings.llm_max_retries:
                         await asyncio.sleep(0.4 * (attempt + 1))
         # **按真因分类报错**：是「没有支持工具的供应商」，就说「没有支持工具的供应商」，
-        # 绝不说「全部供应商不可用」。真因不能被降级日志淹没 —— 这是 U112 立项的直接原因。
+        # 绝不说「全部供应商不可用」。真因不能被降级日志淹没 —— 这是 立项的直接原因。
         if tool_unsupported and len(tool_unsupported) >= len(errors):
             raise ToolUnsupportedError(
                 "没有可用于 function calling 的模型供应商 → " + " | ".join(tool_unsupported))
@@ -706,7 +704,7 @@ class LLMGateway:
                 errors.append(f"{name}: 熔断打开 {exc}")
                 continue
             try:
-                # 流式响应不设总时长上限（计划书三、P0-7 要求逐字流式播报），
+                # 流式响应不设总时长上限（三、P0-7 要求逐字流式播报），
                 # 仅以并发闸防雪崩；整段流的成败回写给熔断器。
                 async with self.resilience.bulkhead(f"llm.{name}"):
                     async for piece in provider_impl.stream(
@@ -731,11 +729,11 @@ class LLMGateway:
     def _provider(self, name: str) -> Provider:
         """按需构造供应商。
 
-        `openai-compatible`（用户自带端点）**不在** `settings.provider_order` 里，
-        所以不能只靠构造期的 `_providers` 字典 —— 取不到就现建一个。
-        缓存是安全的：Provider 实例只持有 `settings`，**用户凭据是按调用传参**的，
-        不驻留在实例上，因此不会把上一个用户的配置留给下一个用户。
-        """
+ `openai-compatible`（用户自带端点）**不在** `settings.provider_order` 里，
+ 所以不能只靠构造期的 `_providers` 字典 —— 取不到就现建一个。
+ 缓存是安全的：Provider 实例只持有 `settings`，**用户凭据是按调用传参**的，
+ 不驻留在实例上，因此不会把上一个用户的配置留给下一个用户。
+ """
         existing = self._providers.get(name)
         if existing is not None:
             return existing
@@ -795,7 +793,7 @@ class JevClient:
                 # 不同标签与置信，路由行为就成了不可复现的（评测也无从比较）。
                 # 这不是「让模型更准」，是让结论稳定 —— 准不准由 prompt 与模型决定。
                 temperature=0.0,
-                # 计划书三、P3「Jev 调用独立配额统计」：走独立 bucket，不占业务话务配额
+                # 三、P3「Jev 调用独立配额统计」：走独立 bucket，不占业务话务配额
                 rate_limit=self.settings.jev_rate_limit_per_minute,
                 rate_bucket="jev",
             )
@@ -826,7 +824,7 @@ class JevClient:
             # 澄清是**安全动作**：不受置信阈值门控。
             # 若被阈值拦下，低置信时就可能漏掉「必须向用户确认」的多意图冲突。
             if not self.settings.jev_allow_clarify:
-                # E-80：**只在弱模型上关**。本机 3B 把「信息不足」判成「多意图」，
+                #：**只在弱模型上关**。本机 3B 把「信息不足」判成「多意图」，
                 # 6 次澄清 6 次错；云端 deepseek-chat 实测澄清集中在 multi_intent
                 # 与 unknown 两类（正是该问的），因此**默认是开的**。
                 # 关掉的是「采信这个模型的澄清请求」，JEV-003 的机制原样保留：
@@ -869,7 +867,7 @@ class JevClient:
         if not 0.0 <= confidence <= 1.0:
             raise ValueError("置信概率必须落在 0~1")
 
-        # --- U01：候选意图列表 ---
+        # ---：候选意图列表 ---
         raw_candidates = obj.get("candidate_labels") or []
         if not isinstance(raw_candidates, list):
             raise ValueError("candidate_labels 必须是列表")
@@ -880,7 +878,7 @@ class JevClient:
             if item not in candidates:
                 candidates.append(item)
 
-        # --- U14：是否必须澄清 + 澄清类别（均为枚举，无自由文本）---
+        # ---：是否必须澄清 + 澄清类别（均为枚举，无自由文本）---
         flag = obj.get("require_clarification", False)
         if isinstance(flag, bool):
             require = flag

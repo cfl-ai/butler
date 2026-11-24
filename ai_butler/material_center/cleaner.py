@@ -20,7 +20,7 @@ from typing import Iterable, Sequence
 
 from ai_butler.agent_wiki.ontology import SOURCE, SOURCE_ACTIVE, WikiPage, new_page
 
-#: 计划书公共域与旅游模块点名过的素材类别
+#: 公共域与旅游模块点名过的素材类别
 CATEGORY_SCENIC = "景点"
 CATEGORY_WEATHER = "天气"
 CATEGORY_TRAFFIC = "交通"
@@ -61,7 +61,7 @@ _TAG_RE = re.compile(r"<[^>]+>")
 _SCRIPT_RE = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.S | re.I)
 _MULTI_PUNCT_RE = re.compile(r"([。！？；，,.!?;])\1{1,}")
 #: 规范性文件的文号（如 `财行〔2013〕531号`、`国办发[2019]12号`）。
-#: 用它判「这是不是一份**会长期有效**的文件」，而不是一条会过期的资讯（U122）。
+#: 用它判「这是不是一份**会长期有效**的文件」，而不是一条会过期的资讯。
 _NORMATIVE_DOC_NO = re.compile(
     r"[\u4e00-\u9fa5]{1,8}\s*[〔\[（(]\s*(?:19|20)\d{2}\s*[〕\]）)]\s*\d{1,4}\s*号")
 #: 块级标签必须先变成换行再剥离。
@@ -112,7 +112,7 @@ class CleanedDocument:
 
     def is_stale(self, *, now: datetime | None = None) -> bool:
         if not self.stale_after:
-            # 空串 = **没有到期日**（规范性文件，U122）。不是「忘了打标」：
+            # 空串 = **没有到期日**（规范性文件，）。不是「忘了打标」：
             # 忘打标会表现为「永远不过期」，所以这里只能靠 clean_document 显式置空。
             return False
         moment = now or utcnow()
@@ -150,7 +150,7 @@ def clean_text(text: str) -> tuple[str, int]:
 
 
 def classify(text: str, *, title: str = "") -> str:
-    """按计划书点名过的类别做关键词分类。命中多个时取命中次数最多者。"""
+    """按设计点名过的类别做关键词分类。命中多个时取命中次数最多者。"""
     blob = f"{title} {text}"
     best, best_hits = CATEGORY_OTHER, 0
     for category, words in CATEGORY_KEYWORDS.items():
@@ -172,11 +172,11 @@ def ttl_days(category: str) -> int:
 def is_normative_document(text: str) -> bool:
     """是不是一份**规范性文件**（带正式文号），而不是一条会过期的资讯。
 
-    判据只认文号，不认「办法/通知/规定」这类字眼：字眼在新闻标题里也常见，
-    而文号是发文机关给的正式标识，可核验。计划书 P2 的 TTL 是为「易变的运行时
-    事实」（天气、票价、公告）设的；制度文件的更新靠**新版本替换**（supersede），
-    不靠时间到期，所以对它不设到期日（U122）。
-    """
+ 判据只认文号，不认「办法/通知/规定」这类字眼：字眼在新闻标题里也常见，
+ 而文号是发文机关给的正式标识，可核验。 P2 的 TTL 是为「易变的运行时
+ 事实」（天气、票价、公告）设的；制度文件的更新靠**新版本替换**（supersede），
+ 不靠时间到期，所以对它不设到期日。
+ """
     return bool(_NORMATIVE_DOC_NO.search(text or ""))
 
 
@@ -190,7 +190,7 @@ def clean_document(raw: RawDocument, *, now: datetime | None = None) -> CleanedD
     base = datetime.fromisoformat(published) if published else moment
     if base.tzinfo is None:
         base = base.replace(tzinfo=timezone.utc)
-    # 规范性文件不设到期日（U122）：按「发布日 + 资讯 TTL」会给 2013 年的办法
+    # 规范性文件不设到期日：按「发布日 + 资讯 TTL」会给 2013 年的办法
     # 算出 2014-01-30 的到期日，入库即过期十年；一旦 archive_stale 被装配，
     # 这批制度素材会被静默清掉，表现为「明明入过库却答不出来」。
     stale_after = "" if is_normative_document(text) else (
@@ -227,11 +227,11 @@ def clean_batch(raw_docs: Iterable[RawDocument], *, now: datetime | None = None
 # --------------------------------------------------------------------------- #
 def to_wiki_source_page(cleaned: CleanedDocument, *, user_id: str | None = None,
                         now: str = "") -> WikiPage:
-    """计划书三、P2「转换为 Wiki Source 源页面，保存来源元数据」。
+    """三、P2「转换为 Wiki Source 源页面，保存来源元数据」。
 
-    素材溯源库属于公共 Workspace ⇒ 默认**不带 user_id**；
-    私有 Vault 素材（如用户上传）可显式传入 user_id。
-    """
+ 素材溯源库属于公共 Workspace ⇒ 默认**不带 user_id**；
+ 私有 Vault 素材（如用户上传）可显式传入 user_id。
+ """
     if cleaned.is_duplicate:
         raise CleanError(
             f"素材 {cleaned.doc_id!r} 是 {cleaned.duplicate_of!r} 的重复内容，不应再生成源页面"

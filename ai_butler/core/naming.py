@@ -63,7 +63,7 @@ DB_NAME: str = "ai_butler"
 
 #: 包目录 → 阶段编号。**只对确实存在独立包的阶段登记**；
 #: 其余阶段（P4/P5/P6/P8 等）实现就在 agents/ 下的单文件里，不在此虚造一个包。
-#: 中文名不写在这里，从 phases 真值源派生，避免同一名字存两份（E-44）。
+#: 中文名不写在这里，从 phases 真值源派生，避免同一名字存两份。
 PHASE_PACKAGES: dict[str, str] = {
     "infra": "P0-1",
     "devkit": "P0-2",
@@ -74,7 +74,7 @@ PHASE_PACKAGES: dict[str, str] = {
     "harness": "P10",
 }
 
-#: 非阶段包的层级中文名。值取自计划书原句，由守护测试回查原文。
+#: 非阶段包的层级中文名。值取自登记原句，由守护测试回查原文。
 #: - core：三、P0-1「统一全项目底层架构…所有业务模块统一复用」→ 底座
 #: - middleware：三、P0-1「开发全局中间件」「会话管理中间件」→ 中间件
 #: - agents：三、P4「Mops 多智能体集群」→ 阶段 Agent 层
@@ -93,7 +93,7 @@ MODULE_TITLES: dict[str, str] = {
     "retrieval": "统一检索 API",
 }
 
-#: P4 子 Agent 的中文名。计划书原文（三、P4「包含子 Agent」）：
+#: P4 子 Agent 的中文名。原始需求（三、P4「包含子 Agent」）：
 #: 「设备感知、天气感知、时间进度、增量抽取、路线方案、备选预案、代码迭代 Agent」
 #: 原文里「Agent」只出现在最后一项，是七项共用的总称，故统一不加后缀——
 #: 与阶段命名同一口径：P1 就叫「数据中台」，不叫「数据中台 Agent」。
@@ -117,21 +117,21 @@ CROSSCUT_TITLES: dict[str, str] = {
     "tour_agent": "旅游 Agent",
 }
 
-#: **用户指令新增**的 Agent（计划书未点名）。中文名来自用户原话，
+#: **用户指令新增**的 Agent（未点名）。中文名来自用户原话，
 #: 每条必须在 core/decisions.py 有 source=人工授权 的对应裁定，
 #: 且中文名出现在该裁定的 resolution 里（由守护测试机检）。
-#: 2026-10-23：用户「再补充添加一个评测中台 agent」→ 裁定 U55。
+#: 2026-10-23：用户「再补充添加一个评测中台 agent」→ 裁定。
 USER_AGENT_TITLES: dict[str, str] = {
     "eval_platform_agent": "评测中台 Agent",
 }
 
 
 def module_title(package: str) -> str:
-    """包目录 → 计划书层级中文名。
+    """包目录 → 层级中文名。
 
-    有对应阶段的包**从 phases 派生**，不在本文件另存一份中文名——
-    否则 phases.title 一改，这里就悄悄过期（E-44）。
-    """
+ 有对应阶段的包**从 phases 派生**，不在本文件另存一份中文名——
+ 否则 phases.title 一改，这里就悄悄过期。
+ """
     code = PHASE_PACKAGES.get(package)
     if code:
         from ai_butler.core.phases import phase     # 延迟导入：避免 import 环
@@ -162,7 +162,7 @@ def redis_key(*parts: object) -> str:
 
 
 def vertical_key(vertical: str, *parts: object) -> str:
-    """垂类命名空间。新增垂类只传垂类名，不新增命名规则（计划书五）。"""
+    """垂类命名空间。新增垂类只传垂类名，不新增命名规则（五）。"""
     return redis_key(vertical, *parts)
 
 

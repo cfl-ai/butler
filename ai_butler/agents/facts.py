@@ -23,16 +23,16 @@ class FactError(ValueError):
 class AgentFact:
     """子 Agent 产出的一条事实。
 
-    计划书要求「输出事实绑定 Claim 声明 ID 与 Evidence 证据 ID」，
-    因此这两个字段**没有默认值**，缺失即无法构造。
-    """
+ 设计要求「输出事实绑定 Claim 声明 ID 与 Evidence 证据 ID」，
+ 因此这两个字段**没有默认值**，缺失即无法构造。
+ """
 
     statement: str
     claim_page_id: str
     evidence_ids: tuple[str, ...]
     confidence: float
     #: Claim 主体与客体。本体（ontology.REQUIRED_EXTRA[CLAIM]）把这两个字段列为必填，
-    #: 因为「一条声明」必须说明它**关于什么**；留空会直接违反 U17 的字段约定。
+    #: 因为「一条声明」必须说明它**关于什么**；留空会直接违反 的字段约定。
     subject_id: str
     object_id: str
     claim_type: str = "fact"
@@ -97,7 +97,7 @@ class FactWriter:
                 f"计划书三、P2：强制所有素材绑定溯源来源，对应 Wiki Evidence 证据条目。")
 
     # ---------------- 回写 ---------------- #
-    #: 风控（台账 U41）：输入被标为不可信时，Claim 只能落成「待核实」。
+    #: 风控：输入被标为不可信时，Claim 只能落成「待核实」。
     #: 这**是**「不得直接沉淀为事实」的可执行定义 —— 不是靠下游自觉。
     SUSPECTED_STATUS = "SUSPECTED"
 

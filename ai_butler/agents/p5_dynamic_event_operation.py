@@ -47,7 +47,7 @@ REPLAN = "replan"
 REPLAN_SKIP = "skip_replan"
 REPLAN_LABELS: tuple[str, ...] = (REPLAN, REPLAN_SKIP)
 
-#: 约束类别（计划书三、P5 开发步骤 4 逐字点名）
+#: 约束类别（三、P5 开发步骤 4 逐字点名）
 CONSTRAINT_LOCATION = "location"
 CONSTRAINT_WEATHER = "weather"
 CONSTRAINT_TIME = "time"
@@ -57,7 +57,7 @@ CONSTRAINT_KINDS: tuple[str, ...] = (CONSTRAINT_LOCATION, CONSTRAINT_WEATHER,
                                      CONSTRAINT_TIME, CONSTRAINT_DISRUPTION,
                                      CONSTRAINT_PREFERENCE)
 
-#: 生成方案的默认提示模板（计划书三、P0-2 的 Prompt 版本库负责其版本管理）
+#: 生成方案的默认提示模板（三、P0-2 的 Prompt 版本库负责其版本管理）
 DEFAULT_PLAN_PROMPT = (
     "你是行程方案生成引擎。只能依据「已检索到的权威素材」作答，"
     "不得引入素材之外的事实。\n"
@@ -94,8 +94,8 @@ class PlanConstraint:
 def collect_constraints(state: Mapping[str, Any]) -> list[PlanConstraint]:
     """从 State 收集位置 / 天气 / 时间 / 突发四类约束。
 
-    只搬运 State 与感知快照里已有的信息，**不臆造缺失的约束**。
-    """
+ 只搬运 State 与感知快照里已有的信息，**不臆造缺失的约束**。
+ """
     out: list[PlanConstraint] = []
 
     location = str(state.get("location") or "").strip()
@@ -135,7 +135,7 @@ class DynamicEventAgent(PhaseAgent):
     # ------------------------------------------------------------------ #
     @staticmethod
     def _preference_constraints(claims: Sequence[Any]) -> list[PlanConstraint]:
-        """把私有 Vault 里的偏好声明转成约束（计划书「读取私有 Vault 实体与偏好声明」）。"""
+        """把私有 Vault 里的偏好声明转成约束（「读取私有 Vault 实体与偏好声明」）。"""
         out: list[PlanConstraint] = []
         for page in claims:
             description = str(page.extra.get("description") or "").strip()
@@ -161,7 +161,7 @@ class DynamicEventAgent(PhaseAgent):
 
     # ------------------------------------------------------------------ #
     async def run(self, state: dict[str, Any]) -> dict[str, Any]:
-        # 计划书三、P5 触发时机：前提为登录会话有效（SubAgent.__call__ 已保证）
+        # 三、P5 触发时机：前提为登录会话有效（SubAgent.__call__ 已保证）
         uid = self.require_user_id(state)
         query = str(state.get("utterance") or "").strip()
 

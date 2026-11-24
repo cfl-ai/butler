@@ -57,7 +57,7 @@ def test_empty_query_cannot_be_planned():
 
 
 def test_multi_intent_must_ask_instead_of_picking_one():
-    """计划书三、P3：多意图**不自动选择优先级**，必须向用户确认（JEV-003）。"""
+    """多意图**不自动选择优先级**，必须向用户确认（JEV-003）。"""
     resolved = plan("年假几天？另外怎么报销？", tier=AccessTier.MEMBER)
     assert resolved.category is QueryCategory.MULTI_INTENT
     assert resolved.needs_clarification is True
@@ -113,7 +113,7 @@ def test_tool_table_is_the_single_source_of_truth():
 
 
 def test_route_from_u46_is_consumed_not_rewritten():
-    """U46 的路线判定原样带出；本模块不改写它。"""
+    """ 的路线判定原样带出；本模块不改写它。"""
     resolved = plan("公司年假几天", tier=AccessTier.MEMBER)
     assert resolved.route is not None
     assert resolved.route.route in set(QueryRoute)
@@ -141,7 +141,7 @@ def test_describe_categories_covers_all_categories():
 
 
 # --------------------------------------------------------------------------- #
-# L1 的一轮实测优化（2026-10-25，U76 前置）
+# L1 的一轮实测优化（2026-10-25， 前置）
 # --------------------------------------------------------------------------- #
 #: 这一批全部来自一次 62 句实测里**判错的句子**，每一类都能说出语言依据。
 #: 把它们钉成用例，是因为上一轮的错误全都「看起来很像对的」——
@@ -174,10 +174,10 @@ def test_regressions_from_the_2026_10_25_measurement(query, category, why):
 def test_naked_my_never_means_personal_recall():
     """裸「我的」**不再**触发私有回忆——这是本轮最重要的一条收窄。
 
-    「我的发票什么时候能开出来」问的是流程，判成 personal_recall 会去查
-    私有 Vault（访客还会被裁掉工具），方向整个错。现在它落到事实要素，
-    虽仍不是最优的 procedure，但**不再是方向性错误**。
-    """
+ 「我的发票什么时候能开出来」问的是流程，判成 personal_recall 会去查
+ 私有 Vault（访客还会被裁掉工具），方向整个错。现在它落到事实要素，
+ 虽仍不是最优的 procedure，但**不再是方向性错误**。
+ """
     for query in ("为什么我的订单还没到", "我的发票什么时候能开出来"):
         resolved, _, _ = classify(query)
         assert resolved is not QueryCategory.PERSONAL_RECALL, query
@@ -192,11 +192,11 @@ def test_recall_phrases_still_mean_personal_recall():
 def test_bare_comma_is_deliberately_not_a_multi_intent_separator():
     """裸逗号**刻意不收**：净收益为 0 而体验变差。
 
-    收进来能把「这个多少钱，怎么付款」判成多意图（+1），
-    但会把「给我个方案，怎么部署内网服务」也判成多意图（-1）——
-    后者是一个诉求加方案细节，反问一次等于白打断用户。
-    这条用例的作用是**把这个取舍钉住**，防止后人「顺手」加回逗号。
-    """
+ 收进来能把「这个多少钱，怎么付款」判成多意图（+1），
+ 但会把「给我个方案，怎么部署内网服务」也判成多意图（-1）——
+ 后者是一个诉求加方案细节，反问一次等于白打断用户。
+ 这条用例的作用是**把这个取舍钉住**，防止后人「顺手」加回逗号。
+ """
     assert classify("这个多少钱，怎么付款")[0] is QueryCategory.PROCEDURE
     assert classify("给我个方案，怎么部署内网服务")[0] is QueryCategory.RECOMMENDATION
 
@@ -204,10 +204,10 @@ def test_bare_comma_is_deliberately_not_a_multi_intent_separator():
 def test_no_signal_query_is_unknown_not_small_talk():
     """无确定性信号时应落到 UNKNOWN，**不得落到 small_talk**。
 
-    这条区分不是命名口味：`small_talk` 会跳过检索（闲聊不检索）。
-    把「听不出来的问题」当闲聊，等于**不查就答**——
-    用户问了个具体的事，系统回一句寒暄，比说「我不确定」还糟。
-    """
+ 这条区分不是命名口味：`small_talk` 会跳过检索（闲聊不检索）。
+ 把「听不出来的问题」当闲聊，等于**不查就答**——
+ 用户问了个具体的事，系统回一句寒暄，比说「我不确定」还糟。
+ """
     for query in ("那个啥来着", "随便问问"):
         resolved, _, _ = classify(query)
         assert resolved is QueryCategory.UNKNOWN, f"{query!r} → {resolved}"

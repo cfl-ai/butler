@@ -42,7 +42,7 @@ from ai_butler.scheduler.router import IntentRouter, RouteDecision, RouteRequest
 SearchFn = Callable[[str, str | None], Sequence[dict]]
 
 #: 送进路由的候选标签集 —— **从 `QueryCategory` 派生，不另写一份字面量**。
-#: 存两份字面量必然漂移（E-44）；`tests/test_intent_router_wiring.py` 里有一条
+#: 存两份字面量必然漂移；`tests/test_intent_router_wiring.py` 里有一条
 #: 断言它与 `intent_wiring.INTENT_LABELS` 逐字相同，防止哪天一边改了另一边忘。
 INTENT_LABELS_FROM_TAXONOMY: tuple[str, ...] = tuple(c.value for c in QueryCategory)
 
@@ -69,7 +69,7 @@ ANAPHORA_MAX_CHARS = 24
 
 
 # --------------------------------------------------------------------------- #
-# 答案纯文本化（U119）
+# 答案纯文本化
 # --------------------------------------------------------------------------- #
 #: 从答案里**逐字符丢弃**的 Markdown 记号。用丢弃而不是成对匹配：
 #: 流式文本很可能在 `**` 中间被切开，成对匹配会漏出半个标记，逐字符丢弃不会。
@@ -81,12 +81,12 @@ _DROP_CHARS = frozenset("*|`")
 class PlainText:
     """把模型输出洗成纯文本。**逐字安全**，可以边流边洗。
 
-    为什么在服务端做：端侧可能是网页、可能是 TTS、可能是手机原生列表。
-    让每个端各写一遍清洗，必然三套口径（E-44）；而且 TTS 会把 `**` 念出来。
+ 为什么在服务端做：端侧可能是网页、可能是 TTS、可能是手机原生列表。
+ 让每个端各写一遍清洗，必然三套口径；而且 TTS 会把 `**` 念出来。
 
-    行首列表符（`- `、`•`、`·`）整段丢弃，但**行中的连字符保留** ——
-    「20-30 度」「B-52」这类是正文，不是标记。
-    """
+ 行首列表符（`- `、`•`、`·`）整段丢弃，但**行中的连字符保留** ——
+ 「20-30 度」「B-52」这类是正文，不是标记。
+ """
 
     _BULLETS = frozenset(" \t\u00a0")
 
@@ -162,7 +162,7 @@ def plain_text(text: str) -> str:
 
 
 #: 工具 → 数据来源的人话名称。**前端不自己拼**：来源名属于数据口径，
-#: 页面和后端各维护一份必然漂移（E-44）。
+#: 页面和后端各维护一份必然漂移。
 TOOL_SOURCE_LABELS: dict[str, str] = {
     "get_weather": "Open-Meteo 气象数据",
     "search_poi": "高德地图 POI",
@@ -175,11 +175,11 @@ UNKNOWN_TOOL_SOURCE = "工具"
 
 
 def _tool_sources(payload: Mapping[str, Any]) -> list[dict[str, str]]:
-    """从工具报告里抽「数据来源」（U119）。
+    """从工具报告里抽「数据来源」。
 
-    **只列真的调用成功过的工具**：失败的工具被写成来源，等于给出一个假的出处。
-    同一工具被调多次只列一次 —— 这里回答的是「数据从哪来」，不是调用日志。
-    """
+ **只列真的调用成功过的工具**：失败的工具被写成来源，等于给出一个假的出处。
+ 同一工具被调多次只列一次 —— 这里回答的是「数据从哪来」，不是调用日志。
+ """
     out: list[dict[str, str]] = []
     for unit in payload.get("units") or ():
         for call in unit.get("calls") or ():
@@ -200,9 +200,9 @@ def _retrieval_sources(hits: Sequence[Mapping[str, Any]],
                        wiki: Mapping[str, Any] | None) -> list[dict[str, str]]:
     """常规链路的来源：素材检索命中 + Wiki 已知事实。
 
-    命中 0 条时**不写「素材库」**：那会让人以为查过且有依据。
-    改为明写「未检索到资料」，把「没有依据」这件事摆到台面上。
-    """
+ 命中 0 条时**不写「素材库」**：那会让人以为查过且有依据。
+ 改为明写「未检索到资料」，把「没有依据」这件事摆到台面上。
+ """
     out: list[dict[str, str]] = []
     count = len(hits or ())
     if count:
@@ -285,34 +285,34 @@ class ChatOrchestrator:
         self.search = search
         self.top_k = top_k
         self.model = model
-        #: U70：有它时**按用户**解析模型与凭据；没有时才退回静态 `model`。
+        #:：有它时**按用户**解析模型与凭据；没有时才退回静态 `model`。
         self.model_access = model_access
         self.verify_answer = verify_answer
-        #: U73：多轮上下文。**装配了才谈得上记忆**，没装就如实说单轮。
+        #:：多轮上下文。**装配了才谈得上记忆**，没装就如实说单轮。
         self.context_manager = context_manager
         self.history_enable = history_enable
-        #: U74：五层意图路由。None 表示没接（会如实记账，不假装「判不出」）。
+        #:：五层意图路由。None 表示没接（会如实记账，不假装「判不出」）。
         self.intent_router = intent_router
         self.intent_labels = tuple(intent_labels or INTENT_LABELS_FROM_TAXONOMY)
-        #: U115：wiki 编译产物的注入源。None = 没装（会如实记账，不假装「没有已知事实」）。
+        #:：wiki 编译产物的注入源。None = 没装（会如实记账，不假装「没有已知事实」）。
         self.wiki_digest = wiki_digest
-        #: U114：对话入口的 function calling 承接层（异步可调用）。None = 未装。
+        #:：对话入口的 function calling 承接层（异步可调用）。None = 未装。
         self.tool_answer = tool_answer
-        #: U111：主状态机入口（垂类链路）。None = 未装 —— 该轴在生产里不存在。
+        #:：主状态机入口（垂类链路）。None = 未装 —— 该轴在生产里不存在。
         self.scene = scene
 
-    # ---------------- 上下文（U73） ----------------
+    # ---------------- 上下文 ----------------
     def _history(self, user_id: str, conversation_id: str | None,
                  tier: access.AccessTier) -> tuple[str, str, str]:
         """取历史。返回 `(历史文本, 上一轮用户问题, 不可用原因)`。
 
-        四道门**必须全过**，任何一道不过都退化为单轮，并且**说出原因**。
-        「读不到历史」和「本来就没有历史」是两件事，混成一件就会让
-        「接线掉了」看起来像「新用户第一次提问」—— E-77 正是这么藏了两轮。
+ 四道门**必须全过**，任何一道不过都退化为单轮，并且**说出原因**。
+ 「读不到历史」和「本来就没有历史」是两件事，混成一件就会让
+ 「接线掉了」看起来像「新用户第一次提问」—— 正是这么藏了两轮。
 
-        `上一轮用户问题` 单独返回，是因为检索侧要用它做指代扩展；
-        整段历史拼进检索 query 会污染 BM25（把上一轮的每个词都当成本轮诉求）。
-        """
+ `上一轮用户问题` 单独返回，是因为检索侧要用它做指代扩展；
+ 整段历史拼进检索 query 会污染 BM25（把上一轮的每个词都当成本轮诉求）。
+ """
         if not self.history_enable:
             return "", "", "多轮记忆已按配置关闭：本轮为单轮问答"
         if self.context_manager is None:
@@ -353,18 +353,18 @@ class ChatOrchestrator:
             return f"历史写入失败（{type(exc).__name__}）：下一轮将看不到本次问答"
         return ""
 
-    # ---------------- 意图路由（U74） ----------------
+    # ---------------- 意图路由 ----------------
     async def _route(self, user_id: str, query: str,
                      conversation_id: str | None) -> tuple[RouteDecision | None, str]:
         """跑一次五层意图路由。返回 `(决策, 不可用原因)`。
 
-        **三类结果必须分开**，混起来就分不清「判不出」与「没接通」：
+ **三类结果必须分开**，混起来就分不清「判不出」与「没接通」：
 
-        - 决策 `label=None`：路由跑了，五层都没给出结论 —— 这是**正常**结果，
-          planner 会退回自己的确定性分类（UNKNOWN → 最稳的 hybrid_rerank）；
-        - `intent_router is None`：**没装配**，原因如实说出（E-77 的形态）；
-        - 抛异常：路由本身坏了，降级为确定性分类，并把异常类型带上。
-        """
+ - 决策 `label=None`：路由跑了，五层都没给出结论 —— 这是**正常**结果，
+ planner 会退回自己的确定性分类（UNKNOWN → 最稳的 hybrid_rerank）；
+ - `intent_router is None`：**没装配**，原因如实说出（ 的形态）；
+ - 抛异常：路由本身坏了，降级为确定性分类，并把异常类型带上。
+ """
         if self.intent_router is None:
             return None, "意图路由未装配：本轮按确定性规则分类"
         try:
@@ -416,14 +416,14 @@ class ChatOrchestrator:
                        digest: Mapping[str, Any] | None = None) -> str:
         """拼提示词。**顺序固定**：历史 → 已知事实 → 资料 → 当前问题。
 
-        历史放在资料之前，是因为它只负责消解指代（「第二个」指什么），
-        权威性低于资料；放在后面会让模型把历史当最近证据来引用。
-        历史为空时整段消失，不留「（无历史）」占位 —— 占位会被当成一条事实。
+ 历史放在资料之前，是因为它只负责消解指代（「第二个」指什么），
+ 权威性低于资料；放在后面会让模型把历史当最近证据来引用。
+ 历史为空时整段消失，不留「（无历史）」占位 —— 占位会被当成一条事实。
 
-        「已知事实」是 wiki 编译产出的高置信声明（U115）。它排在**资料之前**、
-        并明确标注「编译自知识库、可能已过期」—— 让模型把它当先验而非证据，
-        具体参数仍以 `[E*]` 资料为准。digest 为空时整段消失（同上：不留占位）。
-        """
+ 「已知事实」是 wiki 编译产出的高置信声明。它排在**资料之前**、
+ 并明确标注「编译自知识库、可能已过期」—— 让模型把它当先验而非证据，
+ 具体参数仍以 `[E*]` 资料为准。digest 为空时整段消失（同上：不留占位）。
+ """
         blocks: list[str] = []
         if history.strip():
             blocks.append(f"{_HISTORY_HEAD}\n{history.strip()}")
@@ -457,10 +457,10 @@ class ChatOrchestrator:
     def _search_text(query: str, last_question: str) -> tuple[str, str]:
         """把「那第二个呢」这类指代句补上上一轮问题再送去检索。
 
-        返回 `(检索文本, 说明)`。**不改写 query 本身**：改写会让
-        「用户问了什么」与「检索了什么」对不上，复检和评测都无从对齐。
-        只扩展检索侧，提示词里仍然是用户原话。
-        """
+ 返回 `(检索文本, 说明)`。**不改写 query 本身**：改写会让
+ 「用户问了什么」与「检索了什么」对不上，复检和评测都无从对齐。
+ 只扩展检索侧，提示词里仍然是用户原话。
+ """
         if not last_question.strip():
             return query, ""
         if len(query) > ANAPHORA_MAX_CHARS or not _ANAPHORA.search(query):
@@ -474,10 +474,10 @@ class ChatOrchestrator:
               ) -> tuple[dict[str, Any], str]:
         """取注入对话的 `wiki_digest`。返回 `(digest, 说明)`。
 
-        **访客只给公共 Workspace 的声明**（计划书三、P2：私有 Vault 需登录，
-        且不得加载他人私有页面）。没装配、读失败、库为空都**返回说明**：
-        「没有已知事实」与「Wiki 没接上」是两件事，混在一起就再也查不出来。
-        """
+ **访客只给公共 Workspace 的声明**（私有 Vault 需登录，
+ 且不得加载他人私有页面）。没装配、读失败、库为空都**返回说明**：
+ 「没有已知事实」与「Wiki 没接上」是两件事，混在一起就再也查不出来。
+ """
         if self.wiki_digest is None:
             return {}, "Wiki 未装配：本次回答未注入已知事实"
         uid = user_id if tier is access.AccessTier.MEMBER else ""
@@ -492,10 +492,10 @@ class ChatOrchestrator:
         return digest, note
 
     def _model_kwargs(self, user_id: str) -> dict[str, str]:
-        """按用户解析出本次调用要用的模型与凭据（U70）。
+        """按用户解析出本次调用要用的模型与凭据。
 
-        额度在这里扣：**扣不动就不发请求**，绝不"先用后报"。
-        """
+ 额度在这里扣：**扣不动就不发请求**，绝不"先用后报"。
+ """
         if self.model_access is None:
             return {"model": self.model} if self.model else {}
         resolved = self.model_access.resolve(user_id=user_id)
@@ -512,9 +512,9 @@ class ChatOrchestrator:
                      ) -> AsyncIterator[ChatEvent]:
         """主链路。**任何异常都转成 error 事件，不抛出到 ASGI 层**。
 
-        `conversation_id`（U73）为空或层级不符时**退化为单轮**；
-        退化的原因写进 `notes` —— 静默退化等于把「没接上」伪装成「新用户」。
-        """
+ `conversation_id`为空或层级不符时**退化为单轮**；
+ 退化的原因写进 `notes` —— 静默退化等于把「没接上」伪装成「新用户」。
+ """
         resolved_tier = tier or access.AccessTier.from_user_id(user_id)
         try:
             access.require(resolved_tier, access.Capability.TEXT_QUERY)
@@ -525,7 +525,7 @@ class ChatOrchestrator:
         history, last_question, history_problem = self._history(
             user_id, conversation_id, resolved_tier)
 
-        # ---- 意图路由（U74）：先问「这句话想干什么」，再决定怎么查 ----
+        # ---- 意图路由：先问「这句话想干什么」，再决定怎么查 ----
         try:
             intent_decision, intent_note = await self._route(
                 user_id, query, conversation_id)
@@ -541,7 +541,7 @@ class ChatOrchestrator:
             intent_notes.extend(f"路由 {n}" for n in intent_decision.degradation_notes)
 
         # JEV-003 在链路上的落点：路由判定必须澄清 → 暂停分发，不进检索。
-        # 话术由系统按枚举模板渲染（U25），不是模型自由生成的句子。
+        # 话术由系统按枚举模板渲染，不是模型自由生成的句子。
         if intent_decision is not None and intent_decision.must_pause:
             question = intent_decision.clarifying_question
             remember_note = self._remember(
@@ -570,7 +570,7 @@ class ChatOrchestrator:
 
         plan_payload = retrieval_plan.as_dict()
         plan_payload["intent"] = self._intent_view(intent_decision, intent_note)
-        # 已知事实（U115）：先取 digest 再发 plan，端侧才能在第一屏就显示
+        # 已知事实：先取 digest 再发 plan，端侧才能在第一屏就显示
         # 「这次带了 N 条已知事实」——事后补发的事件，用户已经看过答案了。
         digest, wiki_note = self._wiki(user_id, resolved_tier)
         early_notes: list[str] = [wiki_note] if wiki_note else []
@@ -582,7 +582,7 @@ class ChatOrchestrator:
         }
         yield ChatEvent("plan", data=plan_payload)
 
-        # 多意图：计划书要求「不自动选择优先级，必须向用户确认」（JEV-003）
+        # 多意图：设计要求「不自动选择优先级，必须向用户确认」（JEV-003）
         if retrieval_plan.needs_clarification:
             # 反问是**一个完整轮次**（用户看到了问题，并会据此重述），要落盘；
             # 否则用户重述时模型不知道刚才为什么要他重述。
@@ -598,10 +598,10 @@ class ChatOrchestrator:
                                           "conversation_id": conversation_id})
             return
 
-        # ---- 主状态机（U111）：垂类命中就由垂类答，不再走检索与工具回路 ----
-        # 为什么排在 function calling 前面：主状态机是**任务分发者**（计划书三、P3），
+        # ---- 主状态机：垂类命中就由垂类答，不再走检索与工具回路 ----
+        # 为什么排在 function calling 前面：主状态机是**任务分发者**（三、P3），
         # 「谁该干这件事」应该先定，再谈用什么工具干。先跑工具回路等于让取数层
-        # 替调度层决定任务归属（E-107 的同型错误：两套决策混用）。
+        # 替调度层决定任务归属（ 的同型错误：两套决策混用）。
         # 未装配 / 非垂类命中 / 垂类没答出来 → 写清原因后退回下面既有链路，绝不抢答。
         if self.scene is not None:
             try:
@@ -615,7 +615,7 @@ class ChatOrchestrator:
                 scene_note = getattr(scene_out, "note", "") or ""
                 if scene_note:
                     early_notes.append(scene_note)
-                # 纯文本化（U119）同样适用于垂类答案：行程里的 `- ` 列表会被洗掉
+                # 纯文本化同样适用于垂类答案：行程里的 `- ` 列表会被洗掉
                 scene_text = plain_text(getattr(scene_out, "text", "") or "")
                 if scene_text.strip():
                     scene_sources = list(getattr(scene_out, "sources", []) or [])
@@ -643,7 +643,7 @@ class ChatOrchestrator:
                     return
                 early_notes.append("垂类未产出可展示的答案：已退回常规问答")
 
-        # ---- function calling 回路（U114/U115 的入口落点）----
+        # ---- function calling 回路（ 的入口落点）----
         # 装配了才走；没装配 / 开关关闭 / 模型无工具能力 / 回路答不出，
         # 一律**安静退回**下面的常规链路，并把原因带进 notes。
         # 为什么在检索之前：回路自己会用工具取数，先检索一遍再让它取一遍是双倍开销。
@@ -663,13 +663,13 @@ class ChatOrchestrator:
                 early_notes.append(f"工具回路失败（{type(exc).__name__}）：已退回常规问答")
                 tool_outcome = None
             if tool_outcome is not None and getattr(tool_outcome, "ran", False):
-                # 纯文本化（U119）：模型即使被提示约束，仍会吐 `**`/`- ` 列表；
+                # 纯文本化：模型即使被提示约束，仍会吐 `**`/`- ` 列表；
                 # 这些记号在网页与 TTS 里都是噪音，统一在这一层洗掉。
                 tool_text = plain_text(getattr(tool_outcome, "text", "") or "")
                 tool_payload = tool_outcome.report.as_dict()
                 tool_sources = _tool_sources(tool_payload)
                 tool_payload["sources"] = tool_sources
-                # 改道说明（U117）：用户所选模型无工具能力时，工具请求被改到专用供应商。
+                # 改道说明：用户所选模型无工具能力时，工具请求被改到专用供应商。
                 # 必须写进 notes —— 否则用户以为答案来自己选的模型，其实换了。
                 route_note = getattr(tool_outcome, "note", "") or ""
                 if route_note:
@@ -689,7 +689,7 @@ class ChatOrchestrator:
                         "category": retrieval_plan.category.value,
                         "source": "function_call",
                         "units": tool_payload,
-                        # 数据来源（U119）：网页用小字显示在答案下方；TTS 不读它。
+                        # 数据来源：网页用小字显示在答案下方；TTS 不读它。
                         "sources": tool_sources,
                         "intent_layer": intent_decision.layer if intent_decision else None,
                         "intent_label": intent_decision.label if intent_decision else None,
@@ -748,12 +748,12 @@ class ChatOrchestrator:
                 model_kwargs = self._model_kwargs(user_id)
             except ModelAccessError as exc:
                 # 额度用完 / 凭据缺失 / 归属不符，都在这里变成**可读的错误事件**。
-                # 不退化成"随便找个模型回答"：那等于替用户改了选择（U70）。
+                # 不退化成"随便找个模型回答"：那等于替用户改了选择。
                 yield ChatEvent("error", text=exc.message,
                                 data={"code": exc.code})
                 return
 
-        # 边流边洗（U119）：`collected` 收的是**洗完**的文本，复检与落盘
+        # 边流边洗：`collected` 收的是**洗完**的文本，复检与落盘
         # 都基于用户真正看到的那一版，不是带着 `**` 的原始稿。
         cleaner = PlainText()
         collected: list[str] = []
@@ -821,7 +821,7 @@ class ChatOrchestrator:
             "decided_by": retrieval_plan.decided_by,
             "tools": list(retrieval_plan.tools),
             "hits": len(hits),
-            # 数据来源（U119）：检索命中数、Wiki 事实数、用过的外部工具。
+            # 数据来源：检索命中数、Wiki 事实数、用过的外部工具。
             # 端侧把它渲染成答案下方的小字 —— 用户要能看见「这句凭什么」。
             "sources": _retrieval_sources(hits, plan_payload["wiki"]),
             # 素材 id 必须吐出来：评测的召回率维度要的是「召回了哪些」，

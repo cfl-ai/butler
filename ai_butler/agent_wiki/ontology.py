@@ -8,7 +8,7 @@ from typing import Any
 import frontmatter
 
 # --------------------------------------------------------------------------- #
-# 本体要素枚举（计划书原文的八个要素，逐字对应）
+# 本体要素枚举（原始需求的八个要素，逐字对应）
 # --------------------------------------------------------------------------- #
 ENTITY = "entity"
 SOURCE = "source"
@@ -22,7 +22,7 @@ SYNTHESIS = "synthesis"
 PAGE_TYPES: tuple[str, ...] = (ENTITY, SOURCE, CLAIM, EVIDENCE, RELATION,
                                CONTRADICTION, QUESTION, SYNTHESIS)
 
-#: U17（GraphRAG status）+ 三、P2（archived 归档）
+#: （GraphRAG status）+ 三、P2（archived 归档）
 CLAIM_STATUSES: tuple[str, ...] = ("TRUE", "FALSE", "SUSPECTED", "ARCHIVED")
 
 #: 三、P2「过期来源标记为 status:archived 归档」
@@ -31,11 +31,11 @@ SOURCE_ARCHIVED = "archived"
 SOURCE_STATUSES: tuple[str, ...] = (SOURCE_ACTIVE, SOURCE_ARCHIVED)
 
 #: status 的语义随要素类型而变，默认值必须按类型给：
-#: claim 用 U17（GraphRAG）的 TRUE/FALSE/SUSPECTED/ARCHIVED；
-#: source 用三、P2 的 active/archived；其余要素计划书未定义 status，留空。
+#: claim 用 （GraphRAG）的 TRUE/FALSE/SUSPECTED/ARCHIVED；
+#: source 用三、P2 的 active/archived；其余要素文档未定义 status，留空。
 DEFAULT_STATUS: dict[str, str] = {CLAIM: "TRUE", SOURCE: "active"}
 
-#: 固定小节（U18）
+#: 固定小节
 SECTION_OBSERVATIONS = "Observations"
 SECTION_RELATIONS = "Relations"
 FIXED_SECTIONS: tuple[str, ...] = (SECTION_OBSERVATIONS, SECTION_RELATIONS)
@@ -52,10 +52,10 @@ class OntologyError(ValueError):
 class WikiPage:
     """全部本体页面共有的字段。
 
-    注意 user_id 的归属规则（计划书原文）：
-    - 公共 Workspace 页面**不得**带 user_id（「素材溯源库属于 Agent-Wiki 公共 Workspace 无用户 ID」）；
-    - 用户私有 Vault 页面**必须**带 user_id（「每个用户独立私有 Vault，绑定 user_id」）。
-    """
+ 注意 user_id 的归属规则（原始需求）：
+ - 公共 Workspace 页面**不得**带 user_id（「素材溯源库属于 Agent-Wiki 公共 Workspace 无用户 ID」）；
+ - 用户私有 Vault 页面**必须**带 user_id（「每个用户独立私有 Vault，绑定 user_id」）。
+ """
 
     id: str
     type: str
@@ -65,11 +65,11 @@ class WikiPage:
     user_id: str | None = None            # 仅私有 Vault 页面填写
     created_at: str = ""
     updated_at: str = ""
-    #: U16：矛盾时不删旧声明，改为写入失效时间
+    #:：矛盾时不删旧声明，改为写入失效时间
     invalid_at: str | None = None
-    #: U16：与之矛盾的声明/关系 id
+    #:：与之矛盾的声明/关系 id
     contradicts: list[str] = field(default_factory=list)
-    #: U17：ISO8601 有效期
+    #:：ISO8601 有效期
     valid_from: str | None = None
     valid_to: str | None = None
     observations: list[str] = field(default_factory=list)
@@ -123,7 +123,7 @@ class WikiPage:
         return cls(**kwargs)
 
     def to_markdown(self) -> str:
-        """渲染为人类可读 Markdown 页面（U18：frontmatter + 固定小节）。"""
+        """渲染为人类可读 Markdown 页面（：frontmatter + 固定小节）。"""
         post = frontmatter.Post("", **self.to_frontmatter())
         lines = [f"# {self.title or self.id}", ""]
         lines.append(f"## {SECTION_OBSERVATIONS}")
@@ -161,8 +161,8 @@ class WikiPage:
 REQUIRED_EXTRA: dict[str, tuple[str, ...]] = {
     ENTITY: ("name", "entity_type"),
     SOURCE: ("url",),                       # 三、P2「保存来源元数据」
-    CLAIM: ("claim_type", "description", "subject_id", "object_id"),   # U17
-    EVIDENCE: ("source_id", "source_text", "text_unit_id"),            # U17
+    CLAIM: ("claim_type", "description", "subject_id", "object_id"),   # 
+    EVIDENCE: ("source_id", "source_text", "text_unit_id"),            # 
     RELATION: ("subject_id", "predicate", "object_id"),
     CONTRADICTION: ("left_id", "right_id", "reason"),
     QUESTION: ("text",),

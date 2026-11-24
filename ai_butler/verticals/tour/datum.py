@@ -100,9 +100,9 @@ def gcj02_to_wgs84(longitude: float, latitude: float,
                    *, iterations: int = 3) -> tuple[float, float]:
     """GCJ-02 → WGS-84。
 
-    用迭代逼近而不是「减一次偏移」的近似式：近似式把加偏当作常数，
-    而它其实随位置变化，在北京会留数米残差。迭代三轮收敛到厘米级。
-    """
+ 用迭代逼近而不是「减一次偏移」的近似式：近似式把加偏当作常数，
+ 而它其实随位置变化，在北京会留数米残差。迭代三轮收敛到厘米级。
+ """
     if not in_gcj_zone(longitude, latitude):
         return longitude, latitude
     if iterations < 1:

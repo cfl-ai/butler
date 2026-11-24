@@ -148,9 +148,9 @@ class ModelPresence:
 def decode_wav(data: bytes) -> tuple[list[float], int]:
     """PCM16 WAV → ([-1,1] 浮点采样, 采样率)。
 
-    **只接受 16bit PCM WAV**：手机端由 `RecorderMicrophone` 直接给 PCM16，
-    服务端也只认这一种，避免「不同编码悄悄被当成同一种」。
-    """
+ **只接受 16bit PCM WAV**：手机端由 `RecorderMicrophone` 直接给 PCM16，
+ 服务端也只认这一种，避免「不同编码悄悄被当成同一种」。
+ """
     if not data:
         raise AudioRejected("音频为空")
     if len(data) < 44:
@@ -179,10 +179,10 @@ def decode_wav(data: bytes) -> tuple[list[float], int]:
 def resample(samples: Sequence[float], src_rate: int, dst_rate: int) -> list[float]:
     """线性插值重采样。
 
-    **如实标注局限**：线性插值是保底手段，频响不如 sinc/多相滤波，
-    对低质量上采样会有镜像分量。之所以仍采用：手机端固定 16k 直录，
-    走到这里的只会是「外部导入的 wav」，而不是主链路。
-    """
+ **如实标注局限**：线性插值是保底手段，频响不如 sinc/多相滤波，
+ 对低质量上采样会有镜像分量。之所以仍采用：手机端固定 16k 直录，
+ 走到这里的只会是「外部导入的 wav」，而不是主链路。
+ """
     if src_rate == dst_rate or not samples:
         return list(samples)
     ratio = dst_rate / src_rate
@@ -275,10 +275,10 @@ class SpeechModelPaths:
 class SpeechRuntime:
     """sherpa-onnx 引擎集合。**懒加载 + 单飞**：同一时刻只跑一次推理。
 
-    为什么单飞而不是并发：sherpa-onnx 的 `OnlineRecognizer` / `OfflineTts`
-    内部持有可变流状态，多线程共享会互相踩。并发靠**进程级**水平扩展解决，
-    不在这里假装线程安全。
-    """
+ 为什么单飞而不是并发：sherpa-onnx 的 `OnlineRecognizer` / `OfflineTts`
+ 内部持有可变流状态，多线程共享会互相踩。并发靠**进程级**水平扩展解决，
+ 不在这里假装线程安全。
+ """
 
     def __init__(self, paths: SpeechModelPaths, *, max_audio_seconds: float = 60.0,
                  tts_speaker: int = 0, tts_speed: float = 1.0,
@@ -374,7 +374,7 @@ class SpeechRuntime:
                     segments.append(SpeechSegment(start, end, data))
                     offset = end
                     vad.pop()
-            # 尾音必须 flush，否则最后半句永远出不来（KWS 同款坑，见 E-13）
+            # 尾音必须 flush，否则最后半句永远出不来（KWS 同款坑，见 ）
             vad.flush()
             while not vad.empty():
                 seg = vad.front
@@ -391,10 +391,10 @@ class SpeechRuntime:
                   ) -> AsrResult:
         """整段音频 → 文字。先 VAD 切段，再逐段识别后拼接。
 
-        为什么要先切：ZipFormer 对流式输入有「最长片段」的限制，
-        长静音会让第一段迟迟不出结果；先切段还能给出每句的起止时间，
-        供端侧「逐句高亮」。
-        """
+ 为什么要先切：ZipFormer 对流式输入有「最长片段」的限制，
+ 长静音会让第一段迟迟不出结果；先切段还能给出每句的起止时间，
+ 供端侧「逐句高亮」。
+ """
         started = time.perf_counter()
         duration = len(samples) / float(sample_rate or TARGET_SAMPLE_RATE)
         if duration > self.max_audio_seconds:
@@ -518,9 +518,9 @@ class SpeechRuntime:
                       ) -> tuple[float, ...]:
         """取说话人 embedding（192 维，CAM++）。
 
-        **不足 0.5 秒的音频直接拒绝**：太短的片段 embedding 不稳定，
-        拿去比对只会随机通过或随机失败，两种都不可接受。
-        """
+ **不足 0.5 秒的音频直接拒绝**：太短的片段 embedding 不稳定，
+ 拿去比对只会随机通过或随机失败，两种都不可接受。
+ """
         duration = len(samples) / float(sample_rate or TARGET_SAMPLE_RATE)
         if duration < 0.5:
             raise AudioRejected(f"音频 {duration:.2f}s 太短，声纹至少需要 0.5s")
@@ -562,12 +562,12 @@ def cosine(a: Sequence[float], b: Sequence[float]) -> float:
 class VoiceprintStore:
     """按账号保存声纹 embedding。
 
-    **存 embedding 而不是存音频**：embedding 无法还原成可听语音，
-    是「既能比对、又不留声纹原件」的最小留存。这是 U63 的隐私边界。
+ **存 embedding 而不是存音频**：embedding 无法还原成可听语音，
+ 是「既能比对、又不留声纹原件」的最小留存。这是 的隐私边界。
 
-    落盘形态是普通 JSON（单账号 192 个 float ≈ 4KB），
-    用户量大时应迁到 P1 的加密存储；此处如实标注为**开发形态**。
-    """
+ 落盘形态是普通 JSON（单账号 192 个 float ≈ 4KB），
+ 用户量大时应迁到 P1 的加密存储；此处如实标注为**开发形态**。
+ """
 
     def __init__(self, path: str | Path, *, max_samples_per_user: int = 3) -> None:
         self.path = Path(path)
@@ -625,9 +625,9 @@ class VoiceprintStore:
     def score(self, user_id: str, embedding: Sequence[float]) -> float | None:
         """与已登记样本逐条比余弦，取**最大值**（最像的那一次）。
 
-        取 max 而非均值：声纹样本之间本身有差异，均值会稀释掉「某一次特别像」
-        这个最有信息量的信号。
-        """
+ 取 max 而非均值：声纹样本之间本身有差异，均值会稀释掉「某一次特别像」
+ 这个最有信息量的信号。
+ """
         samples = self.samples_of(user_id)
         if not samples:
             return None

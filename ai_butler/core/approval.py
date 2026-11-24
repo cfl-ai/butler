@@ -43,7 +43,7 @@ class ApprovalError(RuntimeError):
 
 @dataclass(frozen=True)
 class ApprovalRequest:
-    """一张审批票。frozen——状态迁移经 replace() 产生新实例，原票不改。"""
+    """一张审批票。frozen——状态迁移经 replace 产生新实例，原票不改。"""
 
     approval_id: str
     tool: str
@@ -81,9 +81,9 @@ class ApprovalRequest:
 class ApprovalService:
     """一次性人工审批服务。
 
-    进程内实现（内存态）。生产环境可同构替换为持久实现——**接口纪律不变**：
-    一次性、签名绑定、主体绑定、TTL 即拒。
-    """
+ 进程内实现（内存态）。生产环境可同构替换为持久实现——**接口纪律不变**：
+ 一次性、签名绑定、主体绑定、TTL 即拒。
+ """
 
     def __init__(self, *, ttl_seconds: float, clock: Callable[[], float] = time.time) -> None:
         if ttl_seconds <= 0:
@@ -171,10 +171,10 @@ class ApprovalService:
     def _apply_expiry(self, ticket: ApprovalRequest) -> ApprovalRequest:
         """TTL 到期即作废（无人应答即拒）。
 
-        作用于**未决与已批准未消费**两种状态：批准后拖得太久才来消费，
-        同样说明审批流程本身出了问题——票的 expires_at 是绝对时刻，
-        不存在「批准了就永久有效」。已消费 / 已驳回的不动。
-        """
+ 作用于**未决与已批准未消费**两种状态：批准后拖得太久才来消费，
+ 同样说明审批流程本身出了问题——票的 expires_at 是绝对时刻，
+ 不存在「批准了就永久有效」。已消费 / 已驳回的不动。
+ """
         if ticket.status not in (PENDING, APPROVED) or ticket.consumed:
             return ticket
         if self._clock() >= ticket.expires_at:
@@ -185,34 +185,34 @@ class ApprovalService:
 
 
 # ================================================================== #
-# 持久实现：票要跨得过进程重启（U90）                                  #
+# 持久实现：票要跨得过进程重启 #
 # ================================================================== #
 class FileApprovalService:
     """审批票的持久实现。**接口与 `ApprovalService` 一致**，可原地替换。
 
-    为什么需要它
-    ------------
-    撤销一张已提交补丁的流程天然跨进程：闭环进程申请票 → 人去看 diff →
-    人（在另一个 shell 里）批准 → 闭环重跑时消费。内存实现在第一步之后
-    就把票丢了——于是「人工确认」退化成「确认不了」，或者更糟：
-    有人为了跑通而把审批整个绕掉。
+ 为什么需要它
+ ------------
+ 撤销一张已提交补丁的流程天然跨进程：闭环进程申请票 → 人去看 diff →
+ 人（在另一个 shell 里）批准 → 闭环重跑时消费。内存实现在第一步之后
+ 就把票丢了——于是「人工确认」退化成「确认不了」，或者更糟：
+ 有人为了跑通而把审批整个绕掉。
 
-    **纪律不变**（这是替换的前提，不是可选项）：
-    一次性、签名绑定、主体绑定、TTL 即拒、状态机单向，全部复用
-    `ApprovalService` 的判定逻辑——本类只负责「把票存住、存对」：
+ **纪律不变**（这是替换的前提，不是可选项）：
+ 一次性、签名绑定、主体绑定、TTL 即拒、状态机单向，全部复用
+ `ApprovalService` 的判定逻辑——本类只负责「把票存住、存对」：
 
-    - 写路径（request / approve / reject / consume）在**锁内**完成
-      「读盘 → 判定 → 写盘」（U86：只包 append 的锁挡不住两个进程
-      各自基于旧快照判断可以写）；
-    - 每本票都落盘并 fsync（U87：flush 不等于落盘，半行 JSON 会让
-      整本票读不出来，而「票不存在」与「票被拒」是两种完全不同的故障）；
-    - 文件损坏**拒载**，不静默从空开始：空簿会把「已批准的票」变成
-      「票不存在」，看着像从没申请过——那正是审计最怕的一种安静。
+ - 写路径（request / approve / reject / consume）在**锁内**完成
+ 「读盘 → 判定 → 写盘」（：只包 append 的锁挡不住两个进程
+ 各自基于旧快照判断可以写）；
+ - 每本票都落盘并 fsync（：flush 不等于落盘，半行 JSON 会让
+ 整本票读不出来，而「票不存在」与「票被拒」是两种完全不同的故障）；
+ - 文件损坏**拒载**，不静默从空开始：空簿会把「已批准的票」变成
+ 「票不存在」，看着像从没申请过——那正是审计最怕的一种安静。
 
-    **读路径不写盘**：到期与否在读取时当场判定（`ApprovalService`
-    的 `_apply_expiry`），不在 `get` / `pending` 里落状态——读操作
-    不该留下写入副作用，否则「看一眼票」都能和正在审批的人撞上锁。
-    """
+ **读路径不写盘**：到期与否在读取时当场判定（`ApprovalService`
+ 的 `_apply_expiry`），不在 `get` / `pending` 里落状态——读操作
+ 不该留下写入副作用，否则「看一眼票」都能和正在审批的人撞上锁。
+ """
 
     def __init__(self, path: str | Path, *, ttl_seconds: float,
                  clock: Callable[[], float] = time.time,
@@ -310,7 +310,7 @@ class FileApprovalService:
         self._inner._tickets = tickets
 
     def _save(self) -> None:
-        """原子写盘 + fsync（U87）。调用方须持锁。"""
+        """原子写盘 + fsync。调用方须持锁。"""
         payload = json.dumps([t.as_dict() for t in self._inner._tickets.values()],
                              ensure_ascii=False, indent=2)
         tmp = self.path.with_suffix(".json.tmp")

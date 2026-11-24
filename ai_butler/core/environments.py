@@ -13,7 +13,7 @@ ENV_NAMES: tuple[str, ...] = ("dev", "test", "staging", "prod")
 
 
 class EnvironmentIsolationError(RuntimeError):
-    """跨环境串用资源。计划书要求四环境完全独立隔离。"""
+    """跨环境串用资源。设计要求四环境完全独立隔离。"""
 
 
 @dataclass(frozen=True)
@@ -32,10 +32,10 @@ class Environment:
     def data_plane_internal(self) -> bool:
         """内网服务层是否严格无外网出口。
 
-        本地必须为 False：Docker 不会为「只挂 internal 网络」的容器完成端口转发
-        （实测见 MEMORY.md E-07），而本地开发/测试需要宿主可达数据面。
-        预发布与生产为 True，且不发布任何宿主端口。
-        """
+ 本地必须为 False：Docker 不会为「只挂 internal 网络」的容器完成端口转发
+ （实测见 MEMORY.md ），而本地开发/测试需要宿主可达数据面。
+ 预发布与生产为 True，且不发布任何宿主端口。
+ """
         return not self.exposes_host_ports
 
     @property
@@ -91,8 +91,8 @@ def validate_runtime(environment: str, *, postgres_port: int, postgres_db: str,
                      redis_port: int) -> None:
     """运行时守卫：当前进程连的资源必须属于它声明的环境。
 
-    防的是最危险的一类事故——用开发配置连上了生产库。
-    """
+ 防的是最危险的一类事故——用开发配置连上了生产库。
+ """
     env = get(environment)
     problems: list[str] = []
     if postgres_port != env.postgres_port:

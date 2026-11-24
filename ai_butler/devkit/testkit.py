@@ -12,7 +12,7 @@ from ai_butler.agents.state import (
     validate_state,
 )
 
-#: 计划书三、P0-2「全场景测试用例库」的六个场景类别（逐字对应）
+#: 三、P0-2「全场景测试用例库」的六个场景类别（逐字对应）
 SCENARIOS: tuple[str, ...] = ("正常", "边界", "异常", "弱网", "缺失数据", "矛盾需求")
 
 
@@ -32,7 +32,7 @@ def make_state_for(user_id: str, *, session_id: str = "session-1", **kwargs: Any
 
 # ------------------------------ 断言 ------------------------------ #
 def assert_state_contract(state: dict[str, Any]) -> None:
-    """计划书三、P3：State 必填字段齐全且 user_id 非空。"""
+    """State 必填字段齐全且 user_id 非空。"""
     assert_state_contract.__doc__
     missing = [f for f in REQUIRED_STATE_FIELDS if f not in state]
     if missing:
@@ -41,7 +41,7 @@ def assert_state_contract(state: dict[str, Any]) -> None:
 
 
 def assert_writes_within_scope(agent: SubAgent, updates: dict[str, Any]) -> None:
-    """计划书三、P4：所有子 Agent 只读全局状态、仅写入自有字段。"""
+    """所有子 Agent 只读全局状态、仅写入自有字段。"""
     if not isinstance(updates, dict):
         raise StateAssertionError(f"{agent.name} 的返回必须是 dict")
     illegal = [k for k in updates if k not in agent.writes]
@@ -53,7 +53,7 @@ def assert_writes_within_scope(agent: SubAgent, updates: dict[str, Any]) -> None
 
 def assert_user_scope_untouched(agent: SubAgent, updates: dict[str, Any],
                                 *, expected_user_id: str) -> None:
-    """计划书三、P4：禁止读取其他 user_id 数据；Agent 不得改写 user_id。"""
+    """禁止读取其他 user_id 数据；Agent 不得改写 user_id。"""
     if "user_id" in updates and updates["user_id"] != expected_user_id:
         raise StateAssertionError(
             f"{agent.name} 改写了 user_id：{updates['user_id']!r} != {expected_user_id!r}"
@@ -61,7 +61,7 @@ def assert_user_scope_untouched(agent: SubAgent, updates: dict[str, Any],
 
 
 def assert_refuses_blank_user_id(agent: SubAgent, *, session_id: str = "s") -> None:
-    """计划书三、P4：user_id 不允许硬编码、不能为空。"""
+    """user_id 不允许硬编码、不能为空。"""
     for blank in ("", "   ", None):
         state = make_state(user_id="placeholder", session_id=session_id)
         state["user_id"] = blank                      # 绕过构造期校验，直击 Agent 入口
@@ -73,7 +73,7 @@ def assert_refuses_blank_user_id(agent: SubAgent, *, session_id: str = "s") -> N
 
 
 def assert_skips_on_invalid_session(agent: SubAgent) -> None:
-    """计划书三、P4：会话失效则跳过执行。"""
+    """会话失效则跳过执行。"""
     state = make_state(user_id="u-1", session_id="s-1", login_status=False)
     result = agent(state)
     if result != {}:
@@ -100,10 +100,10 @@ def assert_contract_suite(agent: SubAgent) -> None:
 
 # --------------------------- 全场景用例目录 --------------------------- #
 def scenario_matrix(cases: dict[str, Iterable[str]]) -> dict[str, list[str]]:
-    """把用例登记表补齐到计划书要求的六类场景，缺哪类直接报出来。
+    """把用例登记表补齐到要求的六类场景，缺哪类直接报出来。
 
-    计划书三、P0-2：「建立全场景测试用例库：正常、边界、异常、弱网、缺失数据、矛盾需求」
-    """
+ 三、P0-2：「建立全场景测试用例库：正常、边界、异常、弱网、缺失数据、矛盾需求」
+ """
     out: dict[str, list[str]] = {}
     for name in SCENARIOS:
         out[name] = list(cases.get(name, []))

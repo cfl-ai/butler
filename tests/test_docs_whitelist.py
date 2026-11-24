@@ -45,7 +45,7 @@ WIKI_DIR_MARKER = "agent_wiki"
 #: `.test-work` / `.smoke-work` 是测试与冒烟脚本的临时落盘目录，
 #: 里面会产生大量 md（Agent-Wiki 页面）。它们已被 `.gitignore` 排除，
 #: 但**那份排除不会自动传导到这里**——改名或新增临时目录时，
-#: 两层必须同步改，否则守护会把测试自己刚写的文件当违规报出来（MEMORY E-65 同族）。
+#: 两层必须同步改，否则守护会把测试自己刚写的文件当违规报出来（MEMORY 同族）。
 SKIP_DIRS = {
     ".git", ".venv", ".dart_tool", ".idea", ".pytest_tmp", ".pytest_cache",
     "node_modules", "build", "__pycache__", ".gradle", ".cxx",
@@ -56,10 +56,10 @@ SKIP_DIRS = {
 def _iter_markdown() -> list[Path]:
     """在项目里找 md，**边走边剪枝**。
 
-    不能写成先 rglob("*.md") 再过滤：项目里有 data/dev/pgdata（PostgreSQL 数据目录）
-    与 mobile/build 这类文件极多的目录，先遍历再丢弃会白白走一遍几万个文件。
-    本机可用内存本来就紧（约 2.25GB），这种无谓遍历是实打实的负担。
-    """
+ 不能写成先 rglob("*.md") 再过滤：项目里有 data/dev/pgdata（PostgreSQL 数据目录）
+ 与 mobile/build 这类文件极多的目录，先遍历再丢弃会白白走一遍几万个文件。
+ 本机可用内存本来就紧（约 2.25GB），这种无谓遍历是实打实的负担。
+ """
     found: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(ROOT):
         # 就地剪枝：os.walk 会照着 dirnames 继续往下走，
@@ -105,8 +105,8 @@ def test_the_five_named_docs_still_exist(markdown_files):
 def test_no_readme_left_behind_by_scaffolding(markdown_files):
     """工具脚手架（flutter create / npm init 之类）留下的 README 必须清掉。
 
-    它们是模板样板文，既不是计划书要求的文档，也不属于任何一类允许项。
-    """
+ 它们是模板样板文，既不是要求的文档，也不属于任何一类允许项。
+ """
     stray = [
         p.relative_to(ROOT).as_posix()
         for p in markdown_files
@@ -121,12 +121,12 @@ def test_no_readme_left_behind_by_scaffolding(markdown_files):
 def test_no_unsubstituted_placeholders_in_docs(markdown_files):
     """白名单文档里不得残留生成时的占位符。
 
-    真事：本项目用 ~B~xxx~B~ 表示行内代码、~F~ 表示代码围栏（避免在生成脚本里
-    与模板字符串冲突）。有一次替换漏了，于是**字面的 ~B~ 直接进了正式文档** ——
-    两份文件里共 158 处，读者看到的不是代码格式而是一串波浪号加字母。
+ 真事：本项目用 ~B~xxx~B~ 表示行内代码、~F~ 表示代码围栏（避免在生成脚本里
+ 与模板字符串冲突）。有一次替换漏了，于是**字面的 ~B~ 直接进了正式文档** ——
+ 两份文件里共 158 处，读者看到的不是代码格式而是一串波浪号加字母。
 
-    这类残留不会让任何断言变红：文档照样「存在」，只是**排版坏了**。
-    """
+ 这类残留不会让任何断言变红：文档照样「存在」，只是**排版坏了**。
+ """
     import re
 
     pattern = re.compile(r'~[A-Z]~')

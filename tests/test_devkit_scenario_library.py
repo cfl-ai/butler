@@ -30,7 +30,7 @@ def test_library_covers_all_six_plan_scenarios(library):
 
 
 def test_plan_named_special_cases_are_all_registered(library):
-    """计划书三、P0-2 表格逐字点名的专项测试集合，缺一不可。"""
+    """三、P0-2 表格逐字点名的专项测试集合，缺一不可。"""
     ids = {c.case_id for c in library.cases}
     for required in ("SEC-001", "SEC-002", "JEV-001", "JEV-002", "JEV-003",
                      "WIKI-001", "WIKI-002", "WIKI-003", "WIKI-004"):
@@ -38,11 +38,11 @@ def test_plan_named_special_cases_are_all_registered(library):
 
 
 def test_pending_cases_are_explicit_and_never_claim_coverage(library):
-    """计划书点名但尚未实现的用例必须显式标 pending，不得混入已覆盖。
+    """设计点名但尚未实现的用例必须显式标 pending，不得混入已覆盖。
 
-    不硬编码具体编号：待实现清单为空（全部落地）也是合法状态，
-    真正要守住的不变量是「凡标 pending 者必须写明补齐阶段且不得声称已实现」。
-    """
+ 不硬编码具体编号：待实现清单为空（全部落地）也是合法状态，
+ 真正要守住的不变量是「凡标 pending 者必须写明补齐阶段且不得声称已实现」。
+ """
     for case in library.pending_cases():
         assert case.note, f"{case.case_id} 标为待实现时必须说明补齐阶段"
         assert not case.implemented_at, f"{case.case_id} 不得同时声称已实现"
@@ -68,12 +68,12 @@ def test_every_registered_case_points_at_a_real_test(library):
             problems.append(f"{case.case_id} 未标注实现位置")
             continue
         # 两种引用形式：
-        #   tests/xxx.py::test_name          —— Python 用例
-        #   dart:mobile/.../xxx_test.dart::用例名 —— 移动端 Dart 用例（P7）
+        # tests/xxx.py::test_name —— Python 用例
+        # dart:mobile/.../xxx_test.dart::用例名 —— 移动端 Dart 用例（P7）
         # 三种引用形式：
-        #   tests/xxx.py::test_name           —— Python 用例
-        #   dart:.../xxx_test.dart::用例名     —— Dart 测试
-        #   dart-script:.../xxx.dart          —— Dart **验证脚本**（main() 形式，不是 test()）
+        # tests/xxx.py::test_name —— Python 用例
+        # dart:.../xxx_test.dart::用例名 —— Dart 测试
+        # dart-script:.../xxx.dart —— Dart **验证脚本**（main 形式，不是 test）
         external = ref.startswith("dart:") or ref.startswith("dart-script:")
         script = ref.startswith("dart-script:")
         if script:
@@ -98,8 +98,8 @@ def test_every_registered_case_points_at_a_real_test(library):
                         f"{case.case_id} 引用的 Dart 脚本没有 main()：{file_part}")
             elif external:
                 # Dart 有两种用例声明形式：
-                #   test('用例名', () async { ... })        —— 纯 Dart
-                #   testWidgets('用例名', (tester) async {}) —— Flutter 组件测试
+                # test('用例名', async { ... }) —— 纯 Dart
+                # testWidgets('用例名', (tester) async {}) —— Flutter 组件测试
                 # 只认 test( 会把组件测试全判成「不存在」（这一版就踩过）。
                 if not any(f"{fn}('{name}'" in text
                            for fn in ("test", "testWidgets")):
@@ -157,7 +157,7 @@ def test_module_coverage_is_reported(library):
 
 # ------------------------------ CI 流水线 ------------------------------ #
 def test_ci_workflow_is_valid_yaml_and_covers_plan_requirements():
-    """计划书三、P0-2「制定 Git 分支规范、CI 自动构建、自动部署流水线」。"""
+    """三、P0-2「制定 Git 分支规范、CI 自动构建、自动部署流水线」。"""
     doc = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
 
     assert doc["name"] == "CI"

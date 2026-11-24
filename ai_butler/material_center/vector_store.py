@@ -37,7 +37,7 @@ class VectorHit:
 
 
 class ChromaVectorStore:
-    """ChromaDB 持久化向量库（计划书点名的实现）。"""
+    """ChromaDB 持久化向量库（设计点名的实现）。"""
 
     def __init__(self, path: str | Path, *, collection: str = "aibutler_materials") -> None:
         import chromadb
@@ -86,9 +86,9 @@ class ChromaVectorStore:
     def _exact_scope_filter(user_id: str | None) -> dict[str, Any]:
         """写操作使用的**精确**作用域过滤。
 
-        与读操作的可见性过滤不同：可见性是「公共 OR 本人」，而删除必须只作用于
-        自己那一份——否则用户能把**公共知识**或**他人私有向量**一起删掉。
-        """
+ 与读操作的可见性过滤不同：可见性是「公共 OR 本人」，而删除必须只作用于
+ 自己那一份——否则用户能把**公共知识**或**他人私有向量**一起删掉。
+ """
         if user_id:
             return {"$and": [{META_SCOPE: SCOPE_VAULT}, {META_USER_ID: user_id}]}
         return {META_SCOPE: SCOPE_PUBLIC}
@@ -110,9 +110,9 @@ class ChromaVectorStore:
     def _scope_filter(user_id: str | None) -> dict[str, Any] | None:
         """作用域过滤条件。
 
-        - 传 user_id：公共域 **或** 本人私有域；
-        - 不传：**只有公共域**（绝不返回任何私有向量）。
-        """
+ - 传 user_id：公共域 **或** 本人私有域；
+ - 不传：**只有公共域**（绝不返回任何私有向量）。
+ """
         if user_id:
             return {"$or": [{META_SCOPE: SCOPE_PUBLIC},
                             {"$and": [{META_SCOPE: SCOPE_VAULT}, {META_USER_ID: user_id}]}]}

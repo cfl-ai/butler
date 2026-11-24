@@ -44,10 +44,10 @@ CLUSTER_MODULES = frozenset({"mops"})
 def find_agent_classes(module: Any) -> list[type]:
     """按展示优先级返回**本模块定义**的 Agent 类。
 
-    只认 `__module__` 等于本模块的类：直接 `python xxx.py` 运行时模块名为
-    `__main__`，本文件的类都算；import 进来的基类（SubAgent / PhaseAgent）
-    `__module__` 是别的路径，自然被排除 —— 不需要维护硬编码名单。
-    """
+ 只认 `__module__` 等于本模块的类：直接 `python xxx.py` 运行时模块名为
+ `__main__`，本文件的类都算；import 进来的基类（SubAgent / PhaseAgent）
+ `__module__` 是别的路径，自然被排除 —— 不需要维护硬编码名单。
+ """
     phase_agents: list[type] = []
     plain_agents: list[type] = []
     for obj in vars(module).values():
@@ -105,8 +105,8 @@ def _agent_rows(cls: type) -> list[tuple[str, str]]:
 def _display_width(text: str) -> int:
     """终端显示宽度：中文与全角符号占 2 列，ASCII 占 1 列。
 
-    直接用 `len()` + `ljust` 对齐，含中文的行会歪掉 —— 字符数相等但列宽不等。
-    """
+ 直接用 `len` + `ljust` 对齐，含中文的行会歪掉 —— 字符数相等但列宽不等。
+ """
     return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
                for ch in text)
 
@@ -118,9 +118,9 @@ def _pad(text: str, width: int) -> str:
 def _module_label(module: Any) -> str:
     """模块的人读标识。
 
-    直接 `python xxx.py` 运行时 `__name__` 是 `__main__`，打印它等于什么都没说；
-    此时改用文件名（`p1_data_platform`），与 registry 的 key 对得上。
-    """
+ 直接 `python xxx.py` 运行时 `__name__` 是 `__main__`，打印它等于什么都没说；
+ 此时改用文件名（`p1_data_platform`），与 registry 的 key 对得上。
+ """
     name = getattr(module, "__name__", "")
     if name and name != "__main__":
         return name.rsplit(".", 1)[-1]
@@ -250,7 +250,7 @@ def _role(value: str):
     from ai_butler.core.permissions import UserRole
     # 三个权限枚举都是 IntEnum：`Enum(字符串)` 是**按值查找**（值是 0/1/2/3），
     # 字符串永远查不到 —— 必须用 `Enum[名字]` 按名查找。
-    # 曾按值查找写成 `UserRole(value.upper())`，独立执行业务的路径 100% 崩
+    # 曾按值查找写成 `UserRole(value.upper)`，独立执行业务的路径 100% 崩
     # ValueError（守护缺口：既有测试都在到达此处前就被拦下，见 test_agent_cli.py）。
     return UserRole[value.upper()]
 

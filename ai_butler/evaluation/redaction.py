@@ -54,23 +54,23 @@ class Redactor:
     def model_layer_active(self) -> bool:
         """模型层是否**真的**接上了。
 
-        原实现写的是「try import presidio_analyzer」，但：
-        - 那会让本项目凭空多出一个并未安装的依赖（被依赖声明测试抓出）；
-        - 「能 import」也不等于「真的在用」。
-        改为**端口注入**：调用方把分析器实现传进来才算启用，
-        没传就如实返回 False，不冒充已做模型级脱敏。
-        """
+ 原实现写的是「try import presidio_analyzer」，但：
+ - 那会让本项目凭空多出一个并未安装的依赖（被依赖声明测试抓出）；
+ - 「能 import」也不等于「真的在用」。
+ 改为**端口注入**：调用方把分析器实现传进来才算启用，
+ 没传就如实返回 False，不冒充已做模型级脱敏。
+ """
         return self.analyzer is not None
 
     @property
     def regex_layer_active(self) -> bool:
         """正则层是否**真的**有规则在跑。
 
-        不是恒 True。P9 的评估报告里原先直接写死 ~{regex_layer: True}~，
-        那等于「我声称脱敏了」——规则表被清空、或额外规则配错，它照样报 True。
-        这里改成从实际编译出来的规则表推导，与 model_layer_active 同一原则：
-        **能推导的就别手写。**
-        """
+ 不是恒 True。P9 的评估报告里原先直接写死 ~{regex_layer: True}~，
+ 那等于「我声称脱敏了」——规则表被清空、或额外规则配错，它照样报 True。
+ 这里改成从实际编译出来的规则表推导，与 model_layer_active 同一原则：
+ **能推导的就别手写。**
+ """
         return bool(self._compiled)
 
     def redact(self, text: str) -> str:

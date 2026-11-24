@@ -121,8 +121,8 @@ def _claim_supported_by_hits(claim: str, hits: Sequence[EvidenceHit], *,
                              min_overlap: float = 0.2) -> tuple[str, ...]:
     """一批已召回的证据里，有没有能撑住这条声明的（**且带证据 ID**）。
 
-    返回支撑它的 evidence_ids；为空即没撑住。
-    """
+ 返回支撑它的 evidence_ids；为空即没撑住。
+ """
     ids: list[str] = []
     for h in hits:
         if h.score < score_threshold or not h.evidence_ids:
@@ -157,8 +157,8 @@ def verify(answer: str, finder: EvidenceFinder, *, top_k: int = 3,
            min_attribution_rate: float = 0.8) -> VerificationResult:
     """复检一份回答，但**只做一轮、不重试**。
 
-    想要「不通过就改写查询再试」的完整回路，用 `verify_with_retry()`。
-    """
+ 想要「不通过就改写查询再试」的完整回路，用 `verify_with_retry`。
+ """
     claims = split_claims(answer)
     if not claims:
         # 没有可校验的事实陈述（例如纯问候），不判为幻觉
@@ -187,8 +187,8 @@ def verify_with_retry(answer: str, finder: EvidenceFinder, *,
                       ) -> VerificationResult:
     """复检 + 失败改写查询再验，**带硬逃逸上限**。
 
-    改写用**站不住的那些声明**，不是原查询 —— 同 query 同索引必然召回同一批坏结果。
-    """
+ 改写用**站不住的那些声明**，不是原查询 —— 同 query 同索引必然召回同一批坏结果。
+ """
     result = verify(answer, finder, top_k=top_k, score_threshold=score_threshold,
                     min_attribution_rate=min_attribution_rate)
     if result.grounded:
@@ -257,11 +257,11 @@ def _rewrite(unsupported: Sequence[str],
 
 
 def render_abstention(result: VerificationResult) -> str:
-    """abstain 文案。**由系统渲染，不由模型生成**（与 decisions.U25 同口径）。
+    """abstain 文案。**由系统渲染，不由模型生成**（与 decisions. 同口径）。
 
-    说清缺什么，而不是含糊一句「我不知道」——
-    用户据此能补充信息，这就是「缺失证据清单」的价值。
-    """
+ 说清缺什么，而不是含糊一句「我不知道」——
+ 用户据此能补充信息，这就是「缺失证据清单」的价值。
+ """
     if not result.abstained:
         raise ValueError("仅在 abstained 时渲染弃答文案")
     if not result.missing_facets:

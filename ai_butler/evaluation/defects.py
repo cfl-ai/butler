@@ -144,7 +144,7 @@ _REPRO_HINTS: Mapping[DefectKind, str] = {
 #: 维度结果里的 `inconclusive` 标记 → 「缺哪样输入」的人话。
 #:
 #: 走 `DimensionResult.details` 的**结构化字段**而不是去匹配 evidence 里的
-#: 中文文案：文案一改判据就失效，而且中文匹配本身就是 E-44 那类漂移源。
+#: 中文文案：文案一改判据就失效，而且中文匹配本身就是 那类漂移源。
 #: 维度层负责说「判不了」，本层负责决定「判不了该记成什么」。
 _INCONCLUSIVE: Mapping[str, str] = {
     "missing_relevant_ids": "用例未给检索金标准（relevant_ids）",
@@ -162,9 +162,9 @@ class DefectError(ValueError):
 class Defect:
     """一条可处置的缺陷。
 
-    `defect_id` 由「用例 + 维度」构成且**稳定**：同一用例同一维度反复失败，
-    编号不变，便于跨轮次看趋势；不会因为换个序号就把老缺陷当新缺陷。
-    """
+ `defect_id` 由「用例 + 维度」构成且**稳定**：同一用例同一维度反复失败，
+ 编号不变，便于跨轮次看趋势；不会因为换个序号就把老缺陷当新缺陷。
+ """
 
     defect_id: str
     case_id: str
@@ -226,10 +226,10 @@ class Defect:
 class DefectBatch:
     """一批缺陷 + 整批的处置闸门。
 
-    `blocked_by_security` 是**整批级**的否决：只要存在未解决的安全缺陷，
-    其他缺陷一律不许自动处置。理由很直接——在一个「会越权泄露余额」的系统上
-    去优化检索召回率，是把力气花在错的地方，而且自动改代码会让排查变难。
-    """
+ `blocked_by_security` 是**整批级**的否决：只要存在未解决的安全缺陷，
+ 其他缺陷一律不许自动处置。理由很直接——在一个「会越权泄露余额」的系统上
+ 去优化检索召回率，是把力气花在错的地方，而且自动改代码会让排查变难。
+ """
 
     defects: tuple[Defect, ...] = ()
     #: 本轮评测覆盖的用例数（用于区分「全过」与「没评」）
@@ -251,15 +251,15 @@ class DefectBatch:
     @property
     def clean(self) -> bool:
         """没有任何缺陷。**注意与「没评」区分**：case_count=0 时也 clean，
-        但那不叫干净，叫没测——调用方必须看 case_count。"""
+ 但那不叫干净，叫没测——调用方必须看 case_count。"""
         return not self.defects
 
     def auto_repairable(self) -> tuple[Defect, ...]:
         """可交给 harness 自动处置的缺陷。
 
-        安全缺陷存在时**返回空**：见类注释。这不是保守，是排序——
-        安全没解决前，自动化的产出没有可信度。
-        """
+ 安全缺陷存在时**返回空**：见类注释。这不是保守，是排序——
+ 安全没解决前，自动化的产出没有可信度。
+ """
         if self.blocked_by_security:
             return ()
         return self.of(Disposition.AUTO)
@@ -298,11 +298,11 @@ def _title_for(case: PlatformReport, kind: DefectKind) -> str:
 def defects_from_report(report: PlatformReport) -> tuple[Defect, ...]:
     """一份报告 → 若干缺陷。
 
-    规则：
-    - **通过的用例不产缺陷**（没坏就别动）。
-    - 不适用维度不产缺陷（不适用 ≠ 不通过，把「没测」当「坏了」会制造假工单）。
-    - 安全维度优先：它一票否决，且必须在缺陷单里排第一。
-    """
+ 规则：
+ - **通过的用例不产缺陷**（没坏就别动）。
+ - 不适用维度不产缺陷（不适用 ≠ 不通过，把「没测」当「坏了」会制造假工单）。
+ - 安全维度优先：它一票否决，且必须在缺陷单里排第一。
+ """
     if report.passed:
         return ()
 
@@ -408,10 +408,10 @@ def synthetic_report(case_id: str, question: str, *,
                      reason: str = "没有运行痕迹") -> PlatformReport:
     """构造一份「无痕迹」报告，供评测链路的空输入路径使用。
 
-    评测中台对「用例在、痕迹没有」的处理是 fail-closed（平台层第 4 条）。
-    这个构造函数让该情形也能产出缺陷单，而不是让调用方自己拼一个
-    字段不全的 `PlatformReport`（字段不全的报告比没有报告更误导）。
-    """
+ 评测中台对「用例在、痕迹没有」的处理是 fail-closed（平台层第 4 条）。
+ 这个构造函数让该情形也能产出缺陷单，而不是让调用方自己拼一个
+ 字段不全的 `PlatformReport`（字段不全的报告比没有报告更误导）。
+ """
     from ai_butler.evaluation.dimensions import DimensionResult
 
     dimensions = {k: DimensionResult(key=k, score=0.0, passed=False,
@@ -429,9 +429,9 @@ def synthetic_report(case_id: str, question: str, *,
 def defect_from_dict(payload: Mapping[str, Any]) -> Defect:
     """dict → Defect。
 
-    枚举一律**显式转换**，未知取值直接报错：带着一个认不出的 severity 继续跑，
-    下游的优先级排序会静默错位（比直接失败更坏）。
-    """
+ 枚举一律**显式转换**，未知取值直接报错：带着一个认不出的 severity 继续跑，
+ 下游的优先级排序会静默错位（比直接失败更坏）。
+ """
     if not isinstance(payload, Mapping):
         raise DefectError(f"缺陷应为 dict，实际 {type(payload).__name__}")
     try:
@@ -454,11 +454,11 @@ def defect_from_dict(payload: Mapping[str, Any]) -> Defect:
 
 
 def batch_from_dict(payload: Mapping[str, Any]) -> DefectBatch:
-    """`DefectBatch.as_dict()` 的逆。
+    """`DefectBatch.as_dict` 的逆。
 
-    `blocked_by_security` **不读输入里的布尔值，而是从缺陷重新推导**：
-    信任一个可以随手改的标记，等于让调用方决定「安全缺陷能不能自动修」。
-    """
+ `blocked_by_security` **不读输入里的布尔值，而是从缺陷重新推导**：
+ 信任一个可以随手改的标记，等于让调用方决定「安全缺陷能不能自动修」。
+ """
     if not isinstance(payload, Mapping):
         raise DefectError(f"缺陷批次应为 dict，实际 {type(payload).__name__}")
     raw = payload.get("defects") or ()

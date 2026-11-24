@@ -50,7 +50,7 @@ def test_table_13_has_every_plan_parameter():
 
 
 def test_table_13_values_match_the_plan_verbatim():
-    """关键数值逐字取自计划书；改动即失败。"""
+    """关键数值逐字取自登记；改动即失败。"""
     values = {p.name: p.plan_value for p in TABLE_13}
     assert values["max_task_rollback_times"] == 2
     assert values["multi_intent_auto_resolve"] is False
@@ -79,7 +79,7 @@ def test_every_table_13_param_declares_where_it_is_enforced():
 
 
 def test_table_13_matches_the_code(settings):
-    """计划书值 == 代码值。这是本模块存在的意义。"""
+    """值 == 代码值。这是本模块存在的意义。"""
     problems = verify_table_13(settings=settings)
     assert not problems, "表 13 与实现不一致：\n" + "\n".join(
         f"{m.name}: 计划 {m.plan_value!r}，实际 {m.actual_value!r}（{m.reason}）"
@@ -126,16 +126,16 @@ def test_every_reusable_asset_module_imports():
 
 
 def test_asset_12_name_deliberately_differs_from_the_plan_per_u08():
-    """第 12 条资产的名称与计划书**刻意不同**，依据是裁定 U08。
+    """第 12 条资产的名称与**刻意不同**，依据是裁定。
 
-    计划书原文：「**基于 Claude Code 的**全自动系统自进化闭环」。
-    裁定 U08（人工授权）：「**不引入 Claude Code 本体**；仅借用其设计思维…
-    自研 Agentic Loop」。所以名称去掉了「基于 Claude Code」。
+ 原始需求：「**基于 Claude Code 的**全自动系统自进化闭环」。
+ 裁定 （人工授权）：「**不引入 Claude Code 本体**；仅借用其设计思维…
+ 自研 Agentic Loop」。所以名称去掉了「基于 Claude Code」。
 
-    这条测试防的是「有人照着计划书把名字改回去」——
-    那样会与 U08 冲突，而**改回去原本不会有任何测试变红**：
-    资产名称此前没有任何约束，备注也是空的。
-    """
+ 这条测试防的是「有人照着把名字改回去」——
+ 那样会与 冲突，而**改回去原本不会有任何测试变红**：
+ 资产名称此前没有任何约束，备注也是空的。
+ """
     from ai_butler.core import decisions as d
 
     asset = REUSABLE_ASSETS[11]
@@ -153,9 +153,9 @@ def test_asset_12_name_deliberately_differs_from_the_plan_per_u08():
 def test_the_twelve_assets_cover_every_phase_group():
     """12 类资产应覆盖底座、调度、知识库、质检、语音、支付、自进化各面。
 
-    模块名跟随 2026-10-19 的重命名同步：`rag` → `material_center`（素材中心），
-    `p8_payment` → `p8_smart_payment`（智能支付）。
-    """
+ 模块名跟随 2026-10-19 的重命名同步：`rag` → `material_center`（素材中心），
+ `p8_payment` → `p8_smart_payment`（智能支付）。
+ """
     modules = " ".join(a.module for a in REUSABLE_ASSETS)
     for needle in ("infra", "devkit", "scheduler", "agent_wiki", "data_platform",
                    "material_center", "p6_content_qa", "p8_smart_payment",
@@ -179,7 +179,7 @@ def test_criteria_are_partitioned_into_the_four_plan_groups():
 
 
 def test_privacy_group_is_marked_must_pass():
-    """计划书原文：账号 & 隐私防护验收标准（**必须全部通过**）。"""
+    """原始需求：账号 & 隐私防护验收标准（**必须全部通过**）。"""
     privacy = criteria_by_area(AREA_PRIVACY)
     assert all(c.must_pass for c in privacy)
     assert len(privacy) == 6
@@ -215,7 +215,7 @@ def test_acceptance_criteria_all_have_text():
 
 
 # ============================== 验收 18 的本体完整性 ============================== #
-#: 计划书验收 18 点名的六类本体要素，以及本体实际导出的常量名
+#: 验收 18 点名的六类本体要素，以及本体实际导出的常量名
 CRITERION_18_ELEMENTS: tuple[tuple[str, str], ...] = (
     ("Source 来源", "SOURCE"),
     ("Claim 声明", "CLAIM"),
@@ -229,8 +229,8 @@ CRITERION_18_ELEMENTS: tuple[tuple[str, str], ...] = (
 def test_ontology_has_all_six_elements_from_criterion_18():
     """验收 18 前半段：本体必须含六类要素。
 
-    **这条以前没有覆盖** —— 是制作验收清单时才发现的缺口，因此补齐。
-    """
+ **这条以前没有覆盖** —— 是制作验收清单时才发现的缺口，因此补齐。
+ """
     for label, constant in CRITERION_18_ELEMENTS:
         page_type = getattr(ontology, constant, None)
         assert page_type, f"本体缺少 {label}"
@@ -251,7 +251,7 @@ def test_ontology_also_covers_synthesis_for_criterion_20():
     assert ontology.REQUIRED_EXTRA.get(ontology.SYNTHESIS)
 
 
-#: 计划书本体的**完整**清单（原文见《Agent-Wiki 知识库开发规范》§1 的逐字引用）。
+#: 本体的**完整**清单（原文见《Agent-Wiki 知识库开发规范》§1 的逐字引用）。
 #: 注意：验收 18 只点了其中六项，所以**不能只照验收 18 查** ——
 #: 六项 + synthesis = 七项，Entity 会整个落空。
 PLAN_ONTOLOGY_ELEMENTS: tuple[str, ...] = (
@@ -261,11 +261,11 @@ PLAN_ONTOLOGY_ELEMENTS: tuple[str, ...] = (
 
 
 def test_ontology_covers_every_element_the_plan_defines():
-    """按计划书原文的**八**要素守，而不是按验收 18 的六项。
+    """按原始需求的**八**要素守，而不是按验收 18 的六项。
 
-    这正是先前漏掉 Entity 的原因：验收 18 列了六项、验收 20 提了 synthesis，
-    两条合起来看着像齐了，实则少一个 —— 而少了不会报错。
-    """
+ 这正是先前漏掉 Entity 的原因：验收 18 列了六项、验收 20 提了 synthesis，
+ 两条合起来看着像齐了，实则少一个 —— 而少了不会报错。
+ """
     for constant in PLAN_ONTOLOGY_ELEMENTS:
         page_type = getattr(ontology, constant, None)
         assert page_type, f"本体缺少计划书定义的要素 {constant}"
@@ -278,12 +278,12 @@ def test_ontology_covers_every_element_the_plan_defines():
 def test_every_element_declares_required_fields_including_entity():
     """必填字段要覆盖**全部**要素。
 
-    上面那条只遍历了验收 18 的六项，Entity 的字段约束因此从未被检查过。
-    """
+ 上面那条只遍历了验收 18 的六项，Entity 的字段约束因此从未被检查过。
+ """
     for constant in PLAN_ONTOLOGY_ELEMENTS:
         page_type = getattr(ontology, constant)
         assert ontology.REQUIRED_EXTRA.get(page_type), f"{page_type} 未声明必填字段"
-    # Entity 的字段来自计划书「实体 Entity」的定义
+    # Entity 的字段来自「实体 Entity」的定义
     assert ontology.REQUIRED_EXTRA[ontology.ENTITY] == ("name", "entity_type")
 
 

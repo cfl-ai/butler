@@ -64,7 +64,7 @@ from ai_butler.harness.patch import (                             # noqa: E402
 )
 from ai_butler.harness.trail import RepairTrail                   # noqa: E402
 
-#: 授权簿默认 TTL（天）。**限期强制**（U88）：30 天是与「日级排程」匹配的
+#: 授权簿默认 TTL（天）。**限期强制**：30 天是与「日级排程」匹配的
 #: 量级——超过一个月没续期的授权，通常已经不是「在用」而是「忘了」。
 DEFAULT_TTL_DAYS = 30.0
 
@@ -81,11 +81,11 @@ class CliError(RuntimeError):
 def default_scopes() -> tuple[tuple[str, ...], tuple[str, ...]]:
     """授权簿的默认范围：各缺陷类别可改前缀的并集 + 全局禁区。
 
-    与 `PatchGuard` 共用同一份数据（`harness/patch.py`）：授权簿管
-    「谁/哪台机器」，`PatchGuard` 管「哪些文件永远不许动」，但两者的
-    **范围口径必须一致**——授权比防线宽没有意义（批了也被拦），
-    比防线窄也没有意义（批了也改不了）。
-    """
+ 与 `PatchGuard` 共用同一份数据（`harness/patch.py`）：授权簿管
+ 「谁/哪台机器」，`PatchGuard` 管「哪些文件永远不许动」，但两者的
+ **范围口径必须一致**——授权比防线宽没有意义（批了也被拦），
+ 比防线窄也没有意义（批了也改不了）。
+ """
     allowed = tuple(sorted({p for scopes in ALLOWED_SCOPE_BY_KIND.values()
                             for p in scopes}))
     return allowed, tuple(FORBIDDEN_PATHS)
@@ -484,16 +484,16 @@ def main(argv: Sequence[str] | None = None, *,
          settings: Settings | None = None) -> int:
     """命令行主函数。返回进程退出码。
 
-    `settings` 是测试缝：注入后跳过 load_settings 与环境守卫
-    （测试用临时存储根，不该被开发环境的端口配置拦下）。
-    非零退出码一律伴随 stderr 上的一行原因——**不静默失败**。
+ `settings` 是测试缝：注入后跳过 load_settings 与环境守卫
+ （测试用临时存储根，不该被开发环境的端口配置拦下）。
+ 非零退出码一律伴随 stderr 上的一行原因——**不静默失败**。
 
-    三类拒绝原样接住并转为「一行原因 + 退出 1」：授权簿
-    （AuthorityError）、审批票（ApprovalError）、角色天花板
-    （`core/permissions.py` 的 `PermissionError`——`raise_if_denied` 抛的
-    是本项目自己的异常，不是内置的那个）。都是「该不该跑」的答案，
-    答案是不跑，就把不跑的原因说清楚，而不是把栈拍到运营的人脸上。
-    """
+ 三类拒绝原样接住并转为「一行原因 + 退出 1」：授权簿
+ （AuthorityError）、审批票（ApprovalError）、角色天花板
+ （`core/permissions.py` 的 `PermissionError`——`raise_if_denied` 抛的
+ 是本项目自己的异常，不是内置的那个）。都是「该不该跑」的答案，
+ 答案是不跑，就把不跑的原因说清楚，而不是把栈拍到运营的人脸上。
+ """
     args = _build_parser().parse_args(list(sys.argv[1:] if argv is None else argv))
     args.injected_settings = settings
     try:
@@ -505,5 +505,5 @@ def main(argv: Sequence[str] | None = None, *,
 
 if __name__ == "__main__":  # pragma: no cover - 入口自己走，由守护测试以子进程验
     # 没有这一段，`python scripts/run_repair_loop.py ...` 会安静地成功退出——
-    # 而测试全部调用 `main()`，绿得看不出来。**入口必须是可执行的那一个**。
+    # 而测试全部调用 `main`，绿得看不出来。**入口必须是可执行的那一个**。
     sys.exit(main())

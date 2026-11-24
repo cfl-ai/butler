@@ -51,9 +51,9 @@ class StandaloneError(RuntimeError):
 class StandaloneContext:
     """一次独立调用的上下文。
 
-    与会话态的区别：会话里这些值由 LangGraph 从 State 取，
-    独立调用**没有 Graph**，所以必须由调用方**显式给出** —— 尤其是 user_id。
-    """
+ 与会话态的区别：会话里这些值由 LangGraph 从 State 取，
+ 独立调用**没有 Graph**，所以必须由调用方**显式给出** —— 尤其是 user_id。
+ """
 
     user_id: str
     role: UserRole = UserRole.MEMBER
@@ -104,10 +104,10 @@ class StandaloneResult:
 def build_state(ctx: StandaloneContext, extra: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """按 P3 必填契约构造一份最小合法 State。
 
-    独立调用没有 LangGraph，但 **State 契约照样要满足** ——
-    否则 `SubAgent.__call__` 里的 `validate_state` 会把它挡下来，
-    而这正是我们想要的：独立入口不得成为契约的旁路。
-    """
+ 独立调用没有 LangGraph，但 **State 契约照样要满足** ——
+ 否则 `SubAgent.__call__` 里的 `validate_state` 会把它挡下来，
+ 而这正是我们想要的：独立入口不得成为契约的旁路。
+ """
     state: dict[str, Any] = {
         "user_id": ctx.user_id,
         "session_id": ctx.session_id,
@@ -133,9 +133,9 @@ def run_standalone(agent: Any, *, ctx: StandaloneContext,
                    extra: Mapping[str, Any] | None = None) -> StandaloneResult:
     """独立执行一个阶段 Agent。
 
-    顺序是刻意的：**先验权限，再验 State，最后才跑业务逻辑**。
-    把权限放在最前，是为了让「未授权」的调用连 State 都构造不出来。
-    """
+ 顺序是刻意的：**先验权限，再验 State，最后才跑业务逻辑**。
+ 把权限放在最前，是为了让「未授权」的调用连 State 都构造不出来。
+ """
     agent_key = str(getattr(agent, "name", "") or type(agent).__name__)
 
     # ---- 1) 三层权限 ----
@@ -150,8 +150,8 @@ def run_standalone(agent: Any, *, ctx: StandaloneContext,
     # ---- 3) 能力绑定校验：声明了能力就必须有工具面 ----
     # 会话路径里 agent.tools 由 butler.enroll 装配；独立调用没有管家，
     # 若 Agent 声明了 capabilities 却拿不到工具面，必须在这里明确拒绝 ——
-    # 否则 run() 里 `self.tools.require(...)` 会以 NoneType AttributeError 收场，
-    # 那是「难看的崩溃」而不是「干净的拒绝」（U48：省编排不省校验）。
+    # 否则 run 里 `self.tools.require(...)` 会以 NoneType AttributeError 收场，
+    # 那是「难看的崩溃」而不是「干净的拒绝」（：省编排不省校验）。
     # tools 已绑定但没发够能力的，由 AgentTools.require 自己抛 CapabilityError。
     declared = tuple(getattr(agent, "capabilities", ()) or ())
     if declared and getattr(agent, "tools", None) is None:
@@ -186,19 +186,19 @@ def run_standalone(agent: Any, *, ctx: StandaloneContext,
 def _drive(outcome: Any) -> Any:
     """把 Agent 的执行结果跑到完：同步给值，异步给**跑完的协程结果**。
 
-    为什么必须有这个函数
-    -------------------
-    7 个 Agent 的 `run()` 是 async 的（P1/P5/P6/P8/P9/P10 + P4 集群全体成员）。
-    `agent(state)` 对异步 run 只返回**协程对象**——创建了不 await，
-    它就是一个从未执行的对象：`updates` 静默变成 {}，调用方却看到
-    「已独立执行 xxx（0 ms）」。**这是最坏的失败形态：伪装成功**
-    （E-21 同族：声明了没接上，还报告成功）。
+ 为什么必须有这个函数
+ -------------------
+ 7 个 Agent 的 `run` 是 async 的（P1/P5/P6/P8/P9/P10 + P4 集群全体成员）。
+ `agent(state)` 对异步 run 只返回**协程对象**——创建了不 await，
+ 它就是一个从未执行的对象：`updates` 静默变成 {}，调用方却看到
+ 「已独立执行 xxx（0 ms）」。**这是最坏的失败形态：伪装成功**
+ （ 同族：声明了没接上，还报告成功）。
 
-    事件循环两种处境都覆盖：
-    - 无活动循环（CLI / 同步测试）：asyncio.run 直接起一个；
-    - 调用方已在循环里（异步框架、async 测试）：换工作线程起新循环，
-      不劫持调用方自己的循环（本入口创建的连接也只在本循环内使用）。
-    """
+ 事件循环两种处境都覆盖：
+ - 无活动循环（CLI / 同步测试）：asyncio.run 直接起一个；
+ - 调用方已在循环里（异步框架、async 测试）：换工作线程起新循环，
+ 不劫持调用方自己的循环（本入口创建的连接也只在本循环内使用）。
+ """
     if not inspect.isawaitable(outcome):
         return outcome
     try:
@@ -213,9 +213,9 @@ def _drive(outcome: Any) -> Any:
 class StandaloneAudit:
     """独立调用的审计记录。
 
-    与会话链路的审计**合并统计**：不能因为「是后台脚本调的」就不留痕 ——
-    恰恰相反，脱离了会话编排的操作更需要能追溯谁在什么时候改了什么。
-    """
+ 与会话链路的审计**合并统计**：不能因为「是后台脚本调的」就不留痕 ——
+ 恰恰相反，脱离了会话编排的操作更需要能追溯谁在什么时候改了什么。
+ """
 
     records: list[StandaloneResult] = field(default_factory=list)
 

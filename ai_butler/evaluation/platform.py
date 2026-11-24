@@ -101,9 +101,9 @@ class EvaluationCase:
     def from_dict(cls, payload: Mapping[str, Any]) -> "EvaluationCase":
         """dict → EvaluationCase（State 里只有可 JSON 化的载荷）。
 
-        字段缺失按默认值处理，但 case_id 与 question 缺一个都拒收——
-        没有这两个字段的「用例」无法对账。
-        """
+ 字段缺失按默认值处理，但 case_id 与 question 缺一个都拒收——
+ 没有这两个字段的「用例」无法对账。
+ """
         if not isinstance(payload, Mapping):
             raise PlatformError(f"用例应为 dict，实际 {type(payload).__name__}")
 
@@ -191,12 +191,12 @@ class PlatformReport:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "PlatformReport":
-        """从 `as_dict()` 的形态还原。**复评必需**：
+        """从 `as_dict` 的形态还原。**复评必需**：
 
-        复评要比较「修复前」与「修复后」，前者来自上一轮存进 State 的
-        dict 形态。没有这个还原方法，调用方只能拿 dict 硬凑一个残缺报告，
-        或者干脆拿「现在通过」当基线——两种做法都会让对比失去意义。
-        """
+ 复评要比较「修复前」与「修复后」，前者来自上一轮存进 State 的
+ dict 形态。没有这个还原方法，调用方只能拿 dict 硬凑一个残缺报告，
+ 或者干脆拿「现在通过」当基线——两种做法都会让对比失去意义。
+ """
         raw_dimensions = payload.get("dimensions") or {}
         dimensions: dict[str, DimensionResult] = {}
         for key, raw in raw_dimensions.items():
@@ -248,13 +248,13 @@ class PlatformReport:
 class EvaluationPlatform:
     """七大维度评测编排器。
 
-    阈值集中在这里（都有默认值），用例侧只提供金标准；
-    ``judge`` 是可选的 LLM 裁判端口（维度二），未注入即用确定性启发式。
-    """
+ 阈值集中在这里（都有默认值），用例侧只提供金标准；
+ ``judge`` 是可选的 LLM 裁判端口（维度二），未注入即用确定性启发式。
+ """
 
     judge: ClaimJudge | None = None
     redactor: Redactor = field(default_factory=Redactor)
-    # ---- 维度阈值（U56 默认值）----
+    # ---- 维度阈值（ 默认值）----
     min_recall: float = 1.0
     min_faithfulness: float = 1.0
     support_threshold: float = 0.5
@@ -268,9 +268,9 @@ class EvaluationPlatform:
     def evaluate(self, traces: Sequence[AgentTrace], case: EvaluationCase) -> PlatformReport:
         """对一次用例的运行组评分。
 
-        ``traces`` 是同一问题的多次运行（稳定性维度需要 ≥2 次）；
-        传 1 次时稳定性维度按「无从验证」不通过。
-        """
+ ``traces`` 是同一问题的多次运行（稳定性维度需要 ≥2 次）；
+ 传 1 次时稳定性维度按「无从验证」不通过。
+ """
         if not case.question.strip():
             raise PlatformError(f"用例 {case.case_id} 的 question 为空")
         for trace in traces:

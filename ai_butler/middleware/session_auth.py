@@ -39,10 +39,10 @@ async def login(*, store: SessionStore, settings: Settings, user_id: str,
                 ttl_seconds: int | None = None) -> SessionToken:
     """签发会话凭据。
 
-    `ttl_seconds` 只有**访客凭据**会传（U64：访客期限短于成员）。
-    刻意做成可选参数而不是改 `Settings`：成员会话的有效期是计划书写明的，
-    不能因为访客需要短期限就把全体成员的期限一起改短。
-    """
+ `ttl_seconds` 只有**访客凭据**会传（：访客期限短于成员）。
+ 刻意做成可选参数而不是改 `Settings`：成员会话的有效期是写明的，
+ 不能因为访客需要短期限就把全体成员的期限一起改短。
+ """
     st = create_session_token(user_id=user_id, device_id=device_id,
                               secret=settings.session_token_secret,
                               ttl_seconds=ttl_seconds or settings.session_ttl_seconds,

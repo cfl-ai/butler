@@ -11,7 +11,7 @@ SCOPE_VAULT = "vault"
 
 
 class VaultIsolationError(RuntimeError):
-    """跨账号访问或缺失 user_id。计划书：禁止跨用户访问，user_id 不得为空。"""
+    """跨账号访问或缺失 user_id。禁止跨用户访问，user_id 不得为空。"""
 
 
 class WikiStore:
@@ -47,11 +47,11 @@ class WikiStore:
     def write_page(self, page: WikiPage, *, user_id: str | None = None) -> Path:
         """写入页面。作用域由 user_id 决定，且与页面自带的 user_id 必须一致。
 
-        - user_id 为 None → 写公共 Workspace，页面**不得**带 user_id
-          （计划书：素材溯源库属于公共 Workspace，无用户 ID）；
-        - user_id 给定 → 写该用户私有 Vault，页面 user_id 必须等于它
-          （防止把 A 的数据写进 B 的库）。
-        """
+ - user_id 为 None → 写公共 Workspace，页面**不得**带 user_id
+ （素材溯源库属于公共 Workspace，无用户 ID）；
+ - user_id 给定 → 写该用户私有 Vault，页面 user_id 必须等于它
+ （防止把 A 的数据写进 B 的库）。
+ """
         validate(page)
         scope = self._scope_of(user_id)
         if scope == SCOPE_WORKSPACE:
@@ -101,9 +101,9 @@ class WikiStore:
     def list_pages_for_retrieval(self, user_id: str, *, page_type: str | None = None) -> list[WikiPage]:
         """检索语义：合并「公共 Workspace + 当前用户私有 Vault」。
 
-        计划书三、P2 明确：合并返回公共 Workspace + 当前用户私有 Vault 内容，
-        **不会加载其他用户私有 Wiki 页面** —— 本方法只读这两个作用域，不遍历 vault 目录。
-        """
+ 三、P2 明确：合并返回公共 Workspace + 当前用户私有 Vault 内容，
+ **不会加载其他用户私有 Wiki 页面** —— 本方法只读这两个作用域，不遍历 vault 目录。
+ """
         if user_id is None or not str(user_id).strip():
             raise VaultIsolationError("【行级隔离】检索必须携带 user_id（计划书三、P2）")
         pages = list(self._collect(self.workspace_dir, page_type))

@@ -17,11 +17,11 @@ from typing import Any, Iterable, Mapping, Sequence
 from ai_butler.agent_wiki.ontology import CLAIM, EVIDENCE
 from ai_butler.evaluation.redaction import Redactor
 
-#: 计划书 P9 新增的两项业务指标
+#: P9 新增的两项业务指标
 JEV_INTENT_HIT_RATE = "jev_intent_hit_rate"
 MULTI_INTENT_ACCURACY = "multi_intent_accuracy"
 
-#: 计划书 P9 列出的四项 Agent-Wiki 指标
+#: P9 列出的四项 Agent-Wiki 指标
 WIKI_CLAIM_AVG_CONFIDENCE = "wiki_claim_avg_confidence"
 WIKI_EVIDENCE_MISSING_RATIO = "wiki_evidence_missing_ratio"
 WIKI_CONTRADICTION_COUNT = "wiki_contradiction_count"
@@ -34,7 +34,7 @@ METRIC_KEYS: tuple[str, ...] = (
     WIKI_CONTRADICTION_COUNT, WIKI_STALE_MATERIAL_RATIO,
 )
 
-#: 素材过期判定天数（实现参数；计划书未给数值）
+#: 素材过期判定天数（实现参数；未给数值）
 DEFAULT_STALE_DAYS = 180
 
 
@@ -68,7 +68,7 @@ class JeVObservation:
 
 
 def jev_intent_hit_rate(observations: Sequence[JeVObservation]) -> MetricValue:
-    """计划书 P9 新增指标：Jev 意图命中率。"""
+    """ P9 新增指标：Jev 意图命中率。"""
     total = len(observations)
     if total == 0:
         return MetricValue(JEV_INTENT_HIT_RATE, 0.0, "ratio", 0, "无样本")
@@ -78,11 +78,11 @@ def jev_intent_hit_rate(observations: Sequence[JeVObservation]) -> MetricValue:
 
 
 def multi_intent_accuracy(observations: Sequence[JeVObservation]) -> MetricValue:
-    """计划书 P9 新增指标：多意图识别准确率。
+    """ P9 新增指标：多意图识别准确率。
 
-    **只统计「本该是多意图」的样本**——把单意图样本混进来算，
-    这个指标会被稀释得毫无意义（这正是它容易做错的地方）。
-    """
+ **只统计「本该是多意图」的样本**——把单意图样本混进来算，
+ 这个指标会被稀释得毫无意义（这正是它容易做错的地方）。
+ """
     multi = [o for o in observations if o.multi_intent]
     if not multi:
         return MetricValue(MULTI_INTENT_ACCURACY, 0.0, "ratio", 0, "无多意图样本")
@@ -105,10 +105,10 @@ def wiki_claim_avg_confidence(pages: Sequence[Any]) -> MetricValue:
 def claim_evidence_ids(page: Any) -> tuple[str, ...]:
     """取一条 Claim 绑定的证据 id。
 
-    **证据 id 存在 extra 里，不是 WikiPage 的顶层字段** ——
-    写成 getattr(page, "evidence_ids") 会永远取到空，
-    使「证据缺失占比」恒为 100%（本阶段实际踩过，见交付报告）。
-    """
+ **证据 id 存在 extra 里，不是 WikiPage 的顶层字段** ——
+ 写成 getattr(page, "evidence_ids") 会永远取到空，
+ 使「证据缺失占比」恒为 100%（本阶段实际踩过，见交付报告）。
+ """
     extra = getattr(page, "extra", None) or {}
     return tuple(extra.get("evidence_ids") or ())
 
@@ -126,10 +126,10 @@ def wiki_evidence_missing_ratio(pages: Sequence[Any]) -> MetricValue:
 def page_contradicts(page: Any) -> tuple[str, ...]:
     """取一页的矛盾记录。
 
-    **矛盾是 WikiPage 的顶层字段**（P6 的教训：读 extra["contradicts"] 会永远检不出）。
-    但 new_page 会把未识别关键字收进 extra，为兼容两种构造路径，
-    顶层为空时回落到 extra —— 顺序不能反，否则又回到「永远检不出」。
-    """
+ **矛盾是 WikiPage 的顶层字段**（P6 的教训：读 extra["contradicts"] 会永远检不出）。
+ 但 new_page 会把未识别关键字收进 extra，为兼容两种构造路径，
+ 顶层为空时回落到 extra —— 顺序不能反，否则又回到「永远检不出」。
+ """
     top = tuple(getattr(page, "contradicts", None) or ())
     if top:
         return top
@@ -176,7 +176,7 @@ def _parse(stamp: Any) -> datetime | None:
 # ============================== 看板 ============================== #
 @dataclass
 class MetricBoard:
-    """指标看板。**出口一律经脱敏**（计划书三、P9「禁止展示明文用户信息」）。"""
+    """指标看板。**出口一律经脱敏**（三、P9「禁止展示明文用户信息」）。"""
 
     values: list[MetricValue] = field(default_factory=list)
     generated_at: str = ""
@@ -204,7 +204,7 @@ class MetricBoard:
 def build_board(*, observations: Sequence[JeVObservation], pages: Sequence[Any],
                 now: datetime, stale_days: int = DEFAULT_STALE_DAYS,
                 generated_at: str = "", redactor: Redactor | None = None) -> MetricBoard:
-    """按计划书 P9 的口径算出全部六项指标。"""
+    """按 P9 的口径算出全部六项指标。"""
     board = MetricBoard(generated_at=generated_at or now.isoformat(),
                         redactor=redactor or Redactor())
     board.add(jev_intent_hit_rate(observations))

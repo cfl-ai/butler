@@ -41,7 +41,7 @@ ACTION_DOWNGRADE = "downgrade"
 ACTION_BLOCK = "block"
 ACTIONS: tuple[str, ...] = (ACTION_PASS, ACTION_DOWNGRADE, ACTION_BLOCK)
 
-#: 冲突类别（计划书三、P6 步骤 2 逐字：时间、空间、逻辑、费用）
+#: 冲突类别（三、P6 步骤 2 逐字：时间、空间、逻辑、费用）
 CONFLICT_TIME = "time"
 CONFLICT_SPACE = "space"
 CONFLICT_LOGIC = "logic"
@@ -72,14 +72,14 @@ CREDIBILITY_LOW = "low"
 CREDIBILITY_LABELS: tuple[str, ...] = (CREDIBILITY_HIGH, CREDIBILITY_MEDIUM,
                                        CREDIBILITY_LOW)
 
-#: 校验对象类别（计划书三、P6 步骤 4「所有方案、所有账单、所有入库数据」）
+#: 校验对象类别（三、P6 步骤 4「所有方案、所有账单、所有入库数据」）
 KIND_PLAN = "plan"
 KIND_BILL = "bill"
 KIND_INGEST = "ingest"
 KIND_CLAIM = "claim"
 VERIFY_KINDS: tuple[str, ...] = (KIND_PLAN, KIND_BILL, KIND_INGEST, KIND_CLAIM)
 
-#: 计划书写死的数字：**二次**重生成
+#: 写死的数字：**二次**重生成
 MAX_REGENERATIONS = 2
 
 #: 中文数字 → 阿拉伯数字。时间表达里「六点半」「七点」极常见，
@@ -227,7 +227,7 @@ def detect_space_conflicts(items: Sequence[Proposition]) -> list[dict[str, Any]]
 def detect_logic_conflicts(items: Sequence[Proposition], *,
                            wiki: WikiStore | None = None,
                            user_id: str | None = None) -> list[dict[str, Any]]:
-    """逻辑冲突：**复用 Wiki 的 Contradiction 记录**（计划书三、P6 步骤 2）。"""
+    """逻辑冲突：**复用 Wiki 的 Contradiction 记录**（三、P6 步骤 2）。"""
     out: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in items:
@@ -257,7 +257,7 @@ PROPOSITION_SPLIT = re.compile(r"[。！？\n]+")
 
 
 def extract_propositions(text: str, *, kind: str = KIND_PLAN) -> list[Proposition]:
-    """把一段输出解析成命题（计划书三、P6 步骤 1「解析方案输出命题」）。"""
+    """把一段输出解析成命题（三、P6 步骤 1「解析方案输出命题」）。"""
     out = []
     for piece in PROPOSITION_SPLIT.split(text or ""):
         piece = piece.strip()
@@ -292,13 +292,13 @@ class ContentVerifier:
                       ) -> list[dict[str, Any]]:
         """**不遍历他人数据**的隐私校验（见模块头部说明）。
 
-        reference_owners 是生产者提供的来源表（引用 ID → 归属账号，None 表示公共）。
-        为什么需要它：WikiStore 的行级隔离使得「读他人页面」与「页面不存在」都返回 None，
-        二者**在读取侧不可区分**。因此：
-        - 给了来源表 → 能直接判出「越界引用他人数据」；
-        - 没给 → 只能观测到「解析不到」，而它同样被拦截，因为隔离之下
-          越界引用**正是以解析不到的形式表现出来**。
-        """
+ reference_owners 是生产者提供的来源表（引用 ID → 归属账号，None 表示公共）。
+ 为什么需要它：WikiStore 的行级隔离使得「读他人页面」与「页面不存在」都返回 None，
+ 二者**在读取侧不可区分**。因此：
+ - 给了来源表 → 能直接判出「越界引用他人数据」；
+ - 没给 → 只能观测到「解析不到」，而它同样被拦截，因为隔离之下
+ 越界引用**正是以解析不到的形式表现出来**。
+ """
         problems: list[dict[str, Any]] = []
         owners = dict(reference_owners or {})
 
@@ -437,7 +437,7 @@ class ContentVerifier:
                                      output_text=output_text,
                                      reference_owners=reference_owners)
 
-        # 计划书三、P6 步骤 4：账单与入库数据**强制**校验，不得空过
+        # 三、P6 步骤 4：账单与入库数据**强制**校验，不得空过
         forced = [i.kind for i in problem_items]
         missing_evidence = sum(1 for f in findings if f["kind"] == FINDING_MISSING_EVIDENCE)
         unsupported = sum(1 for f in findings if f["kind"] == FINDING_UNSUPPORTED)

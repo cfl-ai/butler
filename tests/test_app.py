@@ -44,23 +44,23 @@ def test_health_is_public_and_business_paths_are_not(settings, redis_client):
     health, business = asyncio.run(main())
     assert health.status_code == 200 and health.json()["status"] == "ok"
     # 公开白名单只允许「拿凭据」与「探活」两类：
-    #   /health            —— 基础设施探活
-    #   /api/session/login —— 登录本身不可能携带会话（三、P7 步骤3）
-    #   /api/session/guest —— 访客凭据（U64）：**签发的只是凭据，不是免检通行证**，
-    #                         拿到之后仍然过同一套中间件，能力表里只有 text_query
+    # /health —— 基础设施探活
+    # /api/session/login —— 登录本身不可能携带会话（三、P7 步骤3）
+    # /api/session/guest —— 访客凭据：**签发的只是凭据，不是免检通行证**，
+    # 拿到之后仍然过同一套中间件，能力表里只有 text_query
     # 这条断言的作用是**防止**有人图省事把业务接口加进白名单：一旦加了，下面
     # 的 401 断言会立刻红。
-    #   /api/session/{register,forgot,reset} —— U67/U68：这三件事必然发生在
-    #       登录之前，不放行就永远拿不到会话；放行的只是动作本身，
-    #       重置令牌仍由服务端签发且一次性。
+    # /api/session/{register,forgot,reset} ——：这三件事必然发生在
+    # 登录之前，不放行就永远拿不到会话；放行的只是动作本身，
+    # 重置令牌仍由服务端签发且一次性。
     assert PUBLIC_PATHS == {
         "/health", "/api/session/login", "/api/session/guest",
         "/api/session/register", "/api/session/forgot", "/api/session/reset",
         "/api/accounts/nickname/suggest",
-        # U116：常规入口的 Web 页只交出一张 HTML，不含任何数据。
+        #：常规入口的 Web 页只交出一张 HTML，不含任何数据。
         "/ui", "/ui/",
     }
-    # 未登录拒绝一切业务接口（计划书七、11）
+    # 未登录拒绝一切业务接口
     assert business.status_code == 401
     assert business.json()["code"] == SESSION_EXPIRED_CODE
 
@@ -112,14 +112,14 @@ def test_expired_or_forged_token_is_rejected_before_business(settings, redis_cli
 
 
 # --------------------------------------------------------------------------- #
-# 常规入口 Web 页（U116）
+# 常规入口 Web 页
 # --------------------------------------------------------------------------- #
 def test_web_ui_is_public_but_its_data_is_not(settings, redis_client):
     """页面本身公开（否则浏览器根本打不开），但它要的数据一律仍需鉴权。
 
-    这是「放行一个动作」与「放行一个数据口子」的分界：
-    `/ui` 只交出一张 HTML，页面里的每个业务请求仍然带 Bearer、走同一套会话校验。
-    """
+ 这是「放行一个动作」与「放行一个数据口子」的分界：
+ `/ui` 只交出一张 HTML，页面里的每个业务请求仍然带 Bearer、走同一套会话校验。
+ """
     async def main():
         _app, client, _cap = _prepare(settings, redis_client)
         async with client:
@@ -139,7 +139,7 @@ def test_web_ui_is_public_but_its_data_is_not(settings, redis_client):
     assert "api/chat/stream" in html, "页面要消费既有的 SSE 端点，不自造第二套契约"
     # 启动自检：页面必须先探 /health 才能报出「后端没连上」。
     # 少了这一步，静态打开（IDE 预览/文件直开）时只会回一句 HTTP 404，
-    # 排错方向全错 —— 实测遇到过（见 MEMORY E-110）。
+    # 排错方向全错 —— 实测遇到过（见 MEMORY ）。
     assert 'fetch("/health"' in html, "页面必须自检后端是否可达"
     assert "接口不存在（404）" in html, "404 无 message 时要说清是服务没连上"
     assert no_auth.status_code == 401, "页面公开不等于数据公开"

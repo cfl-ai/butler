@@ -71,7 +71,7 @@ class EvaluationPlatformAgent(SubAgent):
     #: 两轮评测写**不同字段**：第一轮报告是复评的基线，覆盖掉它就没得比了
     writes = ("eval_platform", "eval_platform_recheck")
     #: 本 Agent 是纯计算：读 State 里的痕迹与金标准，不触达任何外部能力。
-    #: 不虚声明能力——未声明的能力根本不会发到手上（计划书三、P4）。
+    #: 不虚声明能力——未声明的能力根本不会发到手上（三、P4）。
     capabilities = ()
     responsibilities = ("消费各阶段 Agent 的过程痕迹，按七大维度（检索召回/证据忠实/"
                         "工具真实/稳定异常/成本效率/安全权限/输出质量）评定，"
@@ -82,7 +82,7 @@ class EvaluationPlatformAgent(SubAgent):
     judge: Any = None
     #: 脱敏模型层分析器（如 Presidio 适配器），与 P9 同一端口；未注入即只用正则兜底
     analyzer: Any = None
-    #: 复评用的痕迹再生产者（U79）。**未注入则复评只能给 UNVERIFIED**——
+    #: 复评用的痕迹再生产者。**未注入则复评只能给 UNVERIFIED**——
     #: 拿「补丁已应用」推断「修好了」是本项目反复避免的假成功。
     producer: Any = None
     #: 可注入的复评器替身（测试用）；缺省按 producer 现建
@@ -116,19 +116,19 @@ class EvaluationPlatformAgent(SubAgent):
                              reports: Sequence[PlatformReport],
                              case_count: int,
                              trace_count: int = 0) -> dict[str, Any]:
-        """把一批报告装配成 `eval_platform` 段。**`run()` 与跨轮基线晋升共用**。
+        """把一批报告装配成 `eval_platform` 段。**`run` 与跨轮基线晋升共用**。
 
-        为什么要抽出来：跨轮重试时，第二轮的基线是「第一轮复评重跑产出的报告」
-        （`RecheckResult.after_reports`），而驱动需要用与首轮**完全相同的形态**
-        把它放进 State——否则下游读 `summary` / `defects` 时会遇到两套字段。
-        两处各写一遍的结局是迟早分叉（E-44 的同一课）。
+ 为什么要抽出来：跨轮重试时，第二轮的基线是「第一轮复评重跑产出的报告」
+ （`RecheckResult.after_reports`），而驱动需要用与首轮**完全相同的形态**
+ 把它放进 State——否则下游读 `summary` / `defects` 时会遇到两套字段。
+ 两处各写一遍的结局是迟早分叉（ 的同一课）。
 
-        `trace_count` 只在首轮有意义（后续轮没有调用方给的痕迹，痕迹由复评现产）。
-        """
+ `trace_count` 只在首轮有意义（后续轮没有调用方给的痕迹，痕迹由复评现产）。
+ """
         passed = [r for r in reports if r.passed]
         vetoed = [r for r in reports if r.vetoed]
         failed = [r for r in reports if not r.passed]
-        # 缺陷单（U76）：报告说「不行」，缺陷单说「哪一类、谁处理、从哪改、怎么复现」。
+        # 缺陷单：报告说「不行」，缺陷单说「哪一类、谁处理、从哪改、怎么复现」。
         # 没有这一步，P10 的 harness 拿不到任何可执行输入（harness_proposals 零生产者）。
         batch = defects_from_reports(reports, redactor=self.redactor)
         return {
@@ -149,7 +149,7 @@ class EvaluationPlatformAgent(SubAgent):
                 "blocked_by_security": batch.blocked_by_security,
             },
             "reports": [r.as_dict(self.redactor) for r in reports],
-            #: 供 P10 Harness 消费的修复输入（U76）。**这是两个 Agent 之间的接口**，
+            #: 供 P10 Harness 消费的修复输入。**这是两个 Agent 之间的接口**，
             #: 字段形态变更视为破坏性变更，守护测试钉住。
             "defects": batch.as_dict(self.redactor),
             # 两层都**从 redactor 推导**，不写死（与 P9 看板同一立场）
@@ -176,22 +176,22 @@ class EvaluationPlatformAgent(SubAgent):
             trace_count=len(traces))}
 
     # ------------------------------------------------------------------ #
-    # 第二轮评测（U79）
+    # 第二轮评测
     # ------------------------------------------------------------------ #
     async def recheck(self, state: dict[str, Any]) -> dict[str, Any]:
         """复核 harness 改完之后：**修好了没** + **有没有乱改**。
 
-        两件事分开判，因为混成一个总分两头都测不准：
+ 两件事分开判，因为混成一个总分两头都测不准：
 
-        - **没乱改**：`recheck.audit`。结构判据，只看 diff，不跑代码。
-          改测试、删断言、改评测判据、越界改别的子系统，全部在这里拦下。
-        - **修好了**：同一批用例重跑，看目标缺陷是否消失、有没有新缺陷。
-          效果判据，必须真跑——没有 `producer` 时只能给 `UNVERIFIED`。
+ - **没乱改**：`recheck.audit`。结构判据，只看 diff，不跑代码。
+ 改测试、删断言、改评测判据、越界改别的子系统，全部在这里拦下。
+ - **修好了**：同一批用例重跑，看目标缺陷是否消失、有没有新缺陷。
+ 效果判据，必须真跑——没有 `producer` 时只能给 `UNVERIFIED`。
 
-        只从 harness 段取一样东西：**它想改的 diff**（作为审计对象）。
-        `converged` / `done` / `patch_applied` 一律不采信——那是「它认为」，
-        不是「实际」。被评的一方不能给自己发结论。
-        """
+ 只从 harness 段取一样东西：**它想改的 diff**（作为审计对象）。
+ `converged` / `done` / `patch_applied` 一律不采信——那是「它认为」，
+ 不是「实际」。被评的一方不能给自己发结论。
+ """
         uid = self.require_user_id(state)
         cases = self._cases(state)
 
@@ -235,8 +235,8 @@ class EvaluationPlatformAgent(SubAgent):
 def _defect_kind_from_harness(harness: Mapping[str, Any]) -> str:
     """从 harness 的受理结果里取本次修复针对的缺陷类别。
 
-    多张工单时取第一张：复评时审计的是这一份 diff，取它对应的类别才自洽。
-    """
+ 多张工单时取第一张：复评时审计的是这一份 diff，取它对应的类别才自洽。
+ """
     intake = harness.get("intake")
     if not isinstance(intake, Mapping):
         return ""

@@ -39,9 +39,9 @@ from ai_butler.agents.capabilities import (
 from ai_butler.agents.facts import AgentFact, FactWriter
 from ai_butler.core.naming import SUBAGENT_TITLES
 
-#: 集群成员的机读 key 与自有写入字段，顺序即计划书点名顺序。
+#: 集群成员的机读 key 与自有写入字段，顺序即设计点名顺序。
 #: 中文名**不在这里写第二遍** —— 从 `core.naming.SUBAGENT_TITLES` 派生，
-#: 计划书一改名，名册跟着变，不会留下「两处真值源自相矛盾」（E-44）。
+#: 一改名，名册跟着变，不会留下「两处真值源自相矛盾」。
 _ROSTER_FIELDS: tuple[tuple[str, str], ...] = (
     ("device_perception_agent", "device_snapshot"),
     ("weather_perception_agent", "weather_snapshot"),
@@ -52,7 +52,7 @@ _ROSTER_FIELDS: tuple[tuple[str, str], ...] = (
     ("code_iteration_agent", "code_iteration_proposals"),
 )
 
-#: 集群名册：(Agent 机读 key, 计划书里的中文名, 自有写入字段)。
+#: 集群名册：(Agent 机读 key, 里的中文名, 自有写入字段)。
 ROSTER: tuple[tuple[str, str, str], ...] = tuple(
     (key, SUBAGENT_TITLES[key], field) for key, field in _ROSTER_FIELDS)
 
@@ -83,7 +83,7 @@ class _MopsAgent(SubAgent):
     def facts_from_hits(self, hits: Sequence[Any], *, user_id: str) -> tuple[list[AgentFact],
                                                                             list[str]]:
         """把检索命中转成事实。**缺证据或缺置信度的一律跳过并记录原因**，
-        不为了凑数造出无证据的声明。"""
+ 不为了凑数造出无证据的声明。"""
         facts: list[AgentFact] = []
         skipped: list[str] = []
         for hit in hits:
@@ -109,11 +109,11 @@ class _MopsAgent(SubAgent):
 
     def write_facts(self, facts: Sequence[AgentFact], *, user_id: str,
                     untrusted: bool = False) -> list[dict[str, Any]]:
-        """计划书三、P4 Wiki 约束：产出事实优先写入**本人私有 Vault**。"""
+        """三、P4 Wiki 约束：产出事实优先写入**本人私有 Vault**。"""
         if not facts:
             return []
         writer: FactWriter = self.tools.require(CAP_WIKI_WRITE)
-        # 风控（台账 U41）：不可信输入产出的事实只能落成 SUSPECTED
+        # 风控：不可信输入产出的事实只能落成 SUSPECTED
         pages = writer.write_many(list(facts), user_id=user_id, untrusted=untrusted)
         return [{"claim_page_id": p.id, "confidence": p.confidence,
                  "evidence_ids": list(p.extra.get("evidence_ids") or [])} for p in pages]
@@ -298,7 +298,7 @@ class CodeIterationAgent(_MopsAgent):
     capabilities: ClassVar[tuple[str, ...]] = ()
     responsibilities: ClassVar[str] = "汇总质检与降级信号产出代码迭代提案（不执行代码）"
 
-    #: 计划书三、P10 才允许在隔离沙箱里改代码与跑测试；本 Agent 严格止步于提案
+    #: 三、P10 才允许在隔离沙箱里改代码与跑测试；本 Agent 严格止步于提案
     EXECUTES_CODE: ClassVar[bool] = False
 
     def run(self, state: dict[str, Any]) -> dict[str, Any]:
@@ -339,7 +339,7 @@ def build_mops_cluster(*, settings: Any = None) -> list[SubAgent]:
 
 
 def roster_manifest() -> list[dict[str, Any]]:
-    """名册台账：名字逐条对应计划书三、P4 的 7 个中文名。"""
+    """名册台账：名字逐条对应登记三、P4 的 7 个中文名。"""
     rows = []
     for (name, plan_name, write_field), cls in zip(ROSTER, MOPS_AGENT_CLASSES):
         rows.append({"agent": name, "plan_name": plan_name, "writes": write_field,

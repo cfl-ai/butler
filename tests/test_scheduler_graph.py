@@ -54,10 +54,10 @@ LABELS = ("book_hotel", "book_flight")
 def loop():
     """模块级事件循环。
 
-    必须 set_event_loop：同进程内其他用例调用 asyncio.run() 后会把当前事件循环置空，
-    若这里只 new_event_loop() 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
-    产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
-    """
+ 必须 set_event_loop：同进程内其他用例调用 asyncio.run 后会把当前事件循环置空，
+ 若这里只 new_event_loop 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
+ 产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
+ """
     lp = asyncio.new_event_loop()
     asyncio.set_event_loop(lp)
     yield lp
@@ -151,17 +151,17 @@ def test_nodes_match_plan_state_flow():
 
 
 def test_max_rollbacks_is_the_plan_fixed_number():
-    """计划书三、P3 写死：「全局最大回退次数 = 2 次」。"""
+    """三、P3 写死：「全局最大回退次数 = 2 次」。"""
     assert MAX_ROLLBACKS == 2
 
 
 def test_protected_fields_cover_the_plan_fields_and_the_guard_flag():
-    """受保护字段必须**包含**计划书点名的 5 个，且额外保护风控结论。
+    """受保护字段必须**包含**设计点名的 5 个，且额外保护风控结论。
 
-    原先断言「正好等于 5 个」。加入 input_untrusted 后改为「包含」——
-    这不是放宽：**少保护一个计划书字段仍会红**，同时新增了对风控字段的断言。
-    若允许子 Agent 改写 input_untrusted，就能把「不可信」洗成「可信」。
-    """
+ 原先断言「正好等于 5 个」。加入 input_untrusted 后改为「包含」——
+ 这不是放宽：**少保护一个字段仍会红**，同时新增了对风控字段的断言。
+ 若允许子 Agent 改写 input_untrusted，就能把「不可信」洗成「可信」。
+ """
     plan_fields = {"user_id", "session_id", "login_status",
                     "jev_decision_result", "wiki_digest"}
     assert plan_fields <= set(PROTECTED_STATE_FIELDS), (
@@ -179,11 +179,11 @@ def test_scheduler_rejects_unregistered_agents_in_plan():
 def test_guarded_input_is_politely_terminated_not_crashed(loop):
     """恶意输入必须**礼貌终止**，而不是把整个 Graph 抛崩。
 
-    风控闸门接在 IntentRouter 里（前置闸门，不是第六层）。
-    图的 _branch 在「没有 intent」时本来就走 NODE_TERMINATE，
-    所以 _node_route 捕获 InputGuardError 后返回不带 intent 的状态即可 ——
-    不新增节点、不改边。
-    """
+ 风控闸门接在 IntentRouter 里（前置闸门，不是第六层）。
+ 图的 _branch 在「没有 intent」时本来就走 NODE_TERMINATE，
+ 所以 _node_route 捕获 InputGuardError 后返回不带 intent 的状态即可 ——
+ 不新增节点、不改边。
+ """
     scheduler = _scheduler()
     result = _run(loop, scheduler.run(
         user_id="user-A", session_id="s1",
@@ -228,13 +228,13 @@ def test_encoded_injection_is_blocked_end_to_end(loop):
 def test_tainted_input_survives_into_the_final_state(loop):
     """风控的 TAINT 结论必须**落到最终状态**，不能算完就丢。
 
-    真事：第一版把结论写进 RouteDecision.degradation_notes，
-    而 graph 只在 require_clarification 分支里回写它 ——
-    **正常流程下这条结论被整条丢弃**，下游没人知道输入已被标为不可信，
-    「不得沉淀为事实」形同空话。
+ 真事：第一版把结论写进 RouteDecision.degradation_notes，
+ 而 graph 只在 require_clarification 分支里回写它 ——
+ **正常流程下这条结论被整条丢弃**，下游没人知道输入已被标为不可信，
+ 「不得沉淀为事实」形同空话。
 
-    现在结论走显式字段 input_untrusted，且该字段受保护（子 Agent 改不了）。
-    """
+ 现在结论走显式字段 input_untrusted，且该字段受保护（子 Agent 改不了）。
+ """
     scheduler = _scheduler()
     result = _run(loop, scheduler.run(
         user_id="user-A", session_id="s1",
@@ -258,8 +258,8 @@ def test_normal_input_is_not_marked_untrusted(loop):
 def test_agent_cannot_clear_the_untrusted_flag(loop):
     """子 Agent 试图把 input_untrusted 改回 False 必须被拒绝并回滚。
 
-    否则「不得沉淀为事实」这条约束可以被任意 Agent 绕过。
-    """
+ 否则「不得沉淀为事实」这条约束可以被任意 Agent 绕过。
+ """
     class _Liar(_HotelAgent):
         def run(self, state):
             updates = dict(_HotelAgent.run(self, state))
@@ -310,7 +310,7 @@ def test_agent_chain_runs_in_declared_order(loop):
 
 
 def test_trace_ids_are_consistent_across_the_whole_chain(loop):
-    """计划书三、P3：Trace ID 贯穿。"""
+    """Trace ID 贯穿。"""
     scheduler = _scheduler()
     result = _run(loop, scheduler.run(user_id="user-A", session_id="s1",
                                       utterance="订酒店", labels=LABELS))
@@ -375,7 +375,7 @@ def test_unresolved_intent_terminates_safely(loop):
 
 
 def test_agent_failure_rolls_back_but_does_not_block_the_rest(loop):
-    """计划书三、P3：任一环节失败自动降级，不阻断主流程。"""
+    """任一环节失败自动降级，不阻断主流程。"""
     scheduler = _scheduler(agents={"boom_agent": _BoomAgent()},
                            chains={"book_hotel": ("boom_agent", "hotel_agent")})
     result = _run(loop, scheduler.run(user_id="user-A", session_id="s1",
@@ -387,7 +387,7 @@ def test_agent_failure_rolls_back_but_does_not_block_the_rest(loop):
 
 
 def test_agent_cannot_overwrite_protected_fields(loop):
-    """计划书三、P4：子 Agent 只读全局状态，不得改写 user_id 等字段。"""
+    """子 Agent 只读全局状态，不得改写 user_id 等字段。"""
     scheduler = _scheduler(agents={"evil_agent": _EvilAgent()},
                            chains={"book_hotel": ("evil_agent", "hotel_agent")})
     result = _run(loop, scheduler.run(user_id="user-A", session_id="s1",
@@ -399,12 +399,12 @@ def test_agent_cannot_overwrite_protected_fields(loop):
 
 
 def test_invalid_session_terminates_the_graph_and_asks_for_relogin(loop):
-    """计划书三、P3「会话失效**直接终止 Graph 流程**，返回重新登录」。
+    """三、P3「会话失效**直接终止 Graph 流程**，返回重新登录」。
 
-    与 P4「会话失效则跳过执行」并不矛盾：P3 说的是整条链路在入口就被拦下
-    （压根走不到分发），P4 说的是某个 Agent 被直接调用时的自身行为
-    （由 SubAgent.__call__ 保证，见 test_agent_base.py）。
-    """
+ 与 P4「会话失效则跳过执行」并不矛盾：P3 说的是整条链路在入口就被拦下
+ （压根走不到分发），P4 说的是某个 Agent 被直接调用时的自身行为
+ （由 SubAgent.__call__ 保证，见 test_agent_base.py）。
+ """
     scheduler = _scheduler()
     result = _run(loop, scheduler.run(user_id="user-A", session_id="s1",
                                       utterance="订机票", labels=LABELS,
@@ -419,7 +419,7 @@ def test_invalid_session_terminates_the_graph_and_asks_for_relogin(loop):
 
 # ------------------------------ 回退约束 ------------------------------ #
 def test_no_redispatch_to_an_agent_that_just_rolled_back(loop):
-    """计划书三、P3「禁止把任务再次分发给刚刚回退的 Agent，杜绝循环甩锅」。"""
+    """三、P3「禁止把任务再次分发给刚刚回退的 Agent，杜绝循环甩锅」。"""
     scheduler = _scheduler(agents={"boom_agent": _BoomAgent()},
                            chains={"book_hotel": ("boom_agent", "hotel_agent", "boom_agent")})
     result = _run(loop, scheduler.run(user_id="user-A", session_id="s1",

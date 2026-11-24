@@ -47,7 +47,7 @@ def _run_phase(butler, code, state):
 
 # ============================== 真值源 ============================== #
 def test_every_plan_phase_is_registered_with_its_original_title():
-    """每个阶段都是一项 Agent，命名与标题取自计划书原文。"""
+    """每个阶段都是一项 Agent，命名与标题取自登记原文。"""
     codes = [p.code for p in PHASES]
     assert codes == ["P0-1", "P0-2", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8",
                      "P9", "P10"]
@@ -117,8 +117,8 @@ def test_butler_enrolls_phase_agents():
 def test_phase_agent_name_cannot_drift_at_definition_time():
     """命名由真值源**强制**：子类即便把 name 写错也会被覆盖。
 
-    这比「注册时校验」更强——非法状态压根不可表达。
-    """
+ 这比「注册时校验」更强——非法状态压根不可表达。
+ """
     class _Renamed(PhaseAgent):
         phase_code = "P1"                 # 真值源要求叫 p1_data_platform
         name = "data_platform"            # 有意写错
@@ -196,7 +196,7 @@ def test_govern_blocks_requests_without_identity_or_session():
 
 
 def test_run_phase_refuses_unimplemented_phase_without_faking_data():
-    """调未落地阶段必须抛错，且把计划书要求的能力写清楚，绝不返回空壳数据。"""
+    """调未落地阶段必须抛错，且把要求的能力写清楚，绝不返回空壳数据。"""
     butler = build_butler()
     state = new_state(user_id="user-A", session_id="s1")
     # 目标阶段**从真值源取**，不再写死——否则每落地一个阶段这里都要改一次
@@ -220,7 +220,7 @@ def test_run_phase_refuses_when_session_is_invalid():
 
 # ============================== 管家：能力治理 ============================== #
 def test_tools_are_clipped_to_each_phases_declared_capabilities():
-    """计划书三、P4「无跨模块越权调用」：阶段 Agent 只拿到自己声明的能力。"""
+    """三、P4「无跨模块越权调用」：阶段 Agent 只拿到自己声明的能力。"""
     sentinel = object()
     butler = build_butler(data_sdk=sentinel, search_service=sentinel)
     p1_tools = butler.tools_of("P1")

@@ -97,7 +97,7 @@ __all__ = [
 
 @dataclass(frozen=True)
 class RepairPaths:
-    """离线链路全部状态的路径。**一处推导，两侧共用**（E-44）。"""
+    """离线链路全部状态的路径。**一处推导，两侧共用**。"""
 
     #: 源码工作根：补丁应用与撤销的目标（= 仓库根）
     root: Path
@@ -121,10 +121,10 @@ class RepairPaths:
 def default_paths(settings: Any, *, root: Path | str | None = None) -> RepairPaths:
     """按 settings 推导离线链路的状态路径。
 
-    `root` 是源码工作根，缺省取本包所在的仓库根
-    （`ai_butler/agents/` → 上两级）。测试与「仓库不在默认位置」的部署
-    显式传入。
-    """
+ `root` 是源码工作根，缺省取本包所在的仓库根
+ （`ai_butler/agents/` → 上两级）。测试与「仓库不在默认位置」的部署
+ 显式传入。
+ """
     base = Path(getattr(settings, "storage_root", "") or "data/dev/storage") / "offline"
     if root is None:
         root = Path(__file__).resolve().parents[2]
@@ -140,15 +140,15 @@ def default_paths(settings: Any, *, root: Path | str | None = None) -> RepairPat
 
 
 # --------------------------------------------------------------------------- #
-# 三道门的第一道：角色天花板                                             #
+# 三道门的第一道：角色天花板 #
 # --------------------------------------------------------------------------- #
 def require_operator_role(
         role: UserRole, *, action: str = "启动离线修复闭环") -> PermissionVerdict:
-    """改源码是 L3 高危动作：**按动作定级，不按 Agent 定级**（U45）。
+    """改源码是 L3 高危动作：**按动作定级，不按 Agent 定级**。
 
-    角色压不住就拒——访客/成员/管理员都不行，只有账号主体（owner）行。
-    这不是「信任某个人」，是「这个动作的后果只有账号主体承担得起」。
-    """
+ 角色压不住就拒——访客/成员/管理员都不行，只有账号主体（owner）行。
+ 这不是「信任某个人」，是「这个动作的后果只有账号主体承担得起」。
+ """
     verdict = evaluate(PermissionRequest(
         agent=AgentIdentity(key=REPAIR_USER_ID, level=CapabilityLevel.L3_CRITICAL),
         role=role,
@@ -159,17 +159,17 @@ def require_operator_role(
 
 
 # --------------------------------------------------------------------------- #
-# 三道门的第二道：机器授权簿                                             #
+# 三道门的第二道：机器授权簿 #
 # --------------------------------------------------------------------------- #
 def ensure_authorized(registry: AuthorityRegistry, *,
                       subject: str = REPAIR_USER_ID,
                       paths: tuple[str, ...] = (),
                       action: str = "") -> GrantVerdict:
-    """本机授权簿里没有有效授权就拒（U88）。
+    """本机授权簿里没有有效授权就拒。
 
-    `paths` 给空 = 只问「这个主体在本机有没有权」；路径级的上限由
-    `PatchGuard` 在每份补丁应用前判（两层独立，见 `core/authority.py`）。
-    """
+ `paths` 给空 = 只问「这个主体在本机有没有权」；路径级的上限由
+ `PatchGuard` 在每份补丁应用前判（两层独立，见 `core/authority.py`）。
+ """
     verdict = registry.check(subject, paths=paths)
     verdict.raise_if_denied(
         action=action or f"离线闭环修改源码（{subject}）")
@@ -177,7 +177,7 @@ def ensure_authorized(registry: AuthorityRegistry, *,
 
 
 # --------------------------------------------------------------------------- #
-# 三道门的第三道：装配                                                     #
+# 三道门的第三道：装配 #
 # --------------------------------------------------------------------------- #
 def build_production_repair_loop(
         *, settings: Any, redis: Any = None, root: Path | str | None = None,
@@ -185,29 +185,29 @@ def build_production_repair_loop(
         runs: int = 2, max_rounds: int = DEFAULT_MAX_ROUNDS,
         approval_ttl_seconds: float = 24 * 3600,
         modules: tuple[str, ...] | None = None) -> RepairLoop:
-    """装配**生产形态**的闭环。**唯一生产装配点**（E-77 的疫苗）。
+    """装配**生产形态**的闭环。**唯一生产装配点**（ 的疫苗）。
 
-    与测试装配（`build_repair_loop` 直接传替身）的区别只有一件事：
-    这里每一个端口都给**真实现**——
+ 与测试装配（`build_repair_loop` 直接传替身）的区别只有一件事：
+ 这里每一个端口都给**真实现**——
 
-    - coder：`LLMCoder(gateway)`，模型取 `ollama_model` 回退
-      `ollama_vision_model`（与在线链路同一个表达式；两者都空则交给
-      供应商，而 Ollama 空模型名是装配缺陷，会在调用时暴露）；
-    - sandbox：`ProcessSandbox(root)`（进程级受限适配器，无容器隔离——
-      U34 已如实登记，这里不假装有）；
-    - 版本账 / 溯源账：落盘（跨进程撤销与编号续接的前提，U82/U83）；
-    - 审批票：`FileApprovalService`（撤销票要跨进程申请→批准→消费，U90）；
-    - 首轮痕迹来源：会话事件账本（U84），与 `app.py` 埋点同一文件（U91）。
+ - coder：`LLMCoder(gateway)`，模型取 `ollama_model` 回退
+ `ollama_vision_model`（与在线链路同一个表达式；两者都空则交给
+ 供应商，而 Ollama 空模型名是装配缺陷，会在调用时暴露）；
+ - sandbox：`ProcessSandbox(root)`（进程级受限适配器，无容器隔离——
+ 已如实登记，这里不假装有）；
+ - 版本账 / 溯源账：落盘（跨进程撤销与编号续接的前提，）；
+ - 审批票：`FileApprovalService`（撤销票要跨进程申请→批准→消费，）；
+ - 首轮痕迹来源：会话事件账本，与 `app.py` 埋点同一文件。
 
-    `gateway` 可注入（测试缝）；不注入就现建 `LLMGateway(settings, redis)`。
-    装配期失败一律抛出：对话管道、模型权重、账本文件的问题，
-    要在启动时就说清楚，而不是等复评跑到一半才炸——那时它会被记成
-    「复评失败」，很难指向真正的原因。
+ `gateway` 可注入（测试缝）；不注入就现建 `LLMGateway(settings, redis)`。
+ 装配期失败一律抛出：对话管道、模型权重、账本文件的问题，
+ 要在启动时就说清楚，而不是等复评跑到一半才炸——那时它会被记成
+ 「复评失败」，很难指向真正的原因。
 
-    `root` 与 `paths` 都描述「状态在哪、源码在哪」：**只给一个**。
-    同时给就无法判断「补丁应用在哪个目录、账本记在哪个目录」——
-    而这两个目录不一致时，看起来一切正常，只是撤错地方。
-    """
+ `root` 与 `paths` 都描述「状态在哪、源码在哪」：**只给一个**。
+ 同时给就无法判断「补丁应用在哪个目录、账本记在哪个目录」——
+ 而这两个目录不一致时，看起来一切正常，只是撤错地方。
+ """
     from ai_butler.infra.llm_gateway import LLMGateway
 
     if paths is not None and root is not None:
@@ -238,11 +238,11 @@ def build_production_repair_loop(
 
     def builder() -> Any:
         """重建被测对话管道。**延迟导入**：顶部导入会把旧类名绑进本模块，
-        补丁落盘后重建出来的还是旧实例（E-83）。
+ 补丁落盘后重建出来的还是旧实例。
 
-        管道的唯一装配点在 `app.py`——这里调它，不另写一份：
-        两份装配迟早分叉，而分叉的方向恰好是「复评跑的不是生产那条管道」。
-        """
+ 管道的唯一装配点在 `app.py`——这里调它，不另写一份：
+ 两份装配迟早分叉，而分叉的方向恰好是「复评跑的不是生产那条管道」。
+ """
         from ai_butler.app import build_chat_orchestrator
         from ai_butler.retrieval.wiring import build_search_fn
         from ai_butler.scheduler import intent_wiring

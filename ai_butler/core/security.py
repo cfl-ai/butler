@@ -21,7 +21,7 @@ import jwt
 from cryptography.fernet import Fernet, InvalidToken
 
 #: bcrypt 输入上限 72 字节；先做 SHA-256 再 base64（44 字节）以支持任意长度口令。
-#: 属实现细节，不改变计划书「加盐哈希、不存明文」的语义。
+#: 属实现细节，不改变「加盐哈希、不存明文」的语义。
 BCRYPT_ROUNDS = 12
 
 
@@ -33,7 +33,7 @@ def _prehash(plain: str) -> bytes:
 
 
 def hash_password(plain: str, *, rounds: int = BCRYPT_ROUNDS) -> str:
-    """加盐哈希。计划书：数据库不保存明文密码。"""
+    """加盐哈希。数据库不保存明文密码。"""
     if not plain:
         raise ValueError("密码不得为空")
     return bcrypt.hashpw(_prehash(plain), bcrypt.gensalt(rounds)).decode("ascii")
@@ -54,9 +54,9 @@ def verify_password(plain: str, hashed: str) -> bool:
 class FieldCipher:
     """对称加密隐私字段：手机号、位置、支付信息等独立加密存储。
 
-    密钥来自 FIELD_ENCRYPTION_KEY（Fernet 32 字节 urlsafe base64）。
-    密文自带随机 IV，同一明文两次加密结果不同。
-    """
+ 密钥来自 FIELD_ENCRYPTION_KEY（Fernet 32 字节 urlsafe base64）。
+ 密文自带随机 IV，同一明文两次加密结果不同。
+ """
 
     def __init__(self, key: str) -> None:
         if not key:
@@ -94,12 +94,12 @@ def mask_bank_card(value: str) -> str:
 
 
 def mask_location(value: str) -> str:
-    """完整位置禁止入日志（计划书三、P0-1）。
+    """完整位置禁止入日志（三、P0-1）。
 
-    仅保留到行政区划粒度：命中「市 / 省」即截断，否则退化为前 3 个字符。
-    注意：中文地址不能按固定字符数截断——「北京市朝阳区建国路88号」共 11 字，
-    按 12 字符截断等于完全没有脱敏。
-    """
+ 仅保留到行政区划粒度：命中「市 / 省」即截断，否则退化为前 3 个字符。
+ 注意：中文地址不能按固定字符数截断——「北京市朝阳区建国路88号」共 11 字，
+ 按 12 字符截断等于完全没有脱敏。
+ """
     if not value:
         return ""
     text = value.strip().split(" ")[0]
@@ -125,7 +125,7 @@ class SessionToken:
 def create_session_token(
     *, user_id: str, device_id: str, secret: str, ttl_seconds: int, now: int | None = None
 ) -> SessionToken:
-    """会话 Token 生成。exp 取会话有效期（计划书未定义该项数值 → 由配置强制提供）。"""
+    """会话 Token 生成。exp 取会话有效期（文档未定义该项数值 → 由配置强制提供）。"""
     if not user_id:
         raise ValueError("user_id 不得为空：全部业务请求强制携带用户身份")
     if not device_id:

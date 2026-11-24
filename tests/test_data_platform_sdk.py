@@ -33,10 +33,10 @@ from ai_butler.data_platform.sdk import (
 def loop():
     """模块级事件循环。
 
-    必须 set_event_loop：同进程内其他用例调用 asyncio.run() 后会把当前事件循环置空，
-    若这里只 new_event_loop() 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
-    产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
-    """
+ 必须 set_event_loop：同进程内其他用例调用 asyncio.run 后会把当前事件循环置空，
+ 若这里只 new_event_loop 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
+ 产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
+ """
     lp = asyncio.new_event_loop()
     asyncio.set_event_loop(lp)
     yield lp
@@ -103,11 +103,11 @@ def test_sdk_never_exposes_the_raw_session_or_engine():
 
 
 def test_private_reads_require_user_id(loop, sdk):
-    """计划书表注：SDK 入参强制传入 user_id。
+    """表注：SDK 入参强制传入 user_id。
 
-    两层强制：参数本身是必填关键字参数（漏传直接 TypeError），
-    传空值则由 SDK 抛出带计划书出处的 DataAccessError。
-    """
+ 两层强制：参数本身是必填关键字参数（漏传直接 TypeError），
+ 传空值则由 SDK 抛出带出处的 DataAccessError。
+ """
     for method in (sdk.read_profile, sdk.read_device_state):
         sig = inspect.signature(method)
         assert sig.parameters["user_id"].default is inspect.Parameter.empty, \
@@ -147,7 +147,7 @@ def test_knowledge_dual_domain_through_sdk(loop, sdk):
 
 
 def test_material_sources_are_public_and_take_no_user_id(loop, sdk):
-    """计划书表注：公共知识库不受 user_id 限制。"""
+    """表注：公共知识库不受 user_id 限制。"""
     sig = inspect.signature(DataSDK.read_material_sources)
     assert "user_id" not in sig.parameters, "公共知识库方法不应接收 user_id"
 
@@ -157,7 +157,7 @@ def test_material_sources_are_public_and_take_no_user_id(loop, sdk):
 
 # ------------------------------ Wiki 通道 ------------------------------ #
 def test_wiki_is_read_write_through_the_sdk(sdk):
-    """计划书 P1 表注「SDK 同时封装 Agent-Wiki 读写 API」+ P4 子 Agent 写私有 Vault。"""
+    """ P1 表注「SDK 同时封装 Agent-Wiki 读写 API」+ P4 子 Agent 写私有 Vault。"""
     page = new_page(ENTITY, "sdk-ent-1", title="偏好高铁", user_id="user-A",
                     name="偏好高铁", entity_type="用户偏好")
     sdk.wiki_write(page, user_id="user-A")

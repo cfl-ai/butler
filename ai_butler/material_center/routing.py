@@ -106,19 +106,19 @@ def route_query(query: str, *, intent_layer: str | None = None,
                 confidence_threshold: float = 0.6) -> RoutingDecision:
     """决定一次查询走哪条检索路线。
 
-    参数
-    ----
-    query:
-        用户查询原文。
-    intent_layer:
-        五层意图路由给出的结论层（`scheduler.router` 的层名）。
-        **只消费不改写**：五层链路已冻结，本函数绝不新增层。
-    min_confidence:
-        已有证据里的最低置信度（来自检索结果的 `confidence`）。
-        低于阈值说明证据本身就软，该上大模型。
-    confidence_threshold:
-        置信不足的判定阈值（实现参数）。
-    """
+ 参数
+ ----
+ query:
+ 用户查询原文。
+ intent_layer:
+ 五层意图路由给出的结论层（`scheduler.router` 的层名）。
+ **只消费不改写**：五层链路已冻结，本函数绝不新增层。
+ min_confidence:
+ 已有证据里的最低置信度（来自检索结果的 `confidence`）。
+ 低于阈值说明证据本身就软，该上大模型。
+ confidence_threshold:
+ 置信不足的判定阈值（实现参数）。
+ """
     if not query or not query.strip():
         raise RoutingError("查询不得为空 —— 空查询无从判定路线")
 

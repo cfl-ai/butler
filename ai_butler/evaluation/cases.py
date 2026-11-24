@@ -7,12 +7,12 @@ from typing import Any, Mapping, Sequence
 
 from ai_butler.evaluation.redaction import Redactor
 
-#: 优质 / 错误（计划书原话）
+#: 优质 / 错误（原话）
 CASE_GOOD = "good"
 CASE_BAD = "bad"
 CASE_KINDS: tuple[str, ...] = (CASE_GOOD, CASE_BAD)
 
-#: 分类。前两类是计划书点名要求独立分类的
+#: 分类。前两类是设计点名要求独立分类的
 CATEGORY_JEV_ERROR = "jev_error"
 CATEGORY_WIKI_CONFLICT = "wiki_conflict"
 CATEGORY_GENERAL = "general"
@@ -56,9 +56,9 @@ def classify(*, is_good: bool, jev_mismatch: bool = False,
              wiki_conflict: bool = False) -> tuple[str, str]:
     """判定 (kind, category)。
 
-    分类优先级：**Jev 错误 / Wiki 冲突优先于普通错误**——
-    它们是自进化的定向输入，被归到 general 就等于丢了。
-    """
+ 分类优先级：**Jev 错误 / Wiki 冲突优先于普通错误**——
+ 它们是自进化的定向输入，被归到 general 就等于丢了。
+ """
     kind = CASE_GOOD if is_good else CASE_BAD
     if is_good:
         return kind, CATEGORY_GENERAL

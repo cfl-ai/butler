@@ -32,14 +32,14 @@ from ai_butler.agents.facts import AgentFact, FactWriter
 from ai_butler.agents.phase import PhaseAgent
 from ai_butler.agents.p6_content_qa import ACTION_BLOCK as QA_BLOCK
 
-# ============================== 档位与阈值（U07）============================== #
+# ============================== 档位与阈值============================== #
 TIER_LOW = "low"
 TIER_MEDIUM = "medium"
 TIER_HIGH = "high"
 TIERS: tuple[str, ...] = (TIER_LOW, TIER_MEDIUM, TIER_HIGH)
-DEFAULT_TIER = TIER_MEDIUM          # 计划书：「中预算…（默认）」
+DEFAULT_TIER = TIER_MEDIUM          # 「中预算…（默认）」
 
-#: 支付模式（计划书三、P8 步骤3）
+#: 支付模式（三、P8 步骤3）
 MODE_FREE = "free"                  # 额度免密支付
 MODE_MANUAL = "manual"              # 全明细人工确认支付
 MODES: tuple[str, ...] = (MODE_FREE, MODE_MANUAL)
@@ -47,7 +47,7 @@ MODES: tuple[str, ...] = (MODE_FREE, MODE_MANUAL)
 
 @dataclass(frozen=True)
 class TierPolicy:
-    """一档预算的「条件 → 动作」规则（U07：锚定 Actual Budget 的规则模型）。"""
+    """一档预算的「条件 → 动作」规则（：锚定 Actual Budget 的规则模型）。"""
 
     tier: str
     per_transaction_free_limit: float | None   # None = 不设固定金额上限
@@ -61,7 +61,7 @@ class TierPolicy:
             raise ValueError(f"未知档位 {self.tier!r}，可选 {list(TIERS)}")
 
 
-#: 三档阈值。数值**全部来自裁定 U07**，不是自造。
+#: 三档阈值。数值**全部来自裁定 **，不是自造。
 TIER_POLICIES: dict[str, TierPolicy] = {
     TIER_LOW: TierPolicy(
         tier=TIER_LOW, per_transaction_free_limit=0.0, daily_cap=0.0,
@@ -81,7 +81,7 @@ TIER_POLICIES: dict[str, TierPolicy] = {
 # ============================== 账单 ============================== #
 @dataclass(frozen=True)
 class Bill:
-    """一条消费明细。**强绑定 user_id**（计划书三、P8 表注）。"""
+    """一条消费明细。**强绑定 user_id**（三、P8 表注）。"""
 
     bill_id: str
     user_id: str
@@ -130,10 +130,10 @@ class BillAggregate:
 
 
 def aggregate_bills(bills: Sequence[Bill], *, user_id: str) -> BillAggregate:
-    """多渠道账单汇总 + 优惠叠加 + 总预算统计（计划书三、P8 步骤1、步骤4）。
+    """多渠道账单汇总 + 优惠叠加 + 总预算统计（三、P8 步骤1、步骤4）。
 
-    **跨账号账单一律拒绝**——表注要求行级隔离与归属一致。
-    """
+ **跨账号账单一律拒绝**——表注要求行级隔离与归属一致。
+ """
     foreign = [b.bill_id for b in bills if b.user_id != user_id]
     if foreign:
         raise PermissionError(
@@ -170,9 +170,9 @@ def decide_payment_mode(
 ) -> PaymentDecision:
     """按档位规则判定：免密放行 / 需人工确认 / 拒绝。
 
-    「免密额度属于账号私有配置」（步骤3），因此由 free_quota_enabled 控制——
-    账号关掉免密后，即便档位允许也必须逐笔确认。
-    """
+ 「免密额度属于账号私有配置」（步骤3），因此由 free_quota_enabled 控制——
+ 账号关掉免密后，即便档位允许也必须逐笔确认。
+ """
     if amount < 0:
         raise ValueError("金额不得为负")
 
@@ -227,7 +227,7 @@ def build_three_tier_plan(*, aggregate: BillAggregate, spent_today: float = 0.0,
                           monthly_budget: float | None = None,
                           spent_this_month: float = 0.0,
                           free_quota_enabled: bool = True) -> dict[str, TierPlan]:
-    """生成三档预算方案（计划书三、P8 步骤2 + 固定触发流程）。"""
+    """生成三档预算方案（三、P8 步骤2 + 固定触发流程）。"""
     plans: dict[str, TierPlan] = {}
     for tier in TIERS:
         policy = TIER_POLICIES[tier]
@@ -278,10 +278,10 @@ class PaymentAgent(PhaseAgent):
 
     @staticmethod
     def _qa_gate(state: Mapping[str, Any]) -> tuple[bool, str]:
-        """计划书固定触发流程：**质检校验通过**才轮到支付。
+        """固定触发流程：**质检校验通过**才轮到支付。
 
-        没有质检结论时**不放行**——「强制送检」不能因为缺数据就变成可跳过。
-        """
+ 没有质检结论时**不放行**——「强制送检」不能因为缺数据就变成可跳过。
+ """
         verdict = state.get("qa_verdict")
         if not isinstance(verdict, Mapping) or not verdict:
             return False, "未收到质检结论，按『账单强制送检』要求不予放行"
@@ -291,7 +291,7 @@ class PaymentAgent(PhaseAgent):
 
     def _write_consumption_facts(self, *, user_id: str, bills: Sequence[Bill],
                                  untrusted: bool = False) -> list[dict[str, Any]]:
-        """计划书表注：**消费事实写入用户私有 Agent-Wiki Vault**，绑定 Claim 与 Evidence。"""
+        """表注：**消费事实写入用户私有 Agent-Wiki Vault**，绑定 Claim 与 Evidence。"""
         billable = [b for b in bills if b.evidence_ids]
         if not billable:
             return []
@@ -303,7 +303,7 @@ class PaymentAgent(PhaseAgent):
             confidence=1.0,                      # 账单是既成事实，不涉及置信估计
             subject_id=user_id, object_id=b.bill_id,
             claim_type="preference") for b in billable]
-        # 风控（台账 U41）：不可信输入产出的事实只能落成 SUSPECTED
+        # 风控：不可信输入产出的事实只能落成 SUSPECTED
         pages = writer.write_many(facts, user_id=user_id, untrusted=untrusted)
         return [{"claim_page_id": p.id,
                  "evidence_ids": list(p.extra.get("evidence_ids") or [])} for p in pages]

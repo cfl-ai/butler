@@ -41,7 +41,7 @@ def test_sandbox_zone_is_strict_in_every_environment():
 
 
 def test_env_files_agree_with_the_data_plane_switch():
-    """预发布/生产严格内网；本地放开以便宿主可达数据面（MEMORY.md E-07）。"""
+    """预发布/生产严格内网；本地放开以便宿主可达数据面（MEMORY.md ）。"""
     from ai_butler.core import environments as envs
 
     for env in envs.ENVIRONMENTS.values():
@@ -74,9 +74,9 @@ def test_template_keeps_data_plane_off_the_edge():
 def test_local_ports_overlay_publishes_the_three_local_ports():
     """本地叠加文件只为 dev/test 发布端口；预发布与生产不叠加它。
 
-    注意：本机 Docker Desktop 不代理 127.0.0.1 绑定的容器端口（MEMORY.md E-06），
-    因此这里发布在 0.0.0.0 上。该风险由「只有本地环境叠加本文件」这一事实控制。
-    """
+ 注意：本机 Docker Desktop 不代理 127.0.0.1 绑定的容器端口（MEMORY.md ），
+ 因此这里发布在 0.0.0.0 上。该风险由「只有本地环境叠加本文件」这一事实控制。
+ """
     from ai_butler.core import environments as envs
 
     doc = _load(LOCAL_PORTS)

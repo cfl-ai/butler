@@ -74,7 +74,7 @@ class WikiCompiler:
             )
 
         # 低置信报告（八、wiki_auto_report_low_confidence）
-        # 阈值不新造数值：沿用计划书【八】已有的 jev_confidence_threshold = 0.82
+        # 阈值不新造数值：沿用【八】已有的 jev_confidence_threshold = 0.82
         if self.settings.wiki_auto_report_low_confidence:
             threshold = self.settings.jev_confidence_threshold
             report.low_confidence = sorted(
@@ -82,7 +82,7 @@ class WikiCompiler:
                 if p.confidence is not None and p.confidence < threshold
             )
 
-        # 证据缺失（七、19）
+        # 证据缺失
         report.missing_evidence = sorted(
             p.id for p in claims if not p.extra.get("evidence_ids")
         )
@@ -124,22 +124,22 @@ class WikiCompiler:
 
     @staticmethod
     def _write_claims(out_dir: Path, claims: list[WikiPage]) -> str:
-        """claims.jsonl —— 每行一条声明。字段以 U17（GraphRAG covariates）为起点。"""
+        """claims.jsonl —— 每行一条声明。字段以 （GraphRAG covariates）为起点。"""
         path = out_dir / CLAIMS_JSONL
         with path.open("w", encoding="utf-8") as fh:
             for c in claims:
                 row = {
-                    "claim_id": c.id,                                   # U17
-                    "claim_type": c.extra.get("claim_type"),            # U17
-                    "description": c.extra.get("description"),          # U17
-                    "subject_id": c.extra.get("subject_id"),            # U17
-                    "object_id": c.extra.get("object_id"),              # U17
-                    "status": c.status,                                 # U17 TRUE|FALSE|SUSPECTED
+                    "claim_id": c.id,                                   # 
+                    "claim_type": c.extra.get("claim_type"),            # 
+                    "description": c.extra.get("description"),          # 
+                    "subject_id": c.extra.get("subject_id"),            # 
+                    "object_id": c.extra.get("object_id"),              # 
+                    "status": c.status,                                 # TRUE|FALSE|SUSPECTED
                     "confidence": c.confidence,
-                    "valid_from": c.valid_from,                         # U17 ISO8601
-                    "valid_to": c.valid_to,                             # U17 ISO8601
-                    "invalid_at": c.invalid_at,                         # U16 失效时间
-                    "contradicts": c.contradicts,                       # U16 矛盾关系
+                    "valid_from": c.valid_from,                         # ISO8601
+                    "valid_to": c.valid_to,                             # ISO8601
+                    "invalid_at": c.invalid_at,                         # 失效时间
+                    "contradicts": c.contradicts,                       # 矛盾关系
                     "evidence_ids": c.extra.get("evidence_ids") or [],
                     "user_id": c.user_id,                               # 公共页为 null
                 }
@@ -149,10 +149,10 @@ class WikiCompiler:
     def build_digest(self, claims: list[WikiPage]) -> tuple[dict[str, Any], int, bool]:
         """构建注入 LangGraph State 的 wiki_digest。
 
-        计划书三、P3：State 必填字段 wiki_digest；
-        计划书八：wiki_max_digest_size = 12000（字节上限）。
-        超限时按置信度从低到高裁剪，并置 truncated 标记，绝不静默丢内容。
-        """
+ State 必填字段 wiki_digest；
+ 八：wiki_max_digest_size = 12000（字节上限）。
+ 超限时按置信度从低到高裁剪，并置 truncated 标记，绝不静默丢内容。
+ """
         limit = int(self.settings.wiki_max_digest_size)
         ordered = sorted(claims, key=lambda c: (c.confidence if c.confidence is not None else 0.0),
                          reverse=True)

@@ -101,24 +101,24 @@ def _run(coro):
 # ============================== 台账 ============================== #
 def test_p10_decisions_are_registered_and_resolved():
     keys = {d.key for d in decisions.DECISIONS if d.phase == "P10"}
-    # U49 = Harness 自身评测体系（2026-10-19 补，见 harness/evaluation.py）
-    # U58 = 上下文分项计量与 shadowing 压缩（2026-10-23 补，见 harness/context.py）
-    # U77 = 缺陷受理的四道闸与自我修改边界（2026-10-25 补，见 harness/intake.py）
-    # U78 = 大模型写补丁的安全边界（2026-10-25 补，见 harness/patch.py、coder.py）
-    # U80 = 两个 Agent 的配合要有装配点与固定顺序（2026-10-25 补，见 agents/repair_loop.py）
-    # U81 = 跨轮重试的四道约束（2026-10-25 补，见 harness/revision.py、trail.py、
-    #       evaluation/fingerprint.py）
-    # U82 = 跨次运行的轮次编号与账本唯一性（2026-10-25 补，见 trail.py 的 TrailError、
-    #       repair_loop 的 _next_round_no）
-    # U83 = 已提交补丁账本的持久化（2026-10-25 补，见 harness/revision.py 的 LedgerStore）
-    # U85 = 离线闭环的排程单元（2026-10-25 补，见 agents/repair_job.py）
-    # U86 = 账本写互斥（2026-10-25 补，见 core/filelock.py）
-    # U87 = 账本落盘每行 fsync（2026-10-25 补，见三处 append）
-    # U88 = 源码修改授权簿（2026-10-25 补，见 core/authority.py）
-    # U89 = 离线闭环的本机 CLI 入口（2026-10-25 补，见 scripts/run_repair_loop.py）
-    # U90 = 撤销审批票的持久化（2026-10-25 补，见 core/approval.py 的 FileApprovalService）
-    # U92 = 闭环的唯一生产装配点（2026-10-25 补，见 agents/repair_entry.py）
-    # U93 = 授权簿与 PatchGuard 两层独立（2026-10-25 补，范围口径共用 harness/patch.py）
+    # = Harness 自身评测体系（2026-10-19 补，见 harness/evaluation.py）
+    # = 上下文分项计量与 shadowing 压缩（2026-10-23 补，见 harness/context.py）
+    # = 缺陷受理的四道闸与自我修改边界（2026-10-25 补，见 harness/intake.py）
+    # = 大模型写补丁的安全边界（2026-10-25 补，见 harness/patch.py、coder.py）
+    # = 两个 Agent 的配合要有装配点与固定顺序（2026-10-25 补，见 agents/repair_loop.py）
+    # = 跨轮重试的四道约束（2026-10-25 补，见 harness/revision.py、trail.py、
+    # evaluation/fingerprint.py）
+    # = 跨次运行的轮次编号与账本唯一性（2026-10-25 补，见 trail.py 的 TrailError、
+    # repair_loop 的 _next_round_no）
+    # = 已提交补丁账本的持久化（2026-10-25 补，见 harness/revision.py 的 LedgerStore）
+    # = 离线闭环的排程单元（2026-10-25 补，见 agents/repair_job.py）
+    # = 账本写互斥（2026-10-25 补，见 core/filelock.py）
+    # = 账本落盘每行 fsync（2026-10-25 补，见三处 append）
+    # = 源码修改授权簿（2026-10-25 补，见 core/authority.py）
+    # = 离线闭环的本机 CLI 入口（2026-10-25 补，见 scripts/run_repair_loop.py）
+    # = 撤销审批票的持久化（2026-10-25 补，见 core/approval.py 的 FileApprovalService）
+    # = 闭环的唯一生产装配点（2026-10-25 补，见 agents/repair_entry.py）
+    # = 授权簿与 PatchGuard 两层独立（2026-10-25 补，范围口径共用 harness/patch.py）
     assert keys == {"U08", "U32", "U33", "U34", "U35", "U36", "U49", "U58",
                     "U77", "U78", "U80", "U81", "U82", "U83", "U85", "U86", "U87",
                     "U88", "U89", "U90", "U92", "U93"}
@@ -127,11 +127,11 @@ def test_p10_decisions_are_registered_and_resolved():
 
 
 def test_u08_keeps_claude_code_out_of_the_codebase():
-    """裁定 U08：不引入 Claude Code 本体，只借设计思维自研 Agentic Loop。"""
+    """裁定：不引入 Claude Code 本体，只借设计思维自研 Agentic Loop。"""
     assert "不引入 Claude Code 本体" in decisions.get("U08").resolution
 
 
-# ============================== 风险分级（U33 / 表 10）============================== #
+# ============================== 风险分级（ / 表 10）============================== #
 def test_risk_levels_and_redlines_match_table_10():
     assert RISK_LEVELS == ("low", "medium", "high")
     assert REDLINES == (REDLINE_ROW_LEVEL_FILTER, REDLINE_UNREDACTED_VAULT,
@@ -232,7 +232,7 @@ def test_default_chain_requires_approval_for_jev_template():
 
 
 def test_qa_hook_blocks_when_qa_blocks():
-    """计划书步骤3「联动质检 Agent 完成风险分级校验」。"""
+    """步骤3「联动质检 Agent 完成风险分级校验」。"""
     chain = HookChain.default(qa_verdict={"action": "block", "alerts": ["混入他人隐私"]})
     v = chain.evaluate(Change(change_id="c4"))
     assert v.outcome == HOOK_DENY and "质检拦截" in v.findings[-1].detail
@@ -259,7 +259,7 @@ def test_default_hooks_are_ordered():
     assert names[0] == "risk_grading" and "vault_scope" in names
 
 
-# ============================== 沙箱（U34 + 步骤4）============================== #
+# ============================== 沙箱（ + 步骤4）============================== #
 def test_sandbox_command_whitelist():
     sb = ProcessSandbox(root=".")
     assert sb.check_command("pytest -q") == "pytest"
@@ -274,7 +274,7 @@ def test_sandbox_rejects_empty_command():
 
 
 def test_test_plan_requires_the_three_kinds_from_the_plan():
-    """计划书步骤4：单元测试包含**用户隔离、Jev、Agent-Wiki 本体校验**用例。"""
+    """步骤4：单元测试包含**用户隔离、Jev、Agent-Wiki 本体校验**用例。"""
     assert REQUIRED_TEST_KINDS == ("user_isolation", "jev", "agent_wiki_ontology")
     assert TestPlan().command() == "pytest -q"
     with pytest.raises(SandboxError):
@@ -287,7 +287,7 @@ def test_fake_sandbox_records_commands():
     assert sb.commands == ["pytest -q"]
 
 
-# ============================== MCP Skill（U35 + 步骤5）============================== #
+# ============================== MCP Skill（ + 步骤5）============================== #
 def test_registry_covers_the_four_tool_categories():
     assert TOOL_CATEGORIES == ("retrieval", "git", "file", "terminal")
     reg = default_registry()
@@ -296,7 +296,7 @@ def test_registry_covers_the_four_tool_categories():
 
 
 def test_agent_wiki_skill_is_public_only():
-    """计划书步骤5「Agent-Wiki 维护 Skill，**仅用于维护公共 Workspace**」。"""
+    """步骤5「Agent-Wiki 维护 Skill，**仅用于维护公共 Workspace**」。"""
     skill = agent_wiki_maintenance_skill()
     assert skill.name == SKILL_AGENT_WIKI
     assert skill.allowed_scopes == (SCOPE_PUBLIC,)
@@ -333,7 +333,7 @@ def test_registry_call_enforces_scope():
         reg.call(SKILL_AGENT_WIKI, scope=SCOPE_VAULT)
 
 
-# ============================== 上下文压缩（U36 + 步骤7）============================== #
+# ============================== 上下文压缩（ + 步骤7）============================== #
 def test_compress_redacts_before_keeping():
     items = [ContextItem("i1", "用户 user-A 手机 13812345678", relevance=1.0)]
     got = compress(items, redactor=Redactor(), max_items=5)
@@ -389,7 +389,7 @@ def test_memory_render_redacts():
 
 
 def test_memory_store_appends_and_dedupes(workdir):
-    # 用 workdir fixture，不用 tmp_path —— 沙箱下 mkdtemp 不可写（见 MEMORY E-03）
+    # 用 workdir fixture，不用 tmp_path —— 沙箱下 mkdtemp 不可写（见 MEMORY ）
     path = Path(workdir) / "MEMORY.md"
     store = MemoryStore(path=path)
     entry = MemoryEntry(kind=MEMORY_DEFECT, key="E-99", title="t",
@@ -423,7 +423,7 @@ def test_from_qa_report_empty_when_no_cases():
     assert from_qa_report(report={"jev": {}, "wiki": {}}) == []
 
 
-# ============================== Agentic Loop（U32 + 四阶）============================== #
+# ============================== Agentic Loop（ + 四阶）============================== #
 def test_loop_stages_match_the_plan():
     assert LOOP_STAGES == ("context_collection", "llm_decision", "tool_execution",
                            "self_correction")
@@ -463,7 +463,7 @@ def test_loop_converges_when_done_and_commands_pass():
 
 
 def test_loop_stops_early_after_repeated_no_progress():
-    """U32：连续无进展提前终止——不能让循环一直改坏仓库。"""
+    """：连续无进展提前终止——不能让循环一直改坏仓库。"""
     failing = FakeSandbox(results=[SandboxResult("pytest", 1, stderr="fail")] * 10)
     result = _run(_loop([Proposal("再试一次", commands=("pytest -q",))] * 10,
                         sandbox=failing).run(goal="g", items=_items(),
@@ -545,7 +545,7 @@ def _state(**extra):
 
 
 def test_agent_without_sandbox_reports_not_run():
-    """裁定 U34：沙箱是 AI Infra 的能力，由运行时注入；没有就不假装跑过。"""
+    """裁定：沙箱是 AI Infra 的能力，由运行时注入；没有就不假装跑过。"""
     agent = HarnessAgent(tools=grant(HarnessAgent, {}))
     payload = _call(agent, _state())["p10_harness"]
     assert payload["ran"] is False and "U34" in payload["reason"]
@@ -565,9 +565,9 @@ def test_agent_runs_the_loop_and_reports_isolation():
 def test_agent_redacts_context():
     """上下文里的手机号与账号标识必须被脱掉。
 
-    注意：payload 顶层的 user_id 是**框架要求的会话身份**（每个 Agent 都必须带），
-    不是上下文内容，因此这里检查的是「上下文与阶段记录里没有明文」。
-    """
+ 注意：payload 顶层的 user_id 是**框架要求的会话身份**（每个 Agent 都必须带），
+ 不是上下文内容，因此这里检查的是「上下文与阶段记录里没有明文」。
+ """
     payload = _call(_agent(), _state(
         harness_context=[{"item_id": "i1", "text": "用户 user-Z 手机 13812345678",
                           "relevance": 1.0}],

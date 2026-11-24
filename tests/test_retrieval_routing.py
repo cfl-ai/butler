@@ -32,7 +32,7 @@ from ai_butler.material_center.verification import (
 )
 
 
-# ============================ 查询路由（U46） ============================ #
+# ============================ 查询路由 ============================ #
 
 def test_exact_identifier_goes_direct_and_bypasses_llm():
     """含精确标识的查询必须走直查，且**完全不经过大模型**。"""
@@ -45,7 +45,7 @@ def test_exact_identifier_goes_direct_and_bypasses_llm():
 
 
 def test_ambiguous_query_goes_to_llm():
-    """歧义 / 冲突查询交给大模型，且登记为歧义样本（U50）。"""
+    """歧义 / 冲突查询交给大模型，且登记为歧义样本。"""
     for query in ("A 方案还是 B 方案好", "这两种说法有矛盾吗", "对比一下优缺点"):
         decision = route_query(query)
         assert decision.route == QueryRoute.LLM_ANALYSIS, f"{query} 未判定为歧义"
@@ -60,8 +60,8 @@ def test_plain_semantic_query_goes_hybrid():
 def test_intent_layer_fallback_overrides_exact_match():
     """**两者结合**的关键：意图层已降级时，即使含精确标识也不能走捷径。
 
-    连意图都判不出来，检索再快也只是快而错。
-    """
+ 连意图都判不出来，检索再快也只是快而错。
+ """
     decision = route_query("订单号 20240918ABCDE", intent_layer=LAYER_LLM_FALLBACK)
     assert decision.route == QueryRoute.LLM_ANALYSIS
     assert "intent_layer" in " ".join(decision.matched_signals)
@@ -92,7 +92,7 @@ def test_every_route_has_a_human_readable_description():
         assert route.value in described and described[route.value]
 
 
-# ============================ 回答前复检（U47） ============================ #
+# ============================ 回答前复检 ============================ #
 
 class _FakeFinder:
     """可控的证据源。**记录每次被问了什么**，用来验证改写真的换了查询。"""
@@ -147,11 +147,11 @@ def test_unsupported_answer_abstains_and_names_what_is_missing():
 
 def test_retry_actually_rewrites_the_query():
     """**假改写**是本回路最容易悄悄退化成的地方：
-    算出了新 query 却仍用原声明去检索，等于重跑一遍必然失败的老路。
+ 算出了新 query 却仍用原声明去检索，等于重跑一遍必然失败的老路。
 
-    这里断言第二轮检索用的确实是由「站不住的声明」拼出的新词，
-    而不是原声明的重复。
-    """
+ 这里断言第二轮检索用的确实是由「站不住的声明」拼出的新词，
+ 而不是原声明的重复。
+ """
     finder = _FakeFinder(default=[])
     result = verify_with_retry("故宫周一闭馆。门票二百元整。", finder,
                                max_iterations=2)

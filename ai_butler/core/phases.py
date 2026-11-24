@@ -23,19 +23,19 @@ LAYER_BUSINESS = "业务层"
 LAYER_EVOLUTION = "离线进化层"
 
 
-#: 计划书标题里「主名」与「副标题」的分隔符：全角竖线，或全角/半角括号。
+#: 项目登记标题里「主名」与「副标题」的分隔符：全角竖线，或全角/半角括号。
 _SUBTITLE_SEPARATORS = ("｜", "（", "(")
 
 
 def display_from_title(title: str) -> str:
-    """人读名称 = 计划书标题的**主名**（去掉「｜」或「（」之后的副标题）。
+    """人读名称 = 项目登记标题的**主名**（去掉「｜」或「（」之后的副标题）。
 
-    计划书原文标题形如「数据中台｜全系统唯一可信数据源」，
-    人读名称取前半段「数据中台」——即用户口头称呼这个项目时用的那个名字。
+ 原始需求标题形如「数据中台｜全系统唯一可信数据源」，
+ 人读名称取前半段「数据中台」——即用户口头称呼这个项目时用的那个名字。
 
-    **派生而非手写**（MEMORY E-31）：12 个阶段若各写一遍字面量，
-    title 一改就会出现「真值源与展示名自相矛盾」（E-44）。
-    """
+ **派生而非手写**（MEMORY ）：12 个阶段若各写一遍字面量，
+ title 一改就会出现「真值源与展示名自相矛盾」。
+ """
     name = title
     for sep in _SUBTITLE_SEPARATORS:
         name = name.split(sep, 1)[0]
@@ -47,11 +47,11 @@ def display_from_title(title: str) -> str:
 
 @dataclass(frozen=True)
 class PhaseSpec:
-    code: str                 # 计划书里的阶段编号，如 "P1"
-    title: str                # 计划书该阶段的原文标题（含副标题）
+    code: str                 # 里的阶段编号，如 "P1"
+    title: str                # 所属阶段的原文标题（含副标题）
     key: str                  # 机读标识 / 注册表键
     layer: str                # 所属层
-    core_capability: str      # 计划书该阶段「核心能力 / 建设目标」原句
+    core_capability: str      # 所属阶段「核心能力 / 建设目标」原句
     implemented: bool         # 是否已落地（未落地也登记，但不假装）
     note: str = ""            # 完成度说明：把「做了一半」如实讲清楚，避免非黑即白
 
@@ -61,7 +61,7 @@ class PhaseSpec:
         return display_from_title(self.title)
 
 
-#: 全部阶段，逐条对应计划书原文标题（顺序即计划书顺序）
+#: 全部阶段，逐条对应登记原文标题（顺序即顺序）
 PHASES: tuple[PhaseSpec, ...] = (
     PhaseSpec(
         code="P0-1", title="AI Infra 架构底座（全生态通用底层）",
@@ -149,7 +149,7 @@ def phase(code: str) -> PhaseSpec:
 
 
 def agent_key(code: str) -> str:
-    """阶段 → 注册表键（计划书标题派生）。"""
+    """阶段 → 注册表键（项目登记标题派生）。"""
     return phase(code).key
 
 

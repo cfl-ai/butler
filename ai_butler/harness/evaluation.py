@@ -53,7 +53,7 @@ class Verdict(str, Enum):
     UNSAFE = "unsafe"                # 触碰安全红线，**立即停止**，不得继续
 
 
-#: 连续无进展的容忍轮数（U32「连续 2 轮无进展提前终止」，同一口径）
+#: 连续无进展的容忍轮数（「连续 2 轮无进展提前终止」，同一口径）
 NO_PROGRESS_PATIENCE = 2
 
 
@@ -134,9 +134,9 @@ def score(runs: Sequence[EvolutionRun], *,
           patience: int = NO_PROGRESS_PATIENCE) -> EvolutionScorecard:
     """对一串进化轮次打分并给出处置结论。
 
-    判定顺序是刻意的：**先看安全，再看收敛，最后才看有效性**。
-    把安全放最前，是因为一个不安全的闭环根本不该谈「做得多好」。
-    """
+ 判定顺序是刻意的：**先看安全，再看收敛，最后才看有效性**。
+ 把安全放最前，是因为一个不安全的闭环根本不该谈「做得多好」。
+ """
     if not runs:
         return EvolutionScorecard(
             rounds=0, fix_rate=0.0, regression_rate=0.0, human_reject_rate=0.0,

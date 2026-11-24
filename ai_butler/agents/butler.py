@@ -68,7 +68,7 @@ class ButlerAgent:
                  available: Mapping[str, Any] | None = None) -> None:
         self.settings = settings
         self.registry = AgentRegistry()
-        #: 能力实现池：阶段 Agent 声明什么，就只发什么（计划书三、P4「无跨模块越权调用」）
+        #: 能力实现池：阶段 Agent 声明什么，就只发什么（三、P4「无跨模块越权调用」）
         self._available: dict[str, Any] = dict(available or {})
         self._scheduler: Any = None
 
@@ -84,7 +84,7 @@ class ButlerAgent:
 
     # ---------------- 登记 ---------------- #
     def enroll(self, agent: SubAgent) -> AgentSpec:
-        """登记一项阶段 Agent。命名必须与计划书真值源一致，否则拒绝。"""
+        """登记一项阶段 Agent。命名必须与真值源一致，否则拒绝。"""
         code = getattr(agent, "phase_code", "")
         if not code:
             raise ButlerError(
@@ -107,10 +107,10 @@ class ButlerAgent:
     def phase_agents(self) -> tuple[PhaseAgent, ...]:
         """按**阶段真值源的声明顺序**返回（P0-1 → P10）。
 
-        早先这里用 registry.names()（字母序），P10 落地后
-        'p10_harness' < 'p1_data_platform'，台账顺序就与计划书对不上了。
-        阶段顺序属于真值源，不能让字符串排序决定。
-        """
+ 早先这里用 registry.names（字母序），P10 落地后
+ 'p10_harness' < 'p1_data_platform'，台账顺序就与对不上了。
+ 阶段顺序属于真值源，不能让字符串排序决定。
+ """
         order = {spec.key: i for i, spec in enumerate(phases.PHASES)}
         agents = [a for a in self.registry.all() if isinstance(a, PhaseAgent)]
         return tuple(sorted(agents, key=lambda a: order.get(a.name, len(order))))
@@ -118,9 +118,9 @@ class ButlerAgent:
     def ledger(self) -> list[dict[str, Any]]:
         """全部阶段的管辖台账。
 
-        **未落地的阶段照样列出**，implemented=False —— 不允许出现
-        「只登记做过的，看起来像全做完了」这种假象。
-        """
+ **未落地的阶段照样列出**，implemented=False —— 不允许出现
+ 「只登记做过的，看起来像全做完了」这种假象。
+ """
         enrolled = {a.phase_code: a for a in self.phase_agents()}
         rows: list[dict[str, Any]] = []
         for spec in phases.PHASES:

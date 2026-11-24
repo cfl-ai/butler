@@ -22,7 +22,7 @@ ALLOWED_COMMANDS: tuple[str, ...] = (
 #: 默认超时（秒；实现参数）
 DEFAULT_TIMEOUT = 120
 
-#: 计划书点名要包含的三类校验用例
+#: 设计点名要包含的三类校验用例
 REQUIRED_TEST_KINDS: tuple[str, ...] = ("user_isolation", "jev", "agent_wiki_ontology")
 
 
@@ -56,9 +56,9 @@ class SandboxPort(Protocol):
 class ProcessSandbox:
     """本机（进程级）受限适配器。
 
-    限制：命令白名单、超时、工作目录限定。
-    **没有容器级隔离** —— 它在部署环境由 AI Infra 提供，这里不假装有。
-    """
+ 限制：命令白名单、超时、工作目录限定。
+ **没有容器级隔离** —— 它在部署环境由 AI Infra 提供，这里不假装有。
+ """
 
     def __init__(self, *, root: str, allowed: Sequence[str] = ALLOWED_COMMANDS,
                  timeout: int = DEFAULT_TIMEOUT) -> None:
@@ -107,7 +107,7 @@ class FakeSandbox:
 
 @dataclass(frozen=True)
 class TestPlan:
-    """沙箱内要跑的校验用例（计划书点名三类必须包含）。"""
+    """沙箱内要跑的校验用例（设计点名三类必须包含）。"""
 
     #: 告诉 pytest 这不是测试类（名字以 Test 开头会被误收集）
     __test__ = False

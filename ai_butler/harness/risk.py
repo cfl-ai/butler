@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
-#: 风险档位（裁定 U33）
+#: 风险档位（裁定 ）
 RISK_LOW = "low"
 RISK_MEDIUM = "medium"
 RISK_HIGH = "high"
@@ -26,10 +26,10 @@ REDLINES: tuple[str, ...] = (REDLINE_ROW_LEVEL_FILTER, REDLINE_UNREDACTED_VAULT,
                              REDLINE_JEV_TEMPLATE, REDLINE_WIKI_BULK)
 
 # 表 10 的措辞分成两类，**处置方式不同，不能混为一谈**：
-#   「**禁止**移除行级过滤与鉴权；**禁止**读取未脱敏私有 Vault」→ 直接拒绝
-#   「修改 Jev 模板、Wiki 大型变更**强制人工审批**」→ 走审批，不是拒绝
+# 「**禁止**移除行级过滤与鉴权；**禁止**读取未脱敏私有 Vault」→ 直接拒绝
+# 「修改 Jev 模板、Wiki 大型变更**强制人工审批**」→ 走审批，不是拒绝
 # 一开始我把四条都按「禁止」处理，结果**把 Jev 模板迭代这条规定流程整个堵死**了 ——
-# 比计划书更严并不等于更对。
+# 比更严并不等于更对。
 
 #: 「禁止」类：命中即拒绝，**不进审批**
 FORBIDDEN_REDLINES: tuple[str, ...] = (REDLINE_ROW_LEVEL_FILTER,
@@ -103,8 +103,8 @@ class RiskAssessment:
 def _removed_protections(diff: str) -> list[str]:
     """扫描 diff 中**被删除**的保护性代码行。
 
-    只看删除行（以 ~{-}~ 开头）——**新增保护不算风险，删除才算**。
-    """
+ 只看删除行（以 ~{-}~ 开头）——**新增保护不算风险，删除才算**。
+ """
     if not diff:
         return []
     hits: list[str] = []

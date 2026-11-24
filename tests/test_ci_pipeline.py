@@ -20,7 +20,7 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-#: 平台：GitHub Actions（2026-10-23 由 Gitea 切换，U54；此前在 .gitea/workflows/ 下）
+#: 平台：GitHub Actions（2026-10-23 由 Gitea 切换，；此前在 .gitea/workflows/ 下）
 CI_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 
 #: 流水线里**必须出现**的验证命令。
@@ -80,9 +80,9 @@ def test_referenced_scripts_exist(ci):
 def test_dependencies_install_before_anything_that_imports_them(ci):
     """装依赖必须排在「用到依赖的步骤」之前。
 
-    这是踩过的真坑：生成 .env.test 的脚本 import cryptography，
-    而它来自 requirements.txt —— 顺序反了，CI 第一次运行就 ImportError。
-    """
+ 这是踩过的真坑：生成 .env.test 的脚本 import cryptography，
+ 而它来自 requirements.txt —— 顺序反了，CI 第一次运行就 ImportError。
+ """
     steps = ci["jobs"]["test"]["steps"]
 
     def step_text(step) -> str:
@@ -109,9 +109,9 @@ def test_dependencies_install_before_anything_that_imports_them(ci):
         script = step_text(step)
         for name in requirement_names:
             # 两种导入写法都要认：
-            #   import cryptography
-            #   from cryptography.fernet import Fernet   ← 第一版只认了前者，
-            #   结果这个守护在真正的 bug 面前**是绿的**。
+            # import cryptography
+            # from cryptography.fernet import Fernet ← 第一版只认了前者，
+            # 结果这个守护在真正的 bug 面前**是绿的**。
             if f"import {name}" in script or f"from {name}" in script:
                 if i < install_at:
                     offenders.append(
@@ -123,13 +123,13 @@ def test_dependencies_install_before_anything_that_imports_them(ci):
 
 def test_required_imports_are_declared_in_requirements():
     """mcp_server/ 踩坑复盘（2026-11-24 CI 收集失败）的守护：
-    mcp 包此前只装进本地 venv、未写进 requirements.txt，runner 侧
-    `from mcp.server.mcpserver import MCPServer` 当场 ModuleNotFoundError。
-    本测试锁定：本仓库自己代码里「顶层 import 的非 stdlib 第三方包」必须
-    在依赖清单（requirements.txt 或 requirements-ml.txt）中声明。
-    判据是模块名首段（pip 名与 import 名不一致的包需在此对齐，如
-    PyYAML→yaml、python-telegram-bot→telegram）；当前先覆盖 mcp 这条
-    真实踩坑线，后续按新增模块层逐个登记，避免启发式误报。"""
+ mcp 包此前只装进本地 venv、未写进 requirements.txt，runner 侧
+ `from mcp.server.mcpserver import MCPServer` 当场 ModuleNotFoundError。
+ 本测试锁定：本仓库自己代码里「顶层 import 的非 stdlib 第三方包」必须
+ 在依赖清单（requirements.txt 或 requirements-ml.txt）中声明。
+ 判据是模块名首段（pip 名与 import 名不一致的包需在此对齐，如
+ PyYAML→yaml、python-telegram-bot→telegram）；当前先覆盖 mcp 这条
+ 真实踩坑线，后续按新增模块层逐个登记，避免启发式误报。"""
     import importlib.util
 
     declared = set()
@@ -200,10 +200,10 @@ NOT_IN_CI: dict[str, str] = {
 def test_every_verification_script_is_either_in_ci_or_explicitly_excluded(ci):
     """每个 smoke_*/verify_* 脚本都必须有归属：CI 调用，或登记为有意排除。
 
-    REQUIRED_COMMANDS 是**手工维护**的清单 —— 新加脚本没人提醒你。
-    这条反过来扫**磁盘上真实存在的脚本**，逼着做一次分类：
-    要么进 CI，要么写清为什么不进。
-    """
+ REQUIRED_COMMANDS 是**手工维护**的清单 —— 新加脚本没人提醒你。
+ 这条反过来扫**磁盘上真实存在的脚本**，逼着做一次分类：
+ 要么进 CI，要么写清为什么不进。
+ """
     on_disk = sorted(
         q.name for q in (ROOT / "scripts").glob("*.py")
         if q.name.startswith(("smoke_", "verify_")))
@@ -232,13 +232,13 @@ def test_excluded_scripts_still_exist():
 def test_live_marker_is_the_only_deliberate_test_exclusion():
     """CI 不跑带 live 标记的用例 —— 这条把「有意跳过」写成断言。
 
-    那三条要连**真实的 Ollama 服务**与**本地 BGE 模型**（数百 MB，不入库），
-    CI 里跑不了。但此前**没有任何地方说明这一点**，
-    读者会以为 CI 覆盖了全部测试。
+ 那三条要连**真实的 Ollama 服务**与**本地 BGE 模型**（数百 MB，不入库），
+ CI 里跑不了。但此前**没有任何地方说明这一点**，
+ 读者会以为 CI 覆盖了全部测试。
 
-    只看**会造成排除**的标记；parametrize / skipif 之类是结构性的，
-    不参与 -m 选择（第一版把它们也算进来，误报了一次）。
-    """
+ 只看**会造成排除**的标记；parametrize / skipif 之类是结构性的，
+ 不参与 -m 选择（第一版把它们也算进来，误报了一次）。
+ """
     marks = set()
     for f in (ROOT / "tests").glob("test_*.py"):
         for line in f.read_text(encoding="utf-8").splitlines():

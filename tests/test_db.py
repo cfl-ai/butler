@@ -18,7 +18,7 @@ from ai_butler.core.db import Base, Database, RowLevelIsolationError, UserScoped
 
 
 class ScopedNote(Base, UserScoped):
-    """【测试专用表】非计划书业务表；仅用于验证 P0-1 行级隔离抽象。"""
+    """【测试专用表】非业务表；仅用于验证 P0-1 行级隔离抽象。"""
 
     __tablename__ = "_p0_selftest_user_scoped"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -26,7 +26,7 @@ class ScopedNote(Base, UserScoped):
 
 
 class PublicNote(Base):
-    """【测试专用表】对应计划书「素材溯源库属于 Agent-Wiki 公共 Workspace 无用户 ID」。"""
+    """【测试专用表】对应登记「素材溯源库属于 Agent-Wiki 公共 Workspace 无用户 ID」。"""
 
     __tablename__ = "_p0_selftest_public"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -37,10 +37,10 @@ class PublicNote(Base):
 def loop():
     """模块级事件循环。
 
-    必须 set_event_loop：同进程内其他用例调用 asyncio.run() 后会把当前事件循环置空，
-    若这里只 new_event_loop() 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
-    产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
-    """
+ 必须 set_event_loop：同进程内其他用例调用 asyncio.run 后会把当前事件循环置空，
+ 若这里只 new_event_loop 而不设置，asyncpg 在某些代码路径上会去取「当前」循环，
+ 产生只在整包连跑时才冒头的偶发失败（Event loop is closed / 连接挂在别的循环上）。
+ """
     lp = asyncio.new_event_loop()
     asyncio.set_event_loop(lp)
     yield lp
@@ -69,7 +69,7 @@ def db(settings, loop):
 
 
 def test_account_sees_only_its_own_rows(db, loop):
-    """A 账号完全无法读取 B 账号数据（计划书七、10）。"""
+    """A 账号完全无法读取 B 账号数据。"""
 
     async def main():
         async with db.session_scope(user_id="user-A", readonly=True) as s:
@@ -81,7 +81,7 @@ def test_account_sees_only_its_own_rows(db, loop):
 
 
 def test_scoped_query_without_user_id_is_refused(db, loop):
-    """禁止不带用户身份的裸查询（计划书三、P0-1）。"""
+    """禁止不带用户身份的裸查询（三、P0-1）。"""
 
     async def main():
         with pytest.raises(RowLevelIsolationError) as ei:
@@ -93,7 +93,7 @@ def test_scoped_query_without_user_id_is_refused(db, loop):
 
 
 def test_public_entity_readable_without_user_id(db, loop):
-    """公共 Workspace 实体不带 user_id 过滤（计划书三、P0-1）。"""
+    """公共 Workspace 实体不带 user_id 过滤（三、P0-1）。"""
 
     async def main():
         async with db.session_scope(user_id=None) as s:

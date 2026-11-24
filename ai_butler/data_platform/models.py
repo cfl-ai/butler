@@ -23,15 +23,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 from ai_butler.core.db import Base, DomainScoped, UserScoped
 
 # --------------------------------------------------------------------------- #
-# 冲突标记规则（计划书三、P1「冲突校验」「冲突标记规则」）
+# 冲突标记规则（三、P1「冲突校验」「冲突标记规则」）
 # --------------------------------------------------------------------------- #
 CONFLICT_NONE = "none"
-CONFLICT_PENDING = "pending"          # 冲突待人工复核（计划书 P1「冲突人工复核」）
+CONFLICT_PENDING = "pending"          # 冲突待人工复核（ P1「冲突人工复核」）
 CONFLICT_RESOLVED = "resolved"
 CONFLICT_STATUSES: tuple[str, ...] = (CONFLICT_NONE, CONFLICT_PENDING, CONFLICT_RESOLVED)
 
 # --------------------------------------------------------------------------- #
-# 时效规则（计划书三、P1「时效规则」；三、P2「过期来源标记为 status:archived」）
+# 时效规则（三、P1「时效规则」；三、P2「过期来源标记为 status:archived」）
 # --------------------------------------------------------------------------- #
 # 来源状态是 Agent-Wiki 的概念，常量归属本体；此处只做再导出，避免两处重复定义。
 from ai_butler.agent_wiki.ontology import (      # noqa: E402
@@ -54,13 +54,13 @@ def utcnow() -> datetime:
 class DataFieldSpec:
     """字段规范：时效规则 + 权重规则 + 冲突标记规则 + 版本溯源。
 
-    计划书三、P1 要求这四类规则，但未给出字段名——字段命名为实现层约定。
-    """
+ 三、P1 要求这四类规则，但未给出字段名——字段命名为实现层约定。
+ """
 
-    #: 置信度：计划书三、P1「自动标记置信度」。**不设默认值**，避免凭空造数。
+    #: 置信度：三、P1「自动标记置信度」。**不设默认值**，避免凭空造数。
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
 
-    #: 权重：计划书三、P1「权重规则」「用户偏好权重衰减机制」。初始满权重。
+    #: 权重：三、P1「权重规则」「用户偏好权重衰减机制」。初始满权重。
     weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
 
     #: 时效规则：有效期区间，NULL 表示长期有效
@@ -72,10 +72,10 @@ class DataFieldSpec:
                                                  default=CONFLICT_NONE, index=True)
     conflict_group: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
-    #: 溯源：关联素材溯源库 / Agent-Wiki Evidence 条目（计划书 P1「素材溯源」「证据绑定」）
+    #: 溯源：关联素材溯源库 / Agent-Wiki Evidence 条目（ P1「素材溯源」「证据绑定」）
     source_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
 
-    #: 版本溯源（计划书三、P1「版本溯源」「数据版本溯源、变更审计、回溯系统」）
+    #: 版本溯源（三、P1「版本溯源」「数据版本溯源、变更审计、回溯系统」）
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False,
                                                  default=utcnow)
@@ -89,9 +89,9 @@ class DataFieldSpec:
 class UserProfileRecord(Base, UserScoped, DataFieldSpec):
     """用户画像库。
 
-    计划书三、P1 表注：「用户画像…必须绑定 user_id」；
-    表注另要求「用户画像实体同步至私有 Vault」——同步逻辑见 sync 模块（P1 后续步骤）。
-    """
+ 三、P1 表注：「用户画像…必须绑定 user_id」；
+ 表注另要求「用户画像实体同步至私有 Vault」——同步逻辑见 sync 模块（P1 后续步骤）。
+ """
 
     __tablename__ = "data_user_profile"
 
@@ -107,17 +107,17 @@ class UserProfileRecord(Base, UserScoped, DataFieldSpec):
 
 
 # --------------------------------------------------------------------------- #
-# 2. 知识图谱库（双域，见 decisions.U24）
+# 2. 知识图谱库（双域，见 decisions.）
 # --------------------------------------------------------------------------- #
 class KnowledgeGraphRecord(Base, DomainScoped, DataFieldSpec):
     """知识图谱库 —— 实体-关系-声明三元组。
 
-    计划书三、P1「对接 Agent-Wiki v2 本体，增加实体-声明-证据-矛盾追踪」：
-    subject/predicate/object 对应 Wiki 的 Entity 与 Relation，
-    statement 对应 Claim，source_id 对应 Evidence，conflict_* 对应 Contradiction。
+ 三、P1「对接 Agent-Wiki v2 本体，增加实体-声明-证据-矛盾追踪」：
+ subject/predicate/object 对应 Wiki 的 Entity 与 Relation，
+ statement 对应 Claim，source_id 对应 Evidence，conflict_* 对应 Contradiction。
 
-    双域：user_id 为 NULL 即公共域（景点、天气、公开资讯），非空即私有域（用户偏好）。
-    """
+ 双域：user_id 为 NULL 即公共域（景点、天气、公开资讯），非空即私有域（用户偏好）。
+ """
 
     __tablename__ = "data_knowledge_graph"
 
@@ -125,7 +125,7 @@ class KnowledgeGraphRecord(Base, DomainScoped, DataFieldSpec):
     subject: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     predicate: Mapped[str] = mapped_column(String(128), nullable=False)
     object: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
-    #: 对应的 Claim 声明文本（计划书 P1「每一条增量事实生成 Claim 声明」）
+    #: 对应的 Claim 声明文本（ P1「每一条增量事实生成 Claim 声明」）
     statement: Mapped[str] = mapped_column(Text, nullable=False, default="")
     #: 对应的 Agent-Wiki Claim 页面 id，供证据链回溯
     claim_page_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
@@ -137,9 +137,9 @@ class KnowledgeGraphRecord(Base, DomainScoped, DataFieldSpec):
 class MaterialSourceRecord(Base):
     """素材溯源库。
 
-    计划书三、P1 表注：「素材溯源库属于 Agent-Wiki 公共 Workspace **无用户 ID**」
-    ——因此本表继承 Base 而非 UserScoped，任何人可读且不受 user_id 过滤。
-    """
+ 三、P1 表注：「素材溯源库属于 Agent-Wiki 公共 Workspace **无用户 ID**」
+ ——因此本表继承 Base 而非 UserScoped，任何人可读且不受 user_id 过滤。
+ """
 
     __tablename__ = "data_material_source"
 
@@ -177,9 +177,9 @@ class MaterialSourceRecord(Base):
 class DeviceStateRecord(Base, UserScoped, DataFieldSpec):
     """设备状态库。
 
-    计划书三、P1 表注：「设备状态…必须绑定 user_id」。
-    计划书三、P7「开发 GPS、设备状态定时上报；上报携带会话身份；未登录不上报用户私有设备信息」。
-    """
+ 三、P1 表注：「设备状态…必须绑定 user_id」。
+ 三、P7「开发 GPS、设备状态定时上报；上报携带会话身份；未登录不上报用户私有设备信息」。
+ """
 
     __tablename__ = "data_device_state"
 
@@ -192,7 +192,7 @@ class DeviceStateRecord(Base, UserScoped, DataFieldSpec):
                                                   default=utcnow, index=True)
 
 
-#: 四大核心数据表（计划书三、P1 逐字点名的四张表）
+#: 四大核心数据表（三、P1 逐字点名的四张表）
 CORE_TABLES: dict[str, type] = {
     "用户画像库": UserProfileRecord,
     "知识图谱库": KnowledgeGraphRecord,
@@ -200,10 +200,10 @@ CORE_TABLES: dict[str, type] = {
     "设备状态库": DeviceStateRecord,
 }
 
-#: 计划书三、P1 表注规定的域归属，供测试与自检核对
+#: 三、P1 表注规定的域归属，供测试与自检核对
 PLAN_DOMAIN_ASSIGNMENT: dict[str, str] = {
     "用户画像库": "private",      # 「用户画像…必须绑定 user_id」
-    "知识图谱库": "dual",         # decisions.U24
+    "知识图谱库": "dual",         # decisions.
     "素材溯源库": "public",       # 「素材溯源库…无用户 ID」
     "设备状态库": "private",      # 「设备状态…必须绑定 user_id」
 }

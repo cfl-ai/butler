@@ -89,9 +89,9 @@ class DataSDK:
                              limit: int = 200) -> list[dict[str, Any]]:
         """知识图谱库（双域）。
 
-        - 传 user_id：返回「公共域 + 本人私有域」；
-        - 不传 user_id：**只返回公共域**（计划书 P1「公共域…全账号可读」）。
-        """
+ - 传 user_id：返回「公共域 + 本人私有域」；
+ - 不传 user_id：**只返回公共域**（ P1「公共域…全账号可读」）。
+ """
         async with self._db.session_scope(user_id=user_id, readonly=True) as s:
             stmt = select(KnowledgeGraphRecord)
             if subject:
@@ -103,9 +103,9 @@ class DataSDK:
                                     limit: int = 200) -> list[dict[str, Any]]:
         """素材溯源库。
 
-        计划书三、P1 表注：「素材溯源库属于 Agent-Wiki 公共 Workspace 无用户 ID」
-        「公共知识库不受 user_id 限制」——**本方法刻意不接收 user_id**。
-        """
+ 三、P1 表注：「素材溯源库属于 Agent-Wiki 公共 Workspace 无用户 ID」
+ 「公共知识库不受 user_id 限制」——**本方法刻意不接收 user_id**。
+ """
         async with self._db.session_scope(user_id=None, readonly=True) as s:
             stmt = select(MaterialSourceRecord)
             if status:
@@ -119,17 +119,17 @@ class DataSDK:
         return self._wiki.read_page(page_id, user_id=user_id)
 
     def wiki_retrieve(self, *, user_id: str, page_type: str | None = None) -> list[WikiPage]:
-        """检索语义：公共 Workspace + 本人 Vault，绝不加载他人页面（计划书三、P2）。"""
+        """检索语义：公共 Workspace + 本人 Vault，绝不加载他人页面（三、P2）。"""
         uid = _require_user(user_id, why="Wiki 检索")
         return self._wiki.list_pages_for_retrieval(uid, page_type=page_type)
 
     def wiki_write(self, page: WikiPage, *, user_id: str | None = None):
         """写入 Wiki 页面。
 
-        计划书三、P4「子 Agent 产出事实优先写入对应用户私有 Vault」——
-        因此这里**允许写**；隔离规则由 WikiStore 强制（公共页不得带 user_id、
-        私有页 user_id 必须与目标账号一致）。
-        """
+ 三、P4「子 Agent 产出事实优先写入对应用户私有 Vault」——
+ 因此这里**允许写**；隔离规则由 WikiStore 强制（公共页不得带 user_id、
+ 私有页 user_id 必须与目标账号一致）。
+ """
         return self._wiki.write_page(page, user_id=user_id)
 
     def wiki_list(self, *, user_id: str | None = None, page_type: str | None = None

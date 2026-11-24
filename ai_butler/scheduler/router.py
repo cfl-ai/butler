@@ -35,7 +35,7 @@ from ai_butler.infra.llm_gateway import (
     LLMGateway,
 )
 
-#: 五层顺序（计划书三、P3 逐字顺序，冻结）
+#: 五层顺序（三、P3 逐字顺序，冻结）
 LAYER_HARD_RULE = "hard_rule"
 LAYER_JEV = "jev"
 LAYER_VECTOR = "vector"
@@ -44,8 +44,8 @@ LAYER_LLM = "llm_fallback"
 LAYERS: tuple[str, ...] = (LAYER_HARD_RULE, LAYER_JEV, LAYER_VECTOR, LAYER_VERTICAL,
                            LAYER_LLM)
 
-#: 澄清话术模板（计划书三、P3「必须向用户确认」）
-#: 键为**枚举**，话术由系统渲染 —— 见 decisions.U25
+#: 澄清话术模板（三、P3「必须向用户确认」）
+#: 键为**枚举**，话术由系统渲染 —— 见 decisions.
 CLARIFICATION_TEMPLATES: dict[str, str] = {
     CLARIFY_MULTI_INTENT:
         "您这次的请求里包含多个意图（{candidates}），请问要先处理哪一个？",
@@ -56,9 +56,9 @@ CLARIFICATION_TEMPLATES: dict[str, str] = {
 
 #: 每层的默认超时预算（实现参数）；超时即降级到下一层
 DEFAULT_LAYER_TIMEOUT_SECONDS = 5.0
-#: 向量层接受阈值（实现参数；U03 要求第四层阈值须在中文验证集标定，同理适用于本层）
+#: 向量层接受阈值（实现参数； 要求第四层阈值须在中文验证集标定，同理适用于本层）
 DEFAULT_VECTOR_THRESHOLD = 0.62
-#: 垂类模型层默认阈值（实现参数，**占位**：U03 要求在自建中文验证集上重新标定后才可上线）
+#: 垂类模型层默认阈值（实现参数，**占位**： 要求在自建中文验证集上重新标定后才可上线）
 DEFAULT_VERTICAL_THRESHOLD = 0.55
 
 
@@ -129,7 +129,7 @@ class RouteDecision:
     candidate_labels: tuple[str, ...] = ()
     degraded: bool = False
     degradation_notes: tuple[str, ...] = ()
-    #: 风控结论（台账 U41）：输入是否被标为不可信。
+    #: 风控结论：输入是否被标为不可信。
     #: TAINT 时下游**不得**把它沉淀为事实。
     input_untrusted: bool = False
     attempts: tuple[LayerAttempt, ...] = ()
@@ -161,7 +161,7 @@ class RouteDecision:
 
 
 def render_clarification(category: str, candidates: Sequence[str]) -> str:
-    """用枚举键模板渲染澄清话术。**不由模型生成**（计划书禁止 Jev 输出自由文本）。"""
+    """用枚举键模板渲染澄清话术。**不由模型生成**（禁止 Jev 输出自由文本）。"""
     template = CLARIFICATION_TEMPLATES.get(category, CLARIFICATION_TEMPLATES[CLARIFY_MULTI_INTENT])
     shown = "、".join(candidates) if candidates else "多个"
     return template.format(candidates=shown)
@@ -221,14 +221,14 @@ class HardRuleLayer:
 class ShadowTasks:
     """影子旁路的任务登记簿。
 
-    **为什么影子必须旁路**：原实现把 `shadow_mode` 判在「决策拿到之后」，
-    也就是模型仍被完整调用一次，而 `route()` 是 `await`、单层超时 5 秒。
-    于是「只记录不决策」在成本上等于「照常调用一次模型」—— 影子期不是
-    无感观测，是给每个请求白加一次模型延迟（最坏 5 秒）。
-    影子要能看到真实分布，就不能改变被观测系统的行为，延迟也算行为。
+ **为什么影子必须旁路**：原实现把 `shadow_mode` 判在「决策拿到之后」，
+ 也就是模型仍被完整调用一次，而 `route` 是 `await`、单层超时 5 秒。
+ 于是「只记录不决策」在成本上等于「照常调用一次模型」—— 影子期不是
+ 无感观测，是给每个请求白加一次模型延迟（最坏 5 秒）。
+ 影子要能看到真实分布，就不能改变被观测系统的行为，延迟也算行为。
 
-    `drain()` 给测试与优雅关闭用：生产路径**不等**它，这正是旁路的含义。
-    """
+ `drain` 给测试与优雅关闭用：生产路径**不等**它，这正是旁路的含义。
+ """
 
     def __init__(self) -> None:
         self._tasks: set[asyncio.Task] = set()
@@ -261,12 +261,12 @@ class JevLayer:
                  shadow: bool | None = None) -> None:
         """`shadow` 三态，含义不能混：
 
-        - `None`：沿用旧行为 —— 完整调用一次，由决策自带的 `shadow` 标记
-          决定是否采信。**这条路径会阻塞**，只为兼容既有调用方保留。
-        - `True`：**旁路影子** —— 立即返回「不采信」，模型调用丢后台任务。
-          生产装配走这条（`intent_wiring.build_intent_router`）。
-        - `False`：正常决策。
-        """
+ - `None`：沿用旧行为 —— 完整调用一次，由决策自带的 `shadow` 标记
+ 决定是否采信。**这条路径会阻塞**，只为兼容既有调用方保留。
+ - `True`：**旁路影子** —— 立即返回「不采信」，模型调用丢后台任务。
+ 生产装配走这条（`intent_wiring.build_intent_router`）。
+ - `False`：正常决策。
+ """
         self.client = client
         self.on_shadow = on_shadow
         self.shadow = shadow
@@ -283,7 +283,7 @@ class JevLayer:
             allowed_labels=request.labels)
 
         if decision.shadow:
-            # 影子模式：只记录不决策（计划书三、P3）
+            # 影子模式：只记录不决策（三、P3）
             if self.on_shadow is not None:
                 self.on_shadow(decision)
             return LayerVerdict(accepted=False, label=decision.label,
@@ -369,7 +369,7 @@ class VectorLayer:
 # 第 4 层：垂类专用决策模型
 # --------------------------------------------------------------------------- #
 class VerticalDecisionModel(Protocol):
-    """U03：照 RouteLLM 的 bert router 形态 —— 中文基座小分类器 + 阈值路由。"""
+    """：照 RouteLLM 的 bert router 形态 —— 中文基座小分类器 + 阈值路由。"""
 
     name: str
 
@@ -558,7 +558,7 @@ class IntentRouter:
             user_id=request.user_id, session_id=request.session_id, trace_id=trace_id,
             layer=layer, label=verdict.label, confidence=verdict.confidence,
             require_clarification=True,
-            # 话术由系统按枚举模板渲染，模型不产出询问语句（decisions.U25）
+            # 话术由系统按枚举模板渲染，模型不产出询问语句（decisions.）
             clarifying_question=render_clarification(verdict.clarification_category, candidates),
             clarification_category=verdict.clarification_category or CLARIFY_MULTI_INTENT,
             candidate_labels=tuple(candidates),

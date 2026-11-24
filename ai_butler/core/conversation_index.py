@@ -42,7 +42,7 @@ from ai_butler.core.naming import redis_key
 
 #: 会话标识的随机字节数（16 字节 → 32 位十六进制，碰撞概率可忽略）
 CONVERSATION_ID_BYTES = 16
-#: 会话上下文保留时长（计划书未给数值 → 实现参数）
+#: 会话上下文保留时长（未给数值 → 实现参数）
 DEFAULT_CONVERSATION_TTL_SECONDS = 7 * 24 * 3600
 
 _ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
@@ -198,9 +198,9 @@ async def resolve(index: ConversationIndex, *, user_id: str,
                   requested: str | None) -> Resolution:
     """把客户端传来的标识裁成「可以用哪个」。
 
-    四种情况，三种都要重新签发，且**原因必须带出去** —— 静默换一个会话，
-    用户只会觉得「它怎么又忘了」，而排障的人什么都看不到。
-    """
+ 四种情况，三种都要重新签发，且**原因必须带出去** —— 静默换一个会话，
+ 用户只会觉得「它怎么又忘了」，而排障的人什么都看不到。
+ """
     owner = _require_owner(user_id)
     candidate = str(requested or "").strip()
 

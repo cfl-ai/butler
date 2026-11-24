@@ -12,17 +12,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Mapping, Sequence
 
-#: 裁定 U28：LoRA 为主，显存不足退 QLoRA
+#: 裁定：LoRA 为主，显存不足退 QLoRA
 METHOD_LORA = "lora"
 METHOD_QLORA = "qlora"
 METHODS: tuple[str, ...] = (METHOD_LORA, METHOD_QLORA)
 
-#: 微调目标（计划书点名的两类）
+#: 微调目标（设计点名的两类）
 TARGET_JEV_TEMPLATE = "jev_question_template"
 TARGET_VERTICAL_MODEL = "vertical_model"
 TARGETS: tuple[str, ...] = (TARGET_JEV_TEMPLATE, TARGET_VERTICAL_MODEL)
 
-#: 周期性：默认 7 天（实现参数；计划书只说「周期性」，未给数值）
+#: 周期性：默认 7 天（实现参数；只说「周期性」，未给数值）
 DEFAULT_INTERVAL_DAYS = 7
 
 #: 触发微调所需的最小样本量（实现参数）
@@ -104,9 +104,9 @@ class FinetunePipeline:
              method: str = METHOD_LORA) -> list[PipelineRun]:
         """决定本轮要不要微调、微调谁、用什么配置。
 
-        **样本不足时不硬跑**——用很少的数据反复微调只会把模型带偏，
-        所以这里给出明确的 not-run 理由而不是「尽力而为」。
-        """
+ **样本不足时不硬跑**——用很少的数据反复微调只会把模型带偏，
+ 所以这里给出明确的 not-run 理由而不是「尽力而为」。
+ """
         if not self.due(last_run_at=last_run_at, now=now):
             return [PipelineRun(t, False, f"未到周期（{self.interval_days} 天）")
                     for t in TARGETS]

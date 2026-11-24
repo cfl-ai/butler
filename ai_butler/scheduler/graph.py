@@ -42,7 +42,7 @@ except ImportError:                             # pragma: no cover
     from langgraph.graph import END, StateGraph  # type: ignore[assignment]
     START = "__start__"                          # type: ignore[assignment]
 
-#: 主状态机节点（计划书三、P3 全流程状态流转）
+#: 主状态机节点（三、P3 全流程状态流转）
 NODE_GUARD = "guard"                     # 全局状态监听：会话有效性闸门
 NODE_RELOGIN = "require_relogin"         # 会话失效：终止流程并返回重新登录
 NODE_ROUTE = "route"
@@ -53,17 +53,17 @@ NODE_TERMINATE = "terminate"
 NODES: tuple[str, ...] = (NODE_GUARD, NODE_RELOGIN, NODE_ROUTE, NODE_CLARIFY,
                           NODE_DISPATCH, NODE_AGGREGATE, NODE_TERMINATE)
 
-#: 计划书三、P3 写死的数字：全局最大回退次数 = 2 次
+#: 三、P3 写死的数字：全局最大回退次数 = 2 次
 MAX_ROLLBACKS = 2
 
 #: 会话失效时的终止码（移动端据此弹窗引导重新登录，见三、P7）
 LOGIN_REQUIRED = "LOGIN_REQUIRED"
 
-#: 子 Agent 绝对不得覆盖的字段（计划书三、P4「只读全局状态」）
-#: 受保护字段 = 计划书点名的必填字段 + 风控结论。
+#: 子 Agent 绝对不得覆盖的字段（三、P4「只读全局状态」）
+#: 受保护字段 = 设计点名的必填字段 + 风控结论。
 #: 
 #: input_untrusted 必须受保护：若允许子 Agent 改写，就能把「不可信」洗成「可信」，
-#: 台账 U41「不得沉淀为事实」这条约束随即失效。
+#: 「不得沉淀为事实」这条约束随即失效。
 PROTECTED_STATE_FIELDS: tuple[str, ...] = REQUIRED_STATE_FIELDS + ("input_untrusted",)
 
 BRANCH_CLARIFY = "clarify"
@@ -76,11 +76,11 @@ BRANCH_CONTINUE = "continue"
 class SchedulerState(GraphState, total=False):
     """主状态机的 State schema。
 
-    **必须是 TypedDict**：LangGraph 按 schema 里的键建立通道并做按键合并；
-    若直接用 `StateGraph(dict)`，节点返回的部分更新会**整体替换** state，
-    上游节点（如 route）的结果根本传不到下游节点。
-    这些流转字段是调度层管道，故不塞进 agents.state 的全局契约。
-    """
+ **必须是 TypedDict**：LangGraph 按 schema 里的键建立通道并做按键合并；
+ 若直接用 `StateGraph(dict)`，节点返回的部分更新会**整体替换** state，
+ 上游节点（如 route）的结果根本传不到下游节点。
+ 这些流转字段是调度层管道，故不塞进 agents.state 的全局契约。
+ """
 
     labels: tuple[str, ...]
     trace_id: str
@@ -95,8 +95,8 @@ class SchedulerState(GraphState, total=False):
     rolled_back: list[str]
     #: 会话失效时的终止码
     login_required: str
-    #: 输入接通层结论（U114）。**未启用时不写入** —— 空壳 dict 与「没跑过」
-    #: 在下游看不出区别，那正是「声明了没接上」的形状（E-86）。
+    #: 输入接通层结论。**未启用时不写入** —— 空壳 dict 与「没跑过」
+    #: 在下游看不出区别，那正是「声明了没接上」的形状。
     intake: dict[str, Any]
 
 
@@ -106,7 +106,7 @@ class SchedulerError(RuntimeError):
 
 @dataclass(frozen=True)
 class DispatchPlan:
-    """意图 → 子 Agent 调用链。计划书三、P3「路由结果决定后续 Agent 调用链」。"""
+    """意图 → 子 Agent 调用链。三、P3「路由结果决定后续 Agent 调用链」。"""
 
     chains: Mapping[str, Sequence[str]]
 
@@ -136,12 +136,12 @@ class SchedulerResult:
     login_required: str = ""
     degraded: bool = False
     degradation: list[str] = field(default_factory=list)
-    #: 风控结论（台账 U41）：输入是否被标为不可信
+    #: 风控结论：输入是否被标为不可信
     input_untrusted: bool = False
     #: 工具统一调度的统计（调用次数、重复拦截数、是否无增量）
     tool_calls: dict[str, Any] = field(default_factory=dict)
     spans: list[dict[str, Any]] = field(default_factory=list)
-    #: 输入接通层结论（U114）。**开关关闭/未装网关时为空 dict** 表示这一层没跑；
+    #: 输入接通层结论。**开关关闭/未装网关时为空 dict** 表示这一层没跑；
     #: 判空必须用「有没有 units」，不要用「是不是 dict」—— 两者都能进 as_dict。
     intake: dict[str, Any] = field(default_factory=dict)
 
@@ -186,28 +186,28 @@ class SceneScheduler:
         self.router = router
         self.agents = dict(agents)
         self.plan = plan
-        #: 垂类派发器（U110）。**为 None 时垂类能力整体不存在** —— 不是「接了但没命中」，
+        #: 垂类派发器。**为 None 时垂类能力整体不存在** —— 不是「接了但没命中」，
         #: 而是这一轴根本没装，L4 即便给得出垂类键也没有执行者。默认 None，
         #: 因此既有调用方行为零变化；装配它的地方才有垂类能力。
         self.verticals = verticals
-        #: 大模型网关（U112/U114）。**为 None 时输入接通层整体不存在**：
+        #: 大模型网关。**为 None 时输入接通层整体不存在**：
         #: 没有网关就没有 function calling 回路可跑，此时 `intake` 通道不写入，
         #: 而不是写个空壳冒充"处理过"。默认 None，既有调用方行为零变化。
         self.gateway = gateway
         self.observer = observer
-        #: append-only 会话事件账本（U57）。传入即把本任务的 Trace 埋点
+        #: append-only 会话事件账本。传入即把本任务的 Trace 埋点
         #: 桥接落账（journal_observer 包装 observer 语义）；不传则维持
         #: 内存级 Trace 原行为——**没有账本时不冒充已持久化**。
         self.journal = journal
-        #: 计划书三、P3「工具统一调度」：全系统唯一的工具入口
+        #: 三、P3「工具统一调度」：全系统唯一的工具入口
         self.dispatcher = ToolDispatcher(tool_registry or ToolRegistry(),
                                          throttle=throttle)
-        #: 权限上下文（U43–U45）。角色缺省 MEMBER（日常使用）——
-        #: 会话链路尚未携带角色（U42：/api/chat/stream 未实现），
+        #: 权限上下文。角色缺省 MEMBER（日常使用）——
+        #: 会话链路尚未携带角色（：/api/chat/stream 未实现），
         #: 在角色可达之前按最保守的已登录身份处理，不给「大概是个 admin」留默认值。
         #: 调度器自身按 L1 绑定：**编排者不直接触发进程外动作**，
         #: 需要 L2 及以上的调用方必须用自己的 AgentIdentity 求值
-        #: （dispatch(..., agent=...)），U51 权限不可传递。
+        #: （dispatch(..., agent=...)）， 权限不可传递。
         self.role = role
         self.dispatcher.bind_permission(ToolPermission(
             agent=AgentIdentity(key="p3_scene_scheduler",
@@ -257,17 +257,17 @@ class SceneScheduler:
         return BRANCH_TERMINATE
 
     async def _node_guard(self, state: dict[str, Any]) -> dict[str, Any]:
-        """计划书三、P3「开发全局状态监听机制」。"""
+        """三、P3「开发全局状态监听机制」。"""
         trace = self._current_trace()
         with trace.span(NODE_GUARD, login_status=bool(state.get("login_status"))):
             return {}
 
     async def _node_relogin(self, state: dict[str, Any]) -> dict[str, Any]:
-        """计划书三、P3「会话失效直接终止 Graph 流程，返回重新登录」。
+        """三、P3「会话失效直接终止 Graph 流程，返回重新登录」。
 
-        **不进入路由、不触发任何子 Agent**——与会话失效时的静默跳过不同，
-        这里要显式终止并给出可被移动端识别的信号（三、P7 据此弹窗重登）。
-        """
+ **不进入路由、不触发任何子 Agent**——与会话失效时的静默跳过不同，
+ 这里要显式终止并给出可被移动端识别的信号（三、P7 据此弹窗重登）。
+ """
         trace = self._current_trace()
         with trace.span(NODE_RELOGIN):
             degradation = list(state.get("degradation") or [])
@@ -324,23 +324,23 @@ class SceneScheduler:
             updates = await self._dispatch({**state, **intake_updates}, trace)
             # 接通是**加法**：只补 `intake` 通道，其余一律以分发结论为准。
             # 由谁执行仍然只由 路由 + DispatchPlan 决定（多意图自动分派为 False
-            # 是计划书规则），离散化不能反过来改写一个确定性结论。
+            # 是规则），离散化不能反过来改写一个确定性结论。
             return {**intake_updates, **updates}
 
     async def _run_intake(self, state: dict[str, Any], trace: Trace) -> dict[str, Any]:
-        """输入接通层（U114 装配点）：分发前把用户输入离散化并跑裁剪过的回路。
+        """输入接通层（ 装配点）：分发前把用户输入离散化并跑裁剪过的回路。
 
-        装配在**唯一的任务分发者**上，而不是只在测试里调 —— 只在测试里调过
-        的链路等于没有链路（E-86）。
+ 装配在**唯一的任务分发者**上，而不是只在测试里调 —— 只在测试里调过
+ 的链路等于没有链路。
 
-        三道闸都不会被跳过：
-        1. 没装网关 → 整层不存在，不写 `intake`；
-        2. 开关关闭 → 同上，行为与接通前逐字一致；
-        3. 会话失效 → 不跑（与子 Agent 跳过执行同一口径）。
+ 三道闸都不会被跳过：
+ 1. 没装网关 → 整层不存在，不写 `intake`；
+ 2. 开关关闭 → 同上，行为与接通前逐字一致；
+ 3. 会话失效 → 不跑（与子 Agent 跳过执行同一口径）。
 
-        回路里的工具调用走的是**同一个** `self.dispatcher`（权限三层求值、审批、
-        重复拦截、无增量终止、超时全在里面），function calling 不是绕过闸门的后门。
-        """
+ 回路里的工具调用走的是**同一个** `self.dispatcher`（权限三层求值、审批、
+ 重复拦截、无增量终止、超时全在里面），function calling 不是绕过闸门的后门。
+ """
         from ai_butler.core.config import get_settings
         from ai_butler.scheduler.intake import run_units
 
@@ -366,14 +366,14 @@ class SceneScheduler:
         return {"intake": report.as_dict()}
 
     async def _dispatch_vertical(self, state: dict[str, Any], trace: Trace) -> dict[str, Any]:
-        """把任务交给垂类 Agent（U110；表 11：垂类是**业务执行单元**）。
+        """把任务交给垂类 Agent（；表 11：垂类是**业务执行单元**）。
 
-        垂类键（如 `"tour"`）不在 `DispatchPlan` 的检索分类链里，走阶段链等于空转，
-        所以这里单独一支：命中即由垂类自己执行，执行完就结束本次分发。
+ 垂类键（如 `"tour"`）不在 `DispatchPlan` 的检索分类链里，走阶段链等于空转，
+ 所以这里单独一支：命中即由垂类自己执行，执行完就结束本次分发。
 
-        三种失败都**留痕且不阻断主流程**（三、P3 全链路降级）：装配失败、执行抛错、
-        越权改写受保护字段 —— 分别记进 `failed` + `degradation`，不往上抛。
-        """
+ 三种失败都**留痕且不阻断主流程**（三、P3 全链路降级）：装配失败、执行抛错、
+ 越权改写受保护字段 —— 分别记进 `failed` + `degradation`，不往上抛。
+ """
         key = str(state.get("intent") or "")
         name = f"vertical:{key}"
         degradation: list[str] = list(state.get("degradation") or [])
@@ -416,7 +416,7 @@ class SceneScheduler:
         return _done()
 
     async def _dispatch(self, state: dict[str, Any], trace: Trace) -> dict[str, Any]:
-        # 垂类优先（U110）：L4 命中的是垂类键而非检索分类，交给垂类派发器执行。
+        # 垂类优先：L4 命中的是垂类键而非检索分类，交给垂类派发器执行。
         if self.verticals is not None and self.verticals.has(state.get("intent")):
             return await self._dispatch_vertical(state, trace)
         chain = self.plan.agents_for(state.get("intent"))
@@ -426,18 +426,18 @@ class SceneScheduler:
         failed: list[str] = []
         degradation: list[str] = list(state.get("degradation") or [])
         rollback = int(state.get("rollback_count") or 0)
-        # 计划书三、P3「禁止把任务再次分发给刚刚回退的 Agent，杜绝循环甩锅」
+        # 三、P3「禁止把任务再次分发给刚刚回退的 Agent，杜绝循环甩锅」
         rolled_back: set[str] = set(state.get("rolled_back") or [])
 
         if not state.get("login_status"):
-            # 正常路径下 guard 节点已拦下；此处为纵深防御（计划书三、P4「会话失效则跳过执行」）
+            # 正常路径下 guard 节点已拦下；此处为纵深防御（三、P4「会话失效则跳过执行」）
             skipped.extend(chain)
             degradation.append("会话失效，子 Agent 全部跳过执行")
             return {"agent_results": results, "dispatched": dispatched, "skipped": skipped,
                     "degradation": degradation, "rollback_count": rollback,
                     "failed": failed, "rolled_back": sorted(rolled_back)}
 
-        # 计划书三、P3「无增量终止」：工具调用已判定原地打转即停止分发
+        # 三、P3「无增量终止」：工具调用已判定原地打转即停止分发
         if self.dispatcher.no_progress:
             skipped.extend(chain)
             degradation.append(
@@ -447,7 +447,7 @@ class SceneScheduler:
                     "degradation": degradation, "rollback_count": rollback,
                     "failed": failed, "rolled_back": sorted(rolled_back)}
 
-        # 计划书三、P3「全局最大回退次数 = 2 次」：已达上限即停止分发
+        # 三、P3「全局最大回退次数 = 2 次」：已达上限即停止分发
         if rollback >= MAX_ROLLBACKS:
             skipped.extend(chain)
             degradation.append(
@@ -527,7 +527,7 @@ class SceneScheduler:
     def _current_trace(self) -> Trace:
         from ai_butler.scheduler.observe import current_trace
         trace = current_trace()
-        if trace is None:                            # pragma: no cover — run() 总会绑定
+        if trace is None:                            # pragma: no cover — run 总会绑定
             raise SchedulerError("节点执行时没有绑定 Trace，请通过 SceneScheduler.run 调用")
         return trace
 
@@ -536,18 +536,18 @@ class SceneScheduler:
                   wiki_digest: Any = None, trace_id: str = "",
                   role: UserRole | None = None,
                   extra_state: Mapping[str, Any] | None = None) -> SchedulerResult:
-        """用户发起任意请求的入口（计划书三、P3 触发时机）。
+        """用户发起任意请求的入口（三、P3 触发时机）。
 
-        `role` 为本次任务的用户角色（会话鉴权可达时由上层传入）；
-        缺省沿用构造时的角色。角色参与每一次工具调用的三层权限求值（U45）。
+ `role` 为本次任务的用户角色（会话鉴权可达时由上层传入）；
+ 缺省沿用构造时的角色。角色参与每一次工具调用的三层权限求值。
 
-        `extra_state` 是入口层的**补参**通道（U111）：生产入口从用户原话里抽出的
-        `task_params` / `candidate_stops` 要能进 State，而它们既不是路由结论、
-        也不是工具产出。两条纪律：
-        - 只接受**非受保护字段**（路由、会话、鉴权相关一律拒绝），
-          否则入口就成了改写分发结论的后门；
-        - 缺省 None ⇒ 与接线前逐字一致，既有调用方零变化。
-        """
+ `extra_state` 是入口层的**补参**通道：生产入口从用户原话里抽出的
+ `task_params` / `candidate_stops` 要能进 State，而它们既不是路由结论、
+ 也不是工具产出。两条纪律：
+ - 只接受**非受保护字段**（路由、会话、鉴权相关一律拒绝），
+ 否则入口就成了改写分发结论的后门；
+ - 缺省 None ⇒ 与接线前逐字一致，既有调用方零变化。
+ """
         state = new_state(user_id=user_id, session_id=session_id, login_status=login_status,
                           jev_decision_result=None, wiki_digest=wiki_digest)
         state.update({"utterance": utterance, "labels": tuple(labels),
@@ -565,7 +565,7 @@ class SceneScheduler:
         # 每次任务重开工具调度计数：重复拦截与无增量判定都以「本次任务」为单位
         self.dispatcher.reset()
         # 权限上下文按任务重绑：角色可能因账号/会话而异，
-        # 且审计要能追溯到当次生效的角色（U45）。
+        # 且审计要能追溯到当次生效的角色。
         # 判空用 `is not None` 而非真值：UserRole.AUDITOR 的值为 0，
         # `role or self.role` 会把 auditor 静默降级成构造时角色 —— 真踩过。
         self.dispatcher.bind_permission(ToolPermission(
@@ -583,7 +583,7 @@ class SceneScheduler:
             final = await self._graph.ainvoke(state, {"recursion_limit": 24})
         summary = trace.finish()
         if self.journal is not None:
-            # summary 已含 trace_id/user_id/session_id（trace.summary() 的字段）
+            # summary 已含 trace_id/user_id/session_id（trace.summary 的字段）
             self.journal.session_end(**summary)
 
         decision = final.get("route_decision") or {}

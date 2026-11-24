@@ -70,13 +70,13 @@ from ai_butler.scheduler.vertical import (
 
 #: 路由标签集 = `QueryCategory` 的全部取值。
 #:
-#: 【文档未定义项 #1】计划书只说「Jev 输出结构化枚举标签」，没给清单。
-#: U74 的裁定是**不另造一套标签**：既然检索侧已经有 10 类且每类对应不同工具序列，
-#: 意图标签就用它。这样路由结论能**直接**被 `planner.plan()` 消费，
+#: 【文档未定义项 #1】只说「Jev 输出结构化枚举标签」，没给清单。
+#: 的裁定是**不另造一套标签**：既然检索侧已经有 10 类且每类对应不同工具序列，
+#: 意图标签就用它。这样路由结论能**直接**被 `planner.plan` 消费，
 #: 不需要一张「路由标签 → 查询分类」的翻译表（多一张表就多一处漂移）。
 INTENT_LABELS: tuple[str, ...] = tuple(c.value for c in QueryCategory)
 
-#: 阈值是否在人工标注的中文验证集上标定过。**U03 未完成，保持 False。**
+#: 阈值是否在人工标注的中文验证集上标定过。** 未完成，保持 False。**
 VECTOR_THRESHOLD_CALIBRATED = False
 
 #: 等待冷启动的最长时间（秒）。超过就降级到下一层，**不占用整层的 5s 超时预算**。
@@ -86,7 +86,7 @@ READY_WAIT_SECONDS = 0.5
 #:
 #: 为什么用书面语而不用口语：它是「类别原型」而不是「用户说法样本」。
 #: 代价是口语化提问的相似度会被拉低（实测：口语测试句命中率低于书面句），
-#: 所以阈值只能偏保守；等真实语料攒够再做标定（U03）。
+#: 所以阈值只能偏保守；等真实语料攒够再做标定。
 EXEMPLARS: dict[str, tuple[str, ...]] = {
     QueryCategory.IDENTITY_LOOKUP.value: (
         "请问订单号 12345 的当前状态",
@@ -217,18 +217,18 @@ EXEMPLARS: dict[str, tuple[str, ...]] = {
 def build_hard_rules() -> list[HardRule]:
     """把 `planner.CATEGORY_SIGNALS` 摊平成硬规则表。
 
-    **派生而不是手抄**：同一批正则存在两处，早晚会漂移（E-44 的形态）。
-    这里只做两件转换：
+ **派生而不是手抄**：同一批正则存在两处，早晚会漂移（ 的形态）。
+ 这里只做两件转换：
 
-    1. 同一分类的多条正则合并成一条交替式 —— 硬规则层只关心「命中哪一类」，
-       不关心命中该类的第几条；
-    2. 出现顺序 → 优先级。`HardRuleLayer` 按优先级降序试，于是「先出现在表里的
-       分类先判」，与 `planner.classify()` 的「表序即优先级」逐字一致。
+ 1. 同一分类的多条正则合并成一条交替式 —— 硬规则层只关心「命中哪一类」，
+ 不关心命中该类的第几条；
+ 2. 出现顺序 → 优先级。`HardRuleLayer` 按优先级降序试，于是「先出现在表里的
+ 分类先判」，与 `planner.classify` 的「表序即优先级」逐字一致。
 
-    不包含 `small_talk` 与 `multi_intent`：它们不是单条正则能表达的
-    （前者要「长度上限 + 寒暄词 + 无实体」，后者要「并列连接词 + 两类不同信号」），
-    交给 planner 自己的确定性判定，以及 L3 的示例语料。
-    """
+ 不包含 `small_talk` 与 `multi_intent`：它们不是单条正则能表达的
+ （前者要「长度上限 + 寒暄词 + 无实体」，后者要「并列连接词 + 两类不同信号」），
+ 交给 planner 自己的确定性判定，以及 L3 的示例语料。
+ """
     order: list[str] = []
     patterns: dict[str, list[str]] = {}
     for pattern, _name, category in CATEGORY_SIGNALS:
@@ -290,17 +290,17 @@ def _default_embedder_factory(settings: Settings):
 class LazyVectorLayer:
     """首次使用时才建索引的向量层，并支持**后台预热**。
 
-    **为什么懒**：`create_app` 会被几百个用例调用，构造期同步加载 BGE 会让
-    「跑一次测试」从秒级变成分钟级。
+ **为什么懒**：`create_app` 会被几百个用例调用，构造期同步加载 BGE 会让
+ 「跑一次测试」从秒级变成分钟级。
 
-    **为什么还要预热**：冷启动实测 —— 加载模型 6.9s + 建 100 句索引 2.8s ≈ **9.7s**，
-    而单层超时预算是 5s。也就是说「第一个请求顺手把模型加载了」这个想法不成立：
-    它必然撞超时，然后降级。所以预热放在装配后立刻用守护线程做（不阻塞启动），
-    把这段成本从**用户请求**挪到**进程启动**。
+ **为什么还要预热**：冷启动实测 —— 加载模型 6.9s + 建 100 句索引 2.8s ≈ **9.7s**，
+ 而单层超时预算是 5s。也就是说「第一个请求顺手把模型加载了」这个想法不成立：
+ 它必然撞超时，然后降级。所以预热放在装配后立刻用守护线程做（不阻塞启动），
+ 把这段成本从**用户请求**挪到**进程启动**。
 
-    冷启动窗口内（预热未完成）请求会看到一层 RouteError，路由据此降级到 L2/L1，
-    并把「向量层冷启动中」写进 `degradation_notes` —— 降级要留痕，不能静默。
-    """
+ 冷启动窗口内（预热未完成）请求会看到一层 RouteError，路由据此降级到 L2/L1，
+ 并把「向量层冷启动中」写进 `degradation_notes` —— 降级要留痕，不能静默。
+ """
 
     name = LAYER_VECTOR
 
@@ -320,9 +320,9 @@ class LazyVectorLayer:
     def _ensure(self) -> VectorLayer:
         """同步构建（会加载模型）。**必须在工作线程里调**，且可被并发调用。
 
-        并发安全按**资源粒度**加锁：同一个模型 + 同一个阈值只建一次，
-        不同阈值/不同嵌入器互不排队（一把全局锁会让 7 秒的加载阻塞无关请求）。
-        """
+ 并发安全按**资源粒度**加锁：同一个模型 + 同一个阈值只建一次，
+ 不同阈值/不同嵌入器互不排队（一把全局锁会让 7 秒的加载阻塞无关请求）。
+ """
         if self._layer is not None:
             return self._layer
 
@@ -394,9 +394,9 @@ def build_intent_router(settings: Settings, *, gateway: LLMGateway | None = None
                         on_shadow=None) -> IntentRouter | None:
     """装配意图路由。**唯一装配点** —— 测试直接断言它的输出。
 
-    返回 None 只在「总开关关闭」时发生，且调用方必须把这件事说出来，
-    不能悄悄退化成「只有正则分类」。
-    """
+ 返回 None 只在「总开关关闭」时发生，且调用方必须把这件事说出来，
+ 不能悄悄退化成「只有正则分类」。
+ """
     if not settings.intent_router_enable:
         return None
 
@@ -422,7 +422,7 @@ def build_intent_router(settings: Settings, *, gateway: LLMGateway | None = None
         vector_layer.start_warmup()
         layers.append(vector_layer)
 
-    # L4 垂类模型（U110）：默认不接，仅 `vertical_router_enable=true` 时接入，
+    # L4 垂类模型：默认不接，仅 `vertical_router_enable=true` 时接入，
     # 且必须排在 L3 之后（保持五层冻结顺序的子序列）。
     if settings.vertical_router_enable:
         layers.append(VerticalDispatchLayer(

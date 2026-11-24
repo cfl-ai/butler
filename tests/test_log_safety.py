@@ -25,7 +25,7 @@ def test_structured_payload_is_redacted():
     }
     out = redact(payload)
 
-    # 计划书明确保留 user_id 用于排障
+    # 设计明确保留 user_id 用于排障
     assert out["user_id"] == "u-10086"
     # 密钥类整体抹除，不做掩码
     assert out["password"] == ERASED
@@ -42,11 +42,11 @@ def test_structured_payload_is_redacted():
 def test_login_account_field_is_masked():
     """字段名叫 account 的日志必须脱敏。
 
-    这里原先是个**漏的洞**：security.py 里写好了 mask_account，
-    却从没被加进 log_safety 的 MASK_RULES ——
-    于是 {"account": "13800001111"} 原样进了日志。
-    （七、13「全链路日志…全部做隐私脱敏」。）
-    """
+ 这里原先是个**漏的洞**：security.py 里写好了 mask_account，
+ 却从没被加进 log_safety 的 MASK_RULES ——
+ 于是 {"account": "13800001111"} 原样进了日志。
+ 
+ """
     out = redact({"account": "13800001111", "账号": "my_login_name"})
     assert out["account"] == "13***11"
     assert "13800001111" not in str(out)
@@ -56,10 +56,10 @@ def test_login_account_field_is_masked():
 def test_account_no_still_uses_the_bank_masker():
     """规则表的**顺序**也要守住。
 
-    MASK_RULES 取第一个命中的规则，而 "account_no" 同时含有 "account"
-    与 "account_no" 两个关键字。银行卡那条必须排在账号那条之前 ——
-    调换顺序会把银行卡号按账号掩码处理，掩码强度下降。
-    """
+ MASK_RULES 取第一个命中的规则，而 "account_no" 同时含有 "account"
+ 与 "account_no" 两个关键字。银行卡那条必须排在账号那条之前 ——
+ 调换顺序会把银行卡号按账号掩码处理，掩码强度下降。
+ """
     from ai_butler.core.log_safety import _field_masker
     from ai_butler.core.security import mask_account, mask_bank_card
 

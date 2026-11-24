@@ -88,30 +88,30 @@ def _call(agent, state):
 def test_p9_decisions_are_registered_and_resolved():
     """P9 的开发内容在原文里没有定义项，必须先登记台账再动手。
 
-    U50（歧义样本的学习回流口径）同样挂在 P9 阶段下 ——
-    2026-10-19 新增该条时本断言没有同步，守护红了两周没人发现，
-    是「写了没接上」的又一形态（E-65）：**新增台账条目必须同步这里的集合**。
-    """
+ （歧义样本的学习回流口径）同样挂在 P9 阶段下 ——
+ 2026-10-19 新增该条时本断言没有同步，守护红了两周没人发现，
+ 是「写了没接上」的又一形态：**新增台账条目必须同步这里的集合**。
+ """
     keys = {d.key for d in decisions.DECISIONS if d.phase == "P9"}
-    # U76 = 评测缺陷单与处置路由（2026-10-25 补，见 evaluation/defects.py）
-    # U79 = 复评的两个判据与「不知道」的处置（2026-10-25 补，见 evaluation/recheck.py）
-    # U84 = 首轮痕迹的来源（2026-10-25 补，见 evaluation/journal_source.py）
-    # U91 = 在线聊天链路痕迹埋点（2026-10-25 补，见 app.py 的 _journal_session_trace）
+    # = 评测缺陷单与处置路由（2026-10-25 补，见 evaluation/defects.py）
+    # = 复评的两个判据与「不知道」的处置（2026-10-25 补，见 evaluation/recheck.py）
+    # = 首轮痕迹的来源（2026-10-25 补，见 evaluation/journal_source.py）
+    # = 在线聊天链路痕迹埋点（2026-10-25 补，见 app.py 的 _journal_session_trace）
     assert keys == {"U28", "U29", "U30", "U31", "U50", "U55", "U56", "U76", "U79",
                     "U84", "U91"}
     for key in keys:
         assert decisions.get(key).status == decisions.RESOLVED
-    # 台账允许存在**未裁定**项 —— 它登记的本就是「计划书没定义、不能自行脑补」的项。
+    # 台账允许存在**未裁定**项 —— 它登记的本就是「没定义、不能自行脑补」的项。
     # 但必须逐条点名：安静地多出一条 PENDING，等于有人在偷偷记假账。
-    # U111 = P3 主状态机（SceneScheduler）没有生产装配点，HTTP 入口形态计划书未定义，
-    #        裁定「不擅自新增 API」之后仍待裁定入口语义 —— 详见 decisions.get("U111")。
-    # U116（Web 对话页）已于 2026-10-27 交付（`/ui` + 单文件页），不再是 PENDING。
-    # U111 已于 2026-10-27 补全：`app.build_entry_scene` 接上主状态机（对话入口顺序
-    #     主状态机 → FC → 常规检索），台账 123 条**全部裁定**，不再有 PENDING。
+    # = P3 主状态机（SceneScheduler）没有生产装配点，HTTP 入口形态文档未定义，
+    # 裁定「不擅自新增 API」之后仍待裁定入口语义 —— 详见 decisions.get("")。
+    # （Web 对话页）已于 2026-10-27 交付（`/ui` + 单文件页），不再是 PENDING。
+    # 已于 2026-10-27 补全：`app.build_entry_scene` 接上主状态机（对话入口顺序
+    # 主状态机 → FC → 常规检索），台账 123 条**全部裁定**，不再有 PENDING。
     assert {d.key for d in decisions.pending()} == set(), decisions.pending()
 
 
-# ============================== 脱敏（U30 / 三、P9）============================== #
+# ============================== 脱敏（ / 三、P9）============================== #
 def test_redactor_masks_all_required_kinds():
     redactor = Redactor()
     raw = "用户 user-A 手机 13812345678 邮箱 alice@example.com 身份证 11010119900307123X"
@@ -160,7 +160,7 @@ def test_contains_plaintext_identity_helper():
     assert contains_plaintext_identity("普通文本") is False
 
 
-# ============================== 指标（三、P9 + U31）============================== #
+# ============================== 指标（三、P9 + ）============================== #
 def test_metric_keys_are_a_frozen_contract():
     """口径一旦变化历史就不可比，故 key 是稳定契约。"""
     assert METRIC_KEYS == (JEV_INTENT_HIT_RATE, MULTI_INTENT_ACCURACY,
@@ -252,7 +252,7 @@ def test_board_has_all_six_metrics_and_is_redacted():
 
 # ============================== 案例分类（三、P9）============================== #
 def test_jev_and_wiki_cases_have_independent_categories():
-    """计划书点名「Jev 错误、Wiki 冲突案例独立分类」，不能被归进 general。"""
+    """设计点名「Jev 错误、Wiki 冲突案例独立分类」，不能被归进 general。"""
     assert CASE_KINDS == ("good", "bad")
     assert set(CASE_CATEGORIES) == {CATEGORY_JEV_ERROR, CATEGORY_WIKI_CONFLICT,
                                     CATEGORY_GENERAL}
@@ -292,9 +292,9 @@ def test_support_ratio():
     assert pool.support_ratio() == pytest.approx(2 / 3)
 
 
-# ============================== SFT 数据集（三、P9 + U29）============================== #
+# ============================== SFT 数据集（三、P9 + ）============================== #
 def test_forbidden_source_is_rejected_not_filtered():
-    """计划书「禁止把私有 Vault 原始隐私放入训练集」——是**拒绝**，不是过滤。"""
+    """「禁止把私有 Vault 原始隐私放入训练集」——是**拒绝**，不是过滤。"""
     assert FORBIDDEN_SOURCES == ("private_vault",)
     assert ALLOWED_SOURCES == ("public_workspace",)
     with pytest.raises(DatasetError) as ei:
@@ -351,13 +351,13 @@ def test_dataset_redacts_rows_and_reports_no_identity():
 
 
 def test_offline_link_must_not_touch_private_vault():
-    """计划书三、P10「离线链路严禁访问未脱敏用户私有 Vault」。"""
+    """三、P10「离线链路严禁访问未脱敏用户私有 Vault」。"""
     with pytest.raises(DatasetError):
         assert_offline_source(scope="vault")
     assert_offline_source(scope="public") is None
 
 
-# ============================== 微调流水线（U28）============================== #
+# ============================== 微调流水线============================== #
 def test_methods_and_targets_follow_the_plan_and_u28():
     assert METHODS == ("lora", "qlora")
     assert TARGETS == (TARGET_JEV_TEMPLATE, TARGET_VERTICAL_MODEL)
@@ -524,13 +524,13 @@ def test_agent_reports_redaction_layers(wiki):
 def test_regex_layer_flag_is_derived_not_hardcoded(monkeypatch):
     """正则层标志必须**随实际规则变化**。
 
-    这条是给上面那条做的补充：上面只断言默认情况下是 True，
-    一个恒返回 True 的实现同样能过。这里把规则表清空，
-    标志就必须变成 False —— 否则说明它是写死的。
+ 这条是给上面那条做的补充：上面只断言默认情况下是 True，
+ 一个恒返回 True 的实现同样能过。这里把规则表清空，
+ 标志就必须变成 False —— 否则说明它是写死的。
 
-    （原先 p9 的 digest 里正是写死的 regex_layer: True：
-    规则没了也照样报「已脱敏」。）
-    """
+ （原先 p9 的 digest 里正是写死的 regex_layer: True：
+ 规则没了也照样报「已脱敏」。）
+ """
     from ai_butler.evaluation import redaction as redaction_module
 
     monkeypatch.setattr(redaction_module, "_PATTERNS", ())

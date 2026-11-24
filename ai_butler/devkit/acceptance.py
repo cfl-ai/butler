@@ -40,7 +40,7 @@ class GlobalParam:
             raise ValueError(f"未知参数组 {self.group!r}，可选 {list(GROUP_NAMES)}")
 
 
-#: 表 13 全部硬参数（数值逐字取自计划书，**不得改动**）
+#: 表 13 全部硬参数（数值逐字取自登记，**不得改动**）
 TABLE_13: tuple[GlobalParam, ...] = (
     # ---- 五层路由 & Agent 生态 ----
     GlobalParam("max_task_rollback_times", 2, GROUP_ROUTING,
@@ -101,9 +101,9 @@ def params_by_group(group: str) -> tuple[GlobalParam, ...]:
 def actual_value(param: GlobalParam, *, settings: Any = None) -> Any:
     """读代码里的实际值。
 
-    可配置参数从 settings 取；行为固化的参数从 enforced_at 指向的符号取，
-    取不到时返回 None —— **取不到就是问题**，不糊弄过去。
-    """
+ 可配置参数从 settings 取；行为固化的参数从 enforced_at 指向的符号取，
+ 取不到时返回 None —— **取不到就是问题**，不糊弄过去。
+ """
     if param.configurable:
         if settings is None:
             return _field_default(param.name)
@@ -135,10 +135,10 @@ class ParamMismatch:
 
 
 def verify_table_13(*, settings: Any = None) -> list[ParamMismatch]:
-    """逐条核对表 13：计划书值 vs 代码值。
+    """逐条核对表 13：值 vs 代码值。
 
-    **没有落点的参数会被报出来**，而不是静默跳过。
-    """
+ **没有落点的参数会被报出来**，而不是静默跳过。
+ """
     problems: list[ParamMismatch] = []
     for param in TABLE_13:
         if not param.enforced_at:
@@ -194,11 +194,11 @@ REUSABLE_ASSETS: tuple[ReusableAsset, ...] = (
     ReusableAsset("三档预算 + 免密 + 聚合一键支付智能引擎",
                   "ai_butler.agents.p8_smart_payment"),
     ReusableAsset(
-        # **注意名称与计划书不同**：计划书原文是「基于 Claude Code 的
+        # **注意名称与不同**：原始需求是「基于 Claude Code 的
         # 全自动系统自进化闭环」，这里刻意去掉了「基于 Claude Code」——
-        # 裁定 U08（人工授权）明令「**不引入 Claude Code 本体**，
+        # 裁定 （人工授权）明令「**不引入 Claude Code 本体**，
         # 仅借用其设计思维，自研 Agentic Loop」。
-        # 这不是抄漏，是照裁定改的；照着计划书「修正」回去会与 U08 冲突。
+        # 这不是抄漏，是照裁定改的；照着「修正」回去会与 冲突。
         "全自动系统自进化闭环", "ai_butler.harness",
         "自研 Agentic Loop，非 Claude Code 本体（裁定 U08）"),
 )
