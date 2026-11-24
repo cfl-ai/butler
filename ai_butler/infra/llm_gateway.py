@@ -286,6 +286,10 @@ class OllamaProvider(Provider):
             "model": model or self.settings.ollama_model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "stream": stream,
+            # 模型常驻内存：Ollama 默认 5 分钟无请求即卸载，下次请求要重载
+            # （小模型数秒、大模型数十秒）——这是「时快时慢」的主要来源。
+            # keep_alive 让模型常驻，用首字节延迟的方差换一份显存/内存占用。
+            "keep_alive": "30m",
             **({"options": opts} if opts else {}),
             **({"tools": [dict(t) for t in tools]} if tools else {}),
         }
