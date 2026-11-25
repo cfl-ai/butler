@@ -256,6 +256,82 @@ def test_unregistered_tool_call_is_recorded_not_crashed():
     assert out.ok is True
 
 
+def test_readonly_round_runs_tools_concurrently():
+    """全 L0 轮次并发执行：Barrier 证明两条工具真的在同窗口并行。
+
+    两个 handler 都在 threading.Barrier(2) 上等对方——只有并行执行才能
+    双双通过；若退化成串行，先到的会在 timeout 后 BrokenBarrierError，
+    该工具结果转失败，断言即红。
+    """
+    import threading
+    barrier = threading.Barrier(2, timeout=5)
+
+    def barrier_tool(payload=None, **kw):
+        barrier.wait()
+        return {"ok": True}
+
+    registry = ToolRegistry()
+    for name in ("ra", "rb"):
+        registry.register(name, barrier_tool, description="只读探针",
+                          params_schema=_SCHEMA, required=CapabilityLevel.L0_READ)
+    dispatcher = ToolDispatcher(registry)
+    dispatcher.bind_permission(ToolPermission(
+        agent=AgentIdentity(key="test_agent", level=CapabilityLevel.L2_SIDE_EFFECT),
+        role=UserRole.MEMBER))
+    gateway = FakeGateway([
+        _reply(tool_calls=[ModelToolCall(name="ra", arguments={}),
+                           ModelToolCall(name="rb", arguments={})]),
+        _reply(text="完成"),
+    ])
+    loop = FunctionCallLoop(gateway, dispatcher, max_rounds=3)
+    out = asyncio.run(loop.run(user_id="user-A",
+                               messages=[ChatMessage(role="user", content="x")],
+                               tools=[]))
+    assert out.text == "完成"
+    # 结果必须按输入顺序合并，不因并发而乱序
+    assert [r.call.name for r in out.tool_results] == ["ra", "rb"]
+    assert all(r.ok for r in out.tool_results)
+
+
+def test_mixed_writeread_round_stays_serial():
+    """混有 L1+ 的轮次保持串行：写路径与审批票的顺序语义不能冒险。"""
+    import threading
+    barrier = threading.Barrier(2, timeout=1)
+
+    def slow_read(payload=None, **kw):
+        barrier.wait()
+        return {"ok": True}
+
+    def write_tool(payload=None, **kw):
+        return {"written": True}
+
+    registry = ToolRegistry()
+    registry.register("read_slow", slow_read, description="只读",
+                      params_schema=_SCHEMA, required=CapabilityLevel.L0_READ)
+    registry.register("write_thing", write_tool, description="写",
+                      params_schema=_SCHEMA, required=CapabilityLevel.L1_WRITE_OWN)
+    dispatcher = ToolDispatcher(registry)
+    dispatcher.bind_permission(ToolPermission(
+        agent=AgentIdentity(key="test_agent", level=CapabilityLevel.L2_SIDE_EFFECT),
+        role=UserRole.MEMBER))
+    gateway = FakeGateway([
+        _reply(tool_calls=[ModelToolCall(name="read_slow", arguments={}),
+                           ModelToolCall(name="write_thing", arguments={})]),
+        _reply(text="完成"),
+    ])
+    loop = FunctionCallLoop(gateway, dispatcher, max_rounds=3)
+    out = asyncio.run(loop.run(user_id="user-A",
+                               messages=[ChatMessage(role="user", content="x")],
+                               tools=[]))
+    assert out.text == "完成"
+    assert [r.call.name for r in out.tool_results] == ["read_slow", "write_thing"]
+    by_name = {r.call.name: r for r in out.tool_results}
+    # 证明点：read_slow 独自等待 Barrier 直至超时破裂——只有串行执行才会
+    # 这样（若被并发，两条调用会同时到齐 Barrier 而双双通过）。
+    assert by_name["read_slow"].ok is False
+    assert "BrokenBarrierError" in (by_name["read_slow"].note or "")
+
+
 def test_loop_result_renders_failure_with_reason():
     from ai_butler.scheduler.tool_loop import FunctionCallLoop as FCL
     from ai_butler.scheduler.tools import ToolResult
@@ -346,3 +422,126 @@ def test_route_for_tools_refuses_when_no_tool_provider_is_configured():
     kwargs, why = _route_for_tools(LLMGateway(settings, None), settings, {})
     assert kwargs is None
     assert why
+
+
+# --------------------- P1-C 并发执行段的副作用验证 --------------------- #
+def test_concurrent_round_keeps_dispatcher_accounting_consistent():
+    """数据一致性：并发轮结束后 dispatcher 记账与缓存必须完整、无丢失。"""
+    registry = ToolRegistry()
+    for name in ("ca", "cb"):
+        registry.register(name, lambda payload=None, **kw: {"ok": True},
+                          description="只读", params_schema=_SCHEMA,
+                          required=CapabilityLevel.L0_READ)
+    dispatcher = ToolDispatcher(registry)
+    dispatcher.bind_permission(ToolPermission(
+        agent=AgentIdentity(key="t", level=CapabilityLevel.L2_SIDE_EFFECT),
+        role=UserRole.MEMBER))
+    gateway = FakeGateway([
+        _reply(tool_calls=[ModelToolCall(name="ca", arguments={}),
+                           ModelToolCall(name="cb", arguments={})]),
+        _reply(text="done"),
+    ])
+    loop = FunctionCallLoop(gateway, dispatcher, max_rounds=3)
+    out = asyncio.run(loop.run(user_id="u",
+                               messages=[ChatMessage(role="user", content="x")],
+                               tools=[]))
+    assert out.text == "done"
+    # 记账：两条都进 history，条数与成功数一致
+    assert dispatcher.call_count == 2
+    assert len(dispatcher.history()) == 2
+    assert all(r.ok for r in dispatcher.history())
+    # 缓存：两个签名都已登记（供后续重复拦截）
+    assert len(dispatcher._cache) == 2
+
+
+def test_concurrent_round_one_tool_fails_other_succeeds_order_kept():
+    """错误处理：并发轮中一个工具抛异常，另一个正常——失败进 degradation，
+    成功进结果，输入顺序在混合结果下依然保持。"""
+    registry = ToolRegistry()
+    registry.register("good", lambda payload=None, **kw: {"n": 1},
+                      description="只读", params_schema=_SCHEMA,
+                      required=CapabilityLevel.L0_READ)
+    def boom(payload=None, **kw):
+        raise RuntimeError("数据库连接失败")
+    registry.register("bad", boom, description="只读", params_schema=_SCHEMA,
+                      required=CapabilityLevel.L0_READ)
+    dispatcher = ToolDispatcher(registry)
+    dispatcher.bind_permission(ToolPermission(
+        agent=AgentIdentity(key="t", level=CapabilityLevel.L2_SIDE_EFFECT),
+        role=UserRole.MEMBER))
+    gateway = FakeGateway([
+        _reply(tool_calls=[ModelToolCall(name="bad", arguments={}),
+                           ModelToolCall(name="good", arguments={})]),
+        _reply(text="部分完成"),
+    ])
+    loop = FunctionCallLoop(gateway, dispatcher, max_rounds=3)
+    out = asyncio.run(loop.run(user_id="u",
+                               messages=[ChatMessage(role="user", content="x")],
+                               tools=[]))
+    assert out.text == "部分完成"
+    # dispatch 把 handler 异常转成 ok=False 的 ToolResult：失败者也进结果，
+    # 且输入顺序在混合结果下依然保持
+    assert [r.call.name for r in out.tool_results] == ["bad", "good"]
+    by_name = {r.call.name: r for r in out.tool_results}
+    assert by_name["bad"].ok is False and "RuntimeError" in (by_name["bad"].note or "")
+    assert by_name["good"].ok is True
+    assert any("bad" in n for n in out.degradation)              # 失败原因回灌模型
+    assert out.ok is True                                        # 单工具失败不终止回路
+
+
+def test_concurrent_round_duplicate_signatures_both_succeed():
+    """同签名并发轮：串行路径会命中重复拦截，并发路径下两线程可能同时
+    未命中缓存而都执行——对 L0 只读工具无害（幂等）。必须不崩、结果齐全、
+    顺序保持。这条测试同时锁定并发与串行两条路径的公共行为。"""
+    calls = {"n": 0}
+    def counting(payload=None, **kw):
+        calls["n"] += 1
+        return {"n": calls["n"]}
+    registry = ToolRegistry()
+    registry.register("dup", counting, description="只读", params_schema=_SCHEMA,
+                      required=CapabilityLevel.L0_READ)
+    dispatcher = ToolDispatcher(registry)
+    dispatcher.bind_permission(ToolPermission(
+        agent=AgentIdentity(key="t", level=CapabilityLevel.L2_SIDE_EFFECT),
+        role=UserRole.MEMBER))
+    gateway = FakeGateway([
+        _reply(tool_calls=[ModelToolCall(name="dup", arguments={}),
+                           ModelToolCall(name="dup", arguments={})]),
+        _reply(text="ok"),
+    ])
+    loop = FunctionCallLoop(gateway, dispatcher, max_rounds=3)
+    out = asyncio.run(loop.run(user_id="u",
+                               messages=[ChatMessage(role="user", content="x")],
+                               tools=[]))
+    assert out.text == "ok"
+    assert len(out.tool_results) == 2
+    assert all(r.call.name == "dup" for r in out.tool_results)
+    # 幂等性：无论执行几次，输出语义一致、无异常泄漏
+    assert all(r.ok for r in out.tool_results)
+
+
+def test_concurrent_loops_leave_no_lingering_threads():
+    """资源泄漏：多次并发轮回合跑完后线程数回落到基线
+    （asyncio.run 关闭默认线程池，to_thread 的线程应被回收）。"""
+    import threading
+    registry = ToolRegistry()
+    registry.register("tiny", lambda payload=None, **kw: {"ok": True},
+                      description="只读", params_schema=_SCHEMA,
+                      required=CapabilityLevel.L0_READ)
+    dispatcher = ToolDispatcher(registry)
+    dispatcher.bind_permission(ToolPermission(
+        agent=AgentIdentity(key="t", level=CapabilityLevel.L2_SIDE_EFFECT),
+        role=UserRole.MEMBER))
+    baseline = threading.active_count()
+    for _ in range(3):
+        gateway = FakeGateway([
+            _reply(tool_calls=[ModelToolCall(name="tiny", arguments={}),
+                               ModelToolCall(name="tiny", arguments={"k": 1})]),
+            _reply(text="ok"),
+        ])
+        loop = FunctionCallLoop(gateway, dispatcher, max_rounds=2)
+        out = asyncio.run(loop.run(user_id="u",
+                                   messages=[ChatMessage(role="user", content="x")],
+                                   tools=[]))
+        assert out.ok is True
+    assert threading.active_count() == baseline   # 无泄漏

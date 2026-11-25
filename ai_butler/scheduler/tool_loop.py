@@ -29,11 +29,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
 from ai_butler.core.config import Settings, get_settings
-from ai_butler.infra.llm_gateway import ChatMessage, LLMGateway, ToolUnsupportedError
+from ai_butler.core.permissions import CapabilityLevel
+from ai_butler.infra.llm_gateway import (
+    ChatMessage,
+    LLMGateway,
+    ModelToolCall,
+    ToolUnsupportedError,
+)
 from ai_butler.scheduler.tools import ToolCall, ToolDispatcher, ToolResult
 
 #: 单次工具结果回灌的字符上限。工具输出可能极长（例如整篇素材页），
@@ -88,24 +95,21 @@ class FunctionCallLoop:
                                       tool_results=tuple(results),
                                       degradation=tuple(notes), truncated=False)
 
-            for call in reply.tool_calls:
+            for call, outcome in await self._execute_round(reply.tool_calls, user_id):
                 # **模型是不可信调用方**：它会叫错工具名、会传错参数 —— 这不是异常，
                 # 是常态。这类错误必须「记下来 + 告诉模型」，而不是让整条回路崩掉。
                 # 守卫上限 / 权限拒绝由 dispatcher 以 ToolResult 表达，
                 # 而"工具不存在"这类结构化异常在 dispatch 里是直接抛出，
                 # 这里把它降成一次失败的工具结果。
-                try:
-                    result = self.dispatcher.dispatch(
-                        ToolCall(name=call.name, payload=dict(call.arguments)),
-                        user_id=user_id)
-                except Exception as exc:                # noqa: BLE001 — 单工具失败不终止回路
+                if isinstance(outcome, BaseException):
                     notes.append(
-                        f"工具 {call.name} 调用失败：{type(exc).__name__}: {exc}")
+                        f"工具 {call.name} 调用失败：{type(outcome).__name__}: {outcome}")
                     convo.append(ChatMessage(
                         role="user",
                         content=f"[工具调用结果] {call.name}：调用失败"
-                                f"（{type(exc).__name__}: {exc}）—— 请换一种方式或改调其他工具"))
+                                f"（{type(outcome).__name__}: {outcome}）—— 请换一种方式或改调其他工具"))
                     continue
+                result = outcome
                 results.append(result)
                 if not result.ok:
                     # 工具失败的**原因**要回到模型视野里，否则模型会以为调用成功继续编。
@@ -119,6 +123,54 @@ class FunctionCallLoop:
         return ToolLoopResult(
             text="", rounds=self.max_rounds, tool_results=tuple(results),
             degradation=tuple(notes), truncated=True)
+
+    # ---------------- 执行段 ---------------- #
+    def _all_readonly(self, calls: Sequence[ModelToolCall]) -> bool:
+        """一轮里的工具是否**全部**为 L0（只读检索）。
+
+        任一工具未登记即视为非只读（未知工具的 dispatch 会抛异常，
+        走串行路径让它按既有语义降级成失败结果，而不是冒进并发）。
+        """
+        try:
+            return all(self.dispatcher.registry.get(c.name).required
+                       == CapabilityLevel.L0_READ for c in calls)
+        except Exception:
+            return False
+
+    async def _execute_round(
+            self, calls: Sequence[Any],
+            user_id: str) -> list[tuple[Any, Any]]:
+        """执行一轮工具调用，返回 [(call, ToolResult | Exception)]，**按输入顺序**。
+
+        并发只给「全 L0 且多于一个」的轮次：L0 工具重复执行无副作用，
+        dispatcher 记账字段（_cache/_calls/_streak）在 GIL 下单操作原子，
+        竞态最多造成上限偏差 ±1 与同参重复执行，均无害。
+        混有 L1+ 的轮次保持串行——写路径与审批票的顺序语义不能冒险。
+        dispatch 是同步方法，经 asyncio.to_thread 卸到线程池才真正并行，
+        否则 gather 里的协程会因从不让出事件循环而退化为顺序执行。
+        """
+        if len(calls) > 1 and self._all_readonly(calls):
+
+            async def one(call):
+                try:
+                    return await asyncio.to_thread(
+                        self.dispatcher.dispatch,
+                        ToolCall(name=call.name, payload=dict(call.arguments)),
+                        user_id=user_id)
+                except Exception as exc:            # noqa: BLE001 — 单工具失败不终止回路
+                    return exc
+
+            return list(zip(calls, await asyncio.gather(*[one(c) for c in calls])))
+
+        outcomes: list[tuple[Any, Any]] = []
+        for call in calls:
+            try:
+                outcomes.append((call, self.dispatcher.dispatch(
+                    ToolCall(name=call.name, payload=dict(call.arguments)),
+                    user_id=user_id)))
+            except Exception as exc:                # noqa: BLE001 — 单工具失败不终止回路
+                outcomes.append((call, exc))
+        return outcomes
 
     @staticmethod
     def _render(name: str, result: ToolResult) -> str:
