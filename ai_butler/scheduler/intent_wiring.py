@@ -59,6 +59,7 @@ from ai_butler.scheduler.router import (
     HardRuleLayer,
     IntentRouter,
     JevLayer,
+    MemoizedIntentLayer,
     RouteError,
     VectorLayer,
 )
@@ -404,7 +405,8 @@ def build_intent_router(settings: Settings, *, gateway: LLMGateway | None = None
 
     rules = build_hard_rules()
     if rules:
-        layers.append(HardRuleLayer(rules))
+        # 确定性层包 verdict 记忆化：高频意图第二次起 ~0ms（router.MemoizedIntentLayer）
+        layers.append(MemoizedIntentLayer(HardRuleLayer(rules)))
 
     if settings.jev_enable and gateway is not None:
         # 影子态由构造参数决定（旁路），不再依赖「决策拿回来之后再判」
@@ -420,13 +422,15 @@ def build_intent_router(settings: Settings, *, gateway: LLMGateway | None = None
                                        threshold=settings.intent_vector_threshold,
                                        exemplars=EXEMPLARS, cache_key=key)
         vector_layer.start_warmup()
-        layers.append(vector_layer)
+        # embedding 编码是逐请求的真实开销，同句复用缓存判定
+        layers.append(MemoizedIntentLayer(vector_layer))
 
     # L4 垂类模型：默认不接，仅 `vertical_router_enable=true` 时接入，
     # 且必须排在 L3 之后（保持五层冻结顺序的子序列）。
     if settings.vertical_router_enable:
-        layers.append(VerticalDispatchLayer(
-            build_vertical_model(), threshold=settings.vertical_threshold))
+        layers.append(MemoizedIntentLayer(
+            VerticalDispatchLayer(
+                build_vertical_model(), threshold=settings.vertical_threshold)))
 
     if not layers:
         return None

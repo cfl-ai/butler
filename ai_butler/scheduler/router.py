@@ -456,6 +456,73 @@ class LLMFallbackLayer:
 
 
 # --------------------------------------------------------------------------- #
+# 层内 verdict 记忆化（提速：重复高频意图跳过重复计算）
+# --------------------------------------------------------------------------- #
+#: 缓存条目存活时长（秒）。路由输入是短句，5~10 分钟足够覆盖会话内的
+#: 重复表述；过期重新计算，避免长期语义漂移被冻在旧判定里。
+MEMO_TTL_SECONDS = 600.0
+#: 缓存容量上限。超出即整体清空（简单粗暴但足够：路由层键空间是
+#: 「utterance × labels × user_id」，真实流量下很难撞满 2048 条）。
+MEMO_MAX_ENTRIES = 2048
+
+
+class MemoizedIntentLayer:
+    """确定性路由层的 verdict 缓存包装。
+
+    **只包装确定性层**（硬规则 / 向量 / 垂类小模型）：同一 utterance 在
+    同一标签面下的判定是纯函数，重复计算纯属浪费 —— 高频意图第二次
+    起就是字典查找（~0ms），向量层的 embedding 编码是真实开销。
+    Jev 影子层**不包**：影子模式本身零阻塞，正常模式的决策带时间性
+    语义，缓存会冻结旧判定。
+
+    五层冻结不变：这是对既有层的**包装**，不新增层 —— `name` 透传
+    被包装层，attempts 归属与降级语义完全一致。缓存键含 user_id：
+    层的判定虽只依赖 utterance 与标签面，但为后续可能的个性化层
+    留出安全余量，也避免跨用户的输入意外共享判定。
+    """
+
+    def __init__(self, inner: IntentLayer, *, ttl_seconds: float = MEMO_TTL_SECONDS,
+                 max_entries: int = MEMO_MAX_ENTRIES) -> None:
+        self._inner = inner
+        self.name = inner.name            # 透传：编排层无感知
+        self._ttl = ttl_seconds
+        self._max = max_entries
+        self._cache: dict[tuple[str, str, tuple[str, ...]],
+                          tuple[float, LayerVerdict]] = {}
+        #: 命中计数：可观测（测试与运营都想知道缓存到底省了多少）
+        self.hits = 0
+        self.misses = 0
+
+    @staticmethod
+    def _key(request: RouteRequest) -> tuple[str, str, tuple[str, ...]]:
+        labels = tuple(sorted(request.labels))
+        return (request.utterance, request.user_id, labels)
+
+    async def evaluate(self, request: RouteRequest) -> LayerVerdict | None:
+        key = self._key(request)
+        now = time.monotonic()
+        cached = self._cache.get(key)
+        if cached is not None:
+            stored_at, verdict = cached
+            if now - stored_at <= self._ttl:
+                self.hits += 1
+                return verdict
+            self._cache.pop(key, None)        # 过期条目顺手清掉
+        self.misses += 1
+        verdict = await self._inner.evaluate(request)
+        if verdict is not None:
+            if len(self._cache) >= self._max:
+                self._cache.clear()           # 全量清空：比 LRU 逐条驱逐简单且够用
+            self._cache[key] = (now, verdict)
+        return verdict
+
+    @property
+    def hit_rate(self) -> float:
+        total = self.hits + self.misses
+        return self.hits / total if total else 0.0
+
+
+# --------------------------------------------------------------------------- #
 # 路由编排
 # --------------------------------------------------------------------------- #
 class IntentRouter:

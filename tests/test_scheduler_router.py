@@ -379,3 +379,93 @@ def test_default_layers_keeps_frozen_relative_order():
 
 def test_default_layer_timeout_is_sane():
     assert 0 < DEFAULT_LAYER_TIMEOUT_SECONDS <= 30
+
+
+# --------------------------- P1-D：层内 verdict 记忆化 --------------------------- #
+class _CountingLayer:
+    """记录 evaluate 调用次数的假层，返回固定 verdict。"""
+
+    name = LAYER_HARD_RULE
+
+    def __init__(self, verdict: LayerVerdict | None) -> None:
+        self.verdict = verdict
+        self.calls = 0
+
+    async def evaluate(self, request):
+        self.calls += 1
+        return self.verdict
+
+
+def test_memoized_layer_returns_identical_verdict_and_counts_hits():
+    """同请求第二次 evaluate 必须命中缓存：内层只被调用一次，verdict 全等。"""
+    from ai_butler.scheduler.router import MemoizedIntentLayer
+
+    verdict = LayerVerdict(accepted=True, label="ask_weather", confidence=1.0,
+                           note="硬规则命中")
+    inner = _CountingLayer(verdict)
+    memo = MemoizedIntentLayer(inner)
+    r1 = _req("今天杭州天气怎么样")
+    v1 = _run(asyncio.new_event_loop(), memo.evaluate(r1))
+    v2 = _run(asyncio.new_event_loop(), memo.evaluate(_req("今天杭州天气怎么样")))
+    assert inner.calls == 1                    # 内层只算了一次
+    assert v1 == v2 == verdict                 # 命中返回同一份 frozen verdict
+    assert memo.hits == 1 and memo.misses == 1
+    assert memo.hit_rate == 0.5
+    assert memo.name == LAYER_HARD_RULE        # name 透传，编排层无感知
+
+
+def test_memoized_layer_keys_on_user_id_and_labels():
+    """user_id 或标签面不同 → 不同缓存键，各自回源内层。"""
+    from ai_butler.scheduler.router import MemoizedIntentLayer
+
+    inner = _CountingLayer(LayerVerdict(accepted=True, label="ask_weather",
+                                        confidence=1.0))
+    memo = MemoizedIntentLayer(inner)
+    loop = asyncio.new_event_loop()
+    _run(loop, memo.evaluate(_req("查天气")))
+    _run(loop, memo.evaluate(RouteRequest(user_id="user-B", session_id="s",
+                                          utterance="查天气", labels=LABELS)))
+    _run(loop, memo.evaluate(_req("查天气", labels=("ask_weather",))))
+    assert inner.calls == 3
+    assert memo.hits == 0 and memo.misses == 3
+
+
+def test_memoized_layer_ttl_expiry_and_none_not_cached():
+    """TTL 过期后重新回源；内层 None（未命中）不进缓存、每次都重试。"""
+    import time as _time
+    from ai_butler.scheduler.router import MemoizedIntentLayer
+
+    inner = _CountingLayer(LayerVerdict(accepted=True, label="ask_weather",
+                                        confidence=1.0))
+    memo = MemoizedIntentLayer(inner, ttl_seconds=0.02)
+    loop = asyncio.new_event_loop()
+    _run(loop, memo.evaluate(_req("查天气")))
+    _run(loop, memo.evaluate(_req("查天气")))
+    assert inner.calls == 1
+    _time.sleep(0.03)                          # 越过 TTL
+    _run(loop, memo.evaluate(_req("查天气")))
+    assert inner.calls == 2
+
+    none_layer = _CountingLayer(None)
+    memo2 = MemoizedIntentLayer(none_layer)
+    _run(loop, memo2.evaluate(_req("没命中的话")))
+    _run(loop, memo2.evaluate(_req("没命中的话")))
+    assert none_layer.calls == 2               # None 不缓存：层语义是「本层放弃」，
+    loop.close()                               # 下游可能已变，必须每次重问
+
+
+def test_memoized_layer_capacity_clears_and_stays_correct():
+    """撞容量上限即全量清空：行为正确性优先于缓存寿命。"""
+    from ai_butler.scheduler.router import MemoizedIntentLayer
+
+    inner = _CountingLayer(LayerVerdict(accepted=True, label="ask_weather",
+                                        confidence=1.0))
+    memo = MemoizedIntentLayer(inner, max_entries=2)
+    loop = asyncio.new_event_loop()
+    for text in ("问句一", "问句二", "问句三"):
+        _run(loop, memo.evaluate(_req(text)))
+    assert inner.calls == 3
+    # 清空后重问「问句一」要回源（旧条目已被清掉）
+    _run(loop, memo.evaluate(_req("问句一")))
+    assert inner.calls == 4
+    loop.close()

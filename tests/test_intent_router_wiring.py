@@ -232,7 +232,10 @@ def test_assembly_does_not_block_on_model_load(settings):
     elapsed = time.perf_counter() - started
 
     assert elapsed < 0.2, f"装配被模型加载阻塞了 {elapsed:.2f}s"
-    vector = [l for l in router.layers if l.name == LAYER_VECTOR][0]
+    wrapped = [l for l in router.layers if l.name == LAYER_VECTOR][0]
+    # 装配层把向量层包进了 MemoizedIntentLayer（verdict 记忆化），
+    # 预热状态在被包装的 LazyVectorLayer 内部
+    vector = getattr(wrapped, "_inner", wrapped)
     deadline = time.time() + 5
     while vector._layer is None and time.time() < deadline:
         time.sleep(0.02)
